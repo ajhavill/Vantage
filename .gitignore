@@ -1,0 +1,21 @@
+# dependencies (Netlify installs these during the build)
+node_modules/
+site/node_modules/
+
+# Netlify local state
+.netlify/
+
+# local preview helper (not part of the deploy)
+.claude/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# zips used for manual drag-drop deploys
+*.zip
+
+# anything secret — keys live ONLY in Netlify env vars, never here
+.env
+.env.*

@@ -1,0 +1,14 @@
+# Netlify config for Vantage.
+# The static site is the contents of public/. The commute API is a serverless
+# function in netlify/functions/. The Google API key is provided at runtime via
+# the GOOGLE_ROUTES_KEY environment variable (Site settings → Environment
+# variables) — it is NEVER stored in these files or in the published site.
+[build]
+  publish = "public"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"

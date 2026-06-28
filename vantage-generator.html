@@ -1,0 +1,1512 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vantage — Data Builder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- SheetJS: reads & writes .xlsx. Loaded from CDN, same as the app loads Leaflet. -->
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --paper:#F7F5F0; --paper-2:#FCFBF8; --ink:#1A2230; --ink-soft:#55606F; --ink-faint:#8A93A0;
+    --line:#E2DDD2; --line-2:#D2CCBF; --accent:#2D6E7E;
+    --good:#3F8F6B; --bad:#C9543F; --warn:#9A6A2E;
+    --shadow:0 1px 2px rgba(26,34,48,.06),0 8px 24px rgba(26,34,48,.07);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--paper);color:var(--ink);font-family:"Inter",system-ui,sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;padding:0 0 60px}
+  .mono{font-family:"JetBrains Mono",ui-monospace,monospace}
+  h1,h2,h3,.display{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:700;letter-spacing:-.01em;margin:0}
+  .wrap{max-width:760px;margin:0 auto;padding:0 22px}
+
+  .topbar{border-bottom:1px solid var(--line);background:var(--paper-2);padding:15px 22px;margin-bottom:26px}
+  .topbar .wrap{display:flex;align-items:baseline;gap:9px}
+  .logo{font-family:"Bricolage Grotesque";font-weight:800;font-size:19px}
+  .logo .dot{color:var(--accent)}
+  .by{font-size:11px;color:var(--ink-faint);letter-spacing:.04em;text-transform:uppercase}
+  .crumb{margin-left:6px;font-size:12.5px;color:var(--ink-faint)}
+
+  h1.title{font-size:24px;margin-bottom:5px}
+  .lede{color:var(--ink-soft);font-size:13.5px;margin-bottom:22px}
+
+  .banner{display:flex;gap:10px;align-items:flex-start;background:#F6ECDC;border:1px solid #E7D2AE;border-radius:11px;padding:12px 14px;margin-bottom:26px;font-size:12.5px;color:#6B4E22;line-height:1.5}
+  .banner b{color:#553d18}
+
+  .card{border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin-bottom:18px;background:var(--paper-2);box-shadow:var(--shadow)}
+  .step{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .step .num{font-family:"Bricolage Grotesque";font-weight:800;font-size:13px;color:#fff;background:var(--accent);width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex:none}
+  .step h3{font-size:15.5px}
+  .card p{color:var(--ink-soft);font-size:13px;margin:6px 0 16px}
+  .card p code{font-family:"JetBrains Mono";font-size:12px;background:rgba(26,34,48,.06);padding:1px 6px;border-radius:5px;color:var(--ink)}
+
+  .btn{display:inline-flex;align-items:center;gap:9px;font:600 13.5px Inter;color:#fff;background:var(--accent);border:0;border-radius:10px;padding:11px 18px;cursor:pointer;box-shadow:var(--shadow);transition:background .14s}
+  .btn:hover{background:#255c69}
+  .btn:disabled{background:var(--line-2);color:var(--ink-faint);cursor:default;box-shadow:none}
+  .btn.ghost{background:var(--paper);color:var(--ink-soft);border:1px solid var(--line-2)}
+  .btn.ghost:hover{background:var(--paper);border-color:var(--ink-faint);color:var(--ink)}
+  .btn svg{width:16px;height:16px;flex:none}
+
+  .filezone{border:1.5px dashed var(--line-2);border-radius:11px;padding:22px;text-align:center;background:var(--paper);cursor:pointer;transition:border-color .14s,background .14s}
+  .filezone:hover,.filezone.drag{border-color:var(--accent);background:rgba(45,110,126,.04)}
+  .filezone .big{font:600 14px Inter;color:var(--ink)}
+  .filezone .small{font-size:12px;color:var(--ink-faint);margin-top:4px}
+  .filezone .fname{font-family:"JetBrains Mono";font-size:12.5px;color:var(--accent);margin-top:8px;display:none}
+  input[type=file]{display:none}
+
+  .result{margin-top:18px;display:none}
+  .result.show{display:block}
+  .summary{display:flex;align-items:center;gap:10px;border-radius:10px;padding:12px 14px;font-size:13.5px;font-weight:600;margin-bottom:14px}
+  .summary.ok{background:rgba(63,143,107,.10);border:1px solid rgba(63,143,107,.35);color:#256048}
+  .summary.err{background:rgba(201,84,63,.09);border:1px solid rgba(201,84,63,.32);color:#9c3d2c}
+  .summary .ico{font-size:17px}
+  .counts{display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-soft);margin:-4px 0 16px 2px}
+  .counts b{font-family:"JetBrains Mono";color:var(--ink)}
+
+  .problems{list-style:none;margin:0 0 16px;padding:0;border:1px solid rgba(201,84,63,.25);border-radius:10px;overflow:hidden}
+  .problems li{padding:9px 13px;font-size:12.5px;color:#7c3525;border-bottom:1px solid rgba(201,84,63,.15);background:rgba(201,84,63,.04)}
+  .problems li:last-child{border-bottom:0}
+  .problems li .where{font-family:"JetBrains Mono";font-weight:600;color:#9c3d2c;margin-right:7px}
+
+  .tabledoc{margin-top:8px}
+  details{border:1px solid var(--line);border-radius:11px;background:var(--paper-2);margin-bottom:10px;overflow:hidden}
+  summary{cursor:pointer;padding:12px 16px;font:600 13px Inter;color:var(--ink);list-style:none;display:flex;align-items:center;gap:8px}
+  summary::-webkit-details-marker{display:none}
+  summary .tab{font-family:"Bricolage Grotesque";font-weight:700}
+  summary .arrow{margin-left:auto;color:var(--ink-faint);transition:transform .15s}
+  details[open] summary .arrow{transform:rotate(90deg)}
+  .cols{padding:0 16px 14px}
+  .cols table{width:100%;border-collapse:collapse;font-size:12.5px}
+  .cols td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  .cols td:first-child{font-family:"JetBrains Mono";font-weight:600;color:var(--accent);white-space:nowrap;width:130px}
+  .cols td.req:first-child::after{content:" *";color:var(--bad)}
+  .cols .note{color:var(--ink-soft)}
+  .legend{font-size:11.5px;color:var(--ink-faint);margin-top:4px}
+  .legend .bad{color:var(--bad)}
+  footer{color:var(--ink-faint);font-size:12px;margin-top:30px;line-height:1.6}
+  footer code{font-family:"JetBrains Mono";background:rgba(26,34,48,.06);padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+
+<div class="topbar"><div class="wrap">
+  <span class="logo">Vantage<span class="dot">.</span></span>
+  <span class="by">by Havill &amp; Co.</span>
+  <span class="crumb">Data Builder</span>
+</div></div>
+
+<div class="wrap">
+  <h1 class="title display">Turn a spreadsheet into the app's data file</h1>
+  <div class="lede">Edit a familiar workbook, run it through here, and get a fresh <code class="mono">vantage-data.json</code> to drop next to the app. No JSON by hand.</div>
+
+  <div class="banner">
+    <span>⚠️</span>
+    <div><b>Clean sources only.</b> Everything in the workbook must come from sources you own — firsthand broker knowledge, public records, leasing packages, company websites. <b>Never CoStar.</b> This tool just reshapes whatever you put in; the sourcing discipline is yours.</div>
+  </div>
+
+  <div class="banner" style="background:#FBE9E7;border-color:#E8B5A8;color:#8A3520">
+    <span>🛑</span>
+    <div><b>Heads up — this generator is out of date.</b> It does not yet know about the building photos, floor plans, landlord/leasing details, year-built specs, or time-of-day drive times added later, and its sample data predates the hundreds of Google Places amenities that were pulled in. <b>If you regenerate now, those will be wiped from <code class="mono">vantage-data.json</code>.</b> Don't run this on your current live data until it's been updated to carry the new fields — ask Claude to update it first.</div>
+  </div>
+
+  <!-- STEP 1 -->
+  <div class="card">
+    <div class="step"><span class="num">1</span><h3 class="display">Get the workbook</h3></div>
+    <p>Download a starter workbook already filled in with the current buildings, suites, tenants, and amenities. Edit it in Excel — add buildings, change rents, update the tenant roster. Keep it as your master copy.</p>
+    <button class="btn" id="dlWorkbook">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Download starter workbook (.xlsx)
+    </button>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="card">
+    <div class="step"><span class="num">2</span><h3 class="display">Build the data file</h3></div>
+    <p>Pick your edited workbook. The tool checks every row, then gives you a <code class="mono">vantage-data.json</code> to download — but only if everything's clean.</p>
+    <label class="filezone" id="filezone">
+      <div class="big">Click to choose your workbook</div>
+      <div class="small">or drag an .xlsx file here</div>
+      <div class="fname mono" id="fname"></div>
+      <input type="file" id="fileInput" accept=".xlsx,.xls">
+    </label>
+
+    <div class="result" id="result">
+      <div class="summary" id="summary"></div>
+      <div class="counts" id="counts"></div>
+      <ul class="problems" id="problems"></ul>
+      <button class="btn" id="dlJson" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download vantage-data.json
+      </button>
+    </div>
+  </div>
+
+  <!-- COLUMN REFERENCE -->
+  <div class="tabledoc">
+    <details>
+      <summary><span class="tab">Categories</span> tab — the amenity-type menu <span class="arrow">›</span></summary>
+      <div class="cols"><table>
+        <tr><td class="req">key</td><td class="note">Short lowercase tag, no spaces (e.g. <code>coffee</code>, <code>grocery</code>). Amenity rows reference this. Order here = order shown in the app.</td></tr>
+        <tr><td class="req">label</td><td class="note">Display name, e.g. "Bars &amp; nightlife".</td></tr>
+        <tr><td class="req">color</td><td class="note">Hex color for its pins, sliders &amp; chips, e.g. <code>#1FA08C</code>.</td></tr>
+        <tr><td class="req">weighted</td><td class="note"><code>yes</code> = a decision-driver: gets a priority slider, a 0–10 score, and a portfolio bar. <code>no</code> = a display layer: map pin + filter toggle only. Keep the weighted list short (4–6) so the sliders don't get crowded.</td></tr>
+      </table><div class="legend"><span class="bad">*</span> required &nbsp;·&nbsp; Pre-filled and rarely edited — change it only to add/retire an amenity type.</div></div>
+    </details>
+
+    <details>
+      <summary><span class="tab">Industries</span> tab — the company-type menu <span class="arrow">›</span></summary>
+      <div class="cols"><table>
+        <tr><td class="req">industry</td><td class="note">One company type per row, in the order you want them shown in the Competition view. This list is the master menu — every tenant's industry must match one of these. Add a row to introduce a new type; the app picks it up automatically with its own color.</td></tr>
+      </table><div class="legend"><span class="bad">*</span> required</div></div>
+    </details>
+
+    <details open>
+      <summary><span class="tab">Buildings</span> tab — one row per building <span class="arrow">›</span></summary>
+      <div class="cols"><table>
+        <tr><td class="req">id</td><td class="note">Short lowercase tag, no spaces (e.g. <code>watergarden</code>). This links tenants, suites &amp; amenities to the building — keep it stable.</td></tr>
+        <tr><td class="req">name</td><td class="note">Display name, e.g. The Water Garden.</td></tr>
+        <tr><td class="req">addr</td><td class="note">Street address.</td></tr>
+        <tr><td class="req">submarket</td><td class="note">Submarket / pocket label.</td></tr>
+        <tr><td class="req">lat</td><td class="note">Latitude (decimal number).</td></tr>
+        <tr><td class="req">lng</td><td class="note">Longitude (decimal number).</td></tr>
+        <tr><td>class</td><td class="note">A, B+, etc. Optional.</td></tr>
+        <tr><td>parking</td><td class="note">e.g. 3.0 / 1,000. Optional.</td></tr>
+        <tr><td>size</td><td class="note">Building size text, e.g. ~320,000. Optional.</td></tr>
+        <tr><td>avail</td><td class="note">Total available SF text. Optional.</td></tr>
+        <tr><td>rent</td><td class="note">Asking-rent range text. Optional.</td></tr>
+        <tr><td>read</td><td class="note">The neighborhood read paragraph. Optional.</td></tr>
+      </table><div class="legend"><span class="bad">*</span> required</div></div>
+    </details>
+
+    <details>
+      <summary><span class="tab">Suites</span> tab — one row per available suite <span class="arrow">›</span></summary>
+      <div class="cols"><table>
+        <tr><td class="req">building_id</td><td class="note">Must match an <code>id</code> on the Buildings tab.</td></tr>
+        <tr><td class="req">label</td><td class="note">Suite label, e.g. Suite 500 or Bldg 7 · Ste 200.</td></tr>
+        <tr><td class="req">sf</td><td class="note">Rentable SF as a plain number (e.g. 11450). Shown as "11,450 RSF".</td></tr>
+        <tr><td>floor</td><td class="note">Floor number. Optional.</td></tr>
+        <tr><td>desc</td><td class="note">One-line description. Optional.</td></tr>
+        <tr><td>rent</td><td class="note">Asking rent for the suite, e.g. $5.50/SF FS. Optional.</td></tr>
+        <tr><td>status</td><td class="note">Defaults to "available". Optional.</td></tr>
+      </table><div class="legend"><span class="bad">*</span> required</div></div>
+    </details>
+
+    <details>
+      <summary><span class="tab">Tenants</span> tab — one row per company in a building <span class="arrow">›</span></summary>
+      <div class="cols"><table>
+        <tr><td class="req">building_id</td><td class="note">Must match an <code>id</code> on the Buildings tab.</td></tr>
+        <tr><td class="req">company</td><td class="note">Company name.</td></tr>
+        <tr><td class="req">industry</td><td class="note">Must match one of the values on the <b>Industries</b> tab (case doesn't matter). Want a new type? Add it to the Industries tab first.</td></tr>
+      </table><div class="legend"><span class="bad">*</span> required</div></div>
+    </details>
+
+    <details>
+      <summary><span class="tab">Amenities</span> tab — places near each building <span class="arrow">›</span></summary>
+      <div class="cols"><table>
+        <tr><td class="req">building_id</td><td class="note">Must match an <code>id</code> on the Buildings tab.</td></tr>
+        <tr><td class="req">name</td><td class="note">Place name.</td></tr>
+        <tr><td class="req">category</td><td class="note">Must match a <code>key</code> on the <b>Categories</b> tab (case doesn't matter). Want a new type? Add it to Categories first.</td></tr>
+        <tr><td class="req">lat</td><td class="note">Latitude (decimal number).</td></tr>
+        <tr><td class="req">lng</td><td class="note">Longitude (decimal number).</td></tr>
+        <tr><td class="req">rating</td><td class="note">Google rating, e.g. 4.5.</td></tr>
+        <tr><td>blurb</td><td class="note">Short descriptor. Optional.</td></tr>
+      </table><div class="legend"><span class="bad">*</span> required &nbsp;·&nbsp; Comes pre-filled with your real Google Places data.</div></div>
+    </details>
+
+    <details>
+      <summary><span class="tab">Access</span> tab — connectivity stats per building <span class="arrow">›</span> <span style="font:600 10px Inter;color:var(--ink-faint);margin-left:6px">optional</span></summary>
+      <div class="cols"><table>
+        <tr><td class="req">building_id</td><td class="note">Must match an <code>id</code> on the Buildings tab.</td></tr>
+        <tr><td class="req">label</td><td class="note">Row label, shown verbatim, e.g. <code>Freeways</code>, <code>Airports</code>, <code>Transit</code>.</td></tr>
+        <tr><td class="req">value</td><td class="note">The text shown, e.g. "7 min to I-10 · 11 min to I-405". Type whatever you want — nothing is auto-calculated.</td></tr>
+      </table><div class="legend"><span class="bad">*</span> required &nbsp;·&nbsp; One row per stat (a building can have several). Leave a building out entirely and its access block just won't show. This whole tab is optional.</div></div>
+    </details>
+  </div>
+
+  <footer>
+    When the JSON downloads, drop it into the same folder as the app (next to <code>index.html</code>), replacing the old <code>vantage-data.json</code>, then re-deploy.
+    <br>To sanity-check before deploying: download the starter workbook, run it straight back through Step&nbsp;2, and the result should match your current data.
+  </footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // Allowed amenity categories AND company types are NOT fixed here — both come
+  // from the workbook (the Categories tab and the Industries tab), so the
+  // taxonomies are editable without touching code.
+  var META={
+    market:"Santa Monica",
+    schema_version:"1.0",
+    note:"Edit this file to change what Vantage shows. The app loads it at startup when served over http. Building stats, availabilities, and tenant rosters here are SAMPLE/illustrative until replaced with verified data from clean sources (firsthand broker knowledge, public records, leasing packages, company sites). Never CoStar's database.",
+    fields:"buildings[].amen = [name, category, lat, lng, rating, blurb]. category must be one of categories[].key. categories[] = {key,label,color,weighted}; weighted:true categories are scored + get a priority slider, weighted:false are display-only map layers. buildings[].access = optional {label: value} strings shown in the dossier left rail (manually entered; not auto-calculated; hidden if absent). rosters keyed by building id = [company, industry]. industries[] = allowed company types (display order)."
+  };
+
+  // ============================================================
+  //  SEED — current data, used only to build the starter workbook.
+  //  After the first download, your workbook is the source of truth.
+  // ============================================================
+  var SEED={
+    "industries": [
+      "Aerospace/defense",
+      "Agriculture",
+      "Construction",
+      "Energy/utilities",
+      "Entertainment",
+      "Finance",
+      "Frontier",
+      "Government",
+      "Hardware technology",
+      "Healthcare",
+      "Legal",
+      "Lifescience",
+      "Logistics/distribution",
+      "Manufacturing",
+      "Media",
+      "Nonprofit/education",
+      "Professional services",
+      "Research & development",
+      "Technology/software",
+      "Tourism/hospitality"
+    ],
+    "categories": [
+      {
+        "key": "coffee",
+        "label": "Coffee",
+        "color": "#A56B3D",
+        "weighted": true
+      },
+      {
+        "key": "dining",
+        "label": "Dining",
+        "color": "#C9543F",
+        "weighted": true
+      },
+      {
+        "key": "fitness",
+        "label": "Fitness",
+        "color": "#3F8F6B",
+        "weighted": true
+      },
+      {
+        "key": "grocery",
+        "label": "Grocery",
+        "color": "#1FA08C",
+        "weighted": true
+      },
+      {
+        "key": "transit",
+        "label": "Transit",
+        "color": "#3B6FB0",
+        "weighted": true
+      },
+      {
+        "key": "errands",
+        "label": "Pharmacy & errands",
+        "color": "#8A5BB5",
+        "weighted": false
+      },
+      {
+        "key": "bars",
+        "label": "Bars & nightlife",
+        "color": "#C0407A",
+        "weighted": false
+      },
+      {
+        "key": "hotels",
+        "label": "Hotels",
+        "color": "#D69A2A",
+        "weighted": false
+      },
+      {
+        "key": "parks",
+        "label": "Parks & beach",
+        "color": "#2F8FA8",
+        "weighted": false
+      },
+      {
+        "key": "parking",
+        "label": "Parking & EV",
+        "color": "#5A6B7B",
+        "weighted": false
+      }
+    ],
+    "buildings": [
+      {
+        "id": "watergarden",
+        "name": "The Water Garden",
+        "addr": "1620 26th St, Santa Monica",
+        "submarket": "26th Street corridor",
+        "lat": 34.0289807,
+        "lng": -118.4709904,
+        "class": "A",
+        "parking": "3.0 / 1,000",
+        "size": "~320,000",
+        "avail": "24,565",
+        "rent": "$4.95 – $5.50 FS",
+        "read": "A tight, walkable pocket strong on specialty coffee, with a full health club and sauna inside the campus and TRIFIT a three-minute walk. The honest gap is sit-down dinner — the standout restaurants cluster down by the pier, well past a ten-minute walk, so evenings mean a short drive. Best for a team that values a coffee-and-gym daytime rhythm over a dense dining scene.",
+        "suites": [
+          {
+            "label": "Suite 500",
+            "sf": 11450,
+            "floor": 5,
+            "desc": "Full floor · bay & garden views",
+            "rent": "$5.50/SF FS",
+            "status": "available"
+          },
+          {
+            "label": "Suite 310",
+            "sf": 6720,
+            "floor": 3,
+            "desc": "Partial floor · creative buildout",
+            "rent": "$5.25/SF FS",
+            "status": "available"
+          },
+          {
+            "label": "Suite 220",
+            "sf": 4015,
+            "floor": 2,
+            "desc": "Partial floor · spec suite",
+            "rent": "$5.10/SF FS",
+            "status": "available"
+          },
+          {
+            "label": "Suite 140",
+            "sf": 2380,
+            "floor": 1,
+            "desc": "Ground floor · move-in ready",
+            "rent": "$4.95/SF MG",
+            "status": "available"
+          }
+        ],
+        "amen": [
+          [
+            "goodboybob Coffee",
+            "coffee",
+            34.0281761,
+            -118.47618,
+            4.5,
+            "Roaster · breakfast burritos"
+          ],
+          [
+            "Cafe Ruisseau",
+            "coffee",
+            34.0325646,
+            -118.4684582,
+            4.5,
+            "Cafe · big patio · wifi"
+          ],
+          [
+            "LOKL HAUS",
+            "coffee",
+            34.0339174,
+            -118.4738613,
+            4.8,
+            "Specialty · Turkish coffee"
+          ],
+          [
+            "Uppers Cafe & Bakeshop",
+            "coffee",
+            34.0278161,
+            -118.4775952,
+            4.8,
+            "Bakery · salads"
+          ],
+          [
+            "Café Lovi",
+            "coffee",
+            34.0266165,
+            -118.479116,
+            4.7,
+            "Coffee · crêpes · books"
+          ],
+          [
+            "Le Great Outdoor",
+            "dining",
+            34.0280436,
+            -118.4673174,
+            4.4,
+            "Mediterranean grill · patio"
+          ],
+          [
+            "Bay Club Santa Monica",
+            "fitness",
+            34.0281562,
+            -118.470781,
+            3.5,
+            "Health club · sauna · in-campus"
+          ],
+          [
+            "TRIFIT LA",
+            "fitness",
+            34.0295755,
+            -118.4731361,
+            4.5,
+            "Boutique gym · pool"
+          ],
+          [
+            "IRON Fitness",
+            "fitness",
+            34.0269783,
+            -118.4793236,
+            4.4,
+            "Strength · showers · towels"
+          ],
+          [
+            "Whole Foods Market",
+            "grocery",
+            34.0344,
+            -118.4793,
+            4.4,
+            "Grocery · hot bar"
+          ],
+          [
+            "Expo/26th St – Bergamot",
+            "transit",
+            34.0306,
+            -118.4699,
+            4.1,
+            "Metro E (Expo) Line"
+          ],
+          [
+            "CVS Pharmacy",
+            "errands",
+            34.0319,
+            -118.4761,
+            3.9,
+            "Pharmacy · convenience"
+          ],
+          [
+            "The Daily Pint",
+            "bars",
+            34.0262,
+            -118.4759,
+            4.4,
+            "Dive bar · darts"
+          ],
+          [
+            "Courtyard by Marriott",
+            "hotels",
+            34.0258,
+            -118.4759,
+            4.2,
+            "Hotel · meeting rooms"
+          ],
+          [
+            "Stewart Street Park",
+            "parks",
+            34.0327,
+            -118.469,
+            4.3,
+            "Park · ball fields"
+          ],
+          [
+            "Water Garden Parking",
+            "parking",
+            34.0291,
+            -118.4715,
+            4,
+            "On-site structure · EV charging"
+          ]
+        ],
+        "tenants": [
+          [
+            "Vellum Health",
+            "Healthcare"
+          ],
+          [
+            "Coastline Capital",
+            "Finance"
+          ],
+          [
+            "Brightwork Software",
+            "Technology/software"
+          ],
+          [
+            "Harbor & Oak",
+            "Manufacturing"
+          ],
+          [
+            "Meridian Analytics",
+            "Technology/software"
+          ],
+          [
+            "Pacific Reserve Advisors",
+            "Finance"
+          ],
+          [
+            "Lumen Wellness Co.",
+            "Healthcare"
+          ],
+          [
+            "Tidewater Labs",
+            "Technology/software"
+          ],
+          [
+            "Northstar Goods",
+            "Manufacturing"
+          ],
+          [
+            "Cardinal Creative",
+            "Professional services"
+          ],
+          [
+            "Atlas Ventures",
+            "Finance"
+          ]
+        ],
+        "access": {
+          "Freeways": "7 min to I-10 · 11 min to I-405",
+          "Airports": "9 min to SMO · 24 min to LAX",
+          "Transit": "Expo/26th St — 6 min walk"
+        }
+      },
+      {
+        "id": "clocktower",
+        "name": "Clock Tower Building",
+        "addr": "225 Santa Monica Blvd, Santa Monica",
+        "submarket": "Downtown core / Promenade",
+        "lat": 34.0154455,
+        "lng": -118.4966597,
+        "class": "B+",
+        "parking": "1.5 / 1,000 (structure)",
+        "size": "~120,000",
+        "avail": "14,200",
+        "rent": "$5.75 – $6.50 FS",
+        "read": "The densest option by a wide margin. Wall-to-wall dining off the Third Street Promenade, multiple gyms including Equinox, and excellent coffee within a couple of blocks — a tenant here can walk to nearly everything. The tradeoff is downtown bustle and pricier parking, and the energy skews tourist-and-retail rather than quiet professional.",
+        "suites": [
+          {
+            "label": "Suite 900",
+            "sf": 8300,
+            "floor": 9,
+            "desc": "Tower floor · ocean peeks",
+            "rent": "$6.50/SF FS",
+            "status": "available"
+          },
+          {
+            "label": "Suite 600",
+            "sf": 3540,
+            "floor": 6,
+            "desc": "Partial floor · corner",
+            "rent": "$6.10/SF FS",
+            "status": "available"
+          },
+          {
+            "label": "Suite 410",
+            "sf": 2360,
+            "floor": 4,
+            "desc": "Creative · exposed ceilings",
+            "rent": "$5.75/SF FS",
+            "status": "available"
+          }
+        ],
+        "amen": [
+          [
+            "Dragon Alley Coffee",
+            "coffee",
+            34.0158777,
+            -118.4956571,
+            4.6,
+            "Specialty · cozy"
+          ],
+          [
+            "Couplet Coffee",
+            "coffee",
+            34.0179671,
+            -118.4936315,
+            4.8,
+            "Matcha · large space"
+          ],
+          [
+            "Blue Bottle Coffee",
+            "coffee",
+            34.0168605,
+            -118.4948747,
+            4.2,
+            "Espresso · clean design"
+          ],
+          [
+            "Espresso Cielo",
+            "coffee",
+            34.0141362,
+            -118.4959123,
+            4.3,
+            "Italian cafe · bistro"
+          ],
+          [
+            "Santa Monica Cafe",
+            "coffee",
+            34.0132024,
+            -118.4965779,
+            4.9,
+            "Cafe · juice · sandwiches"
+          ],
+          [
+            "1212 Santa Monica",
+            "dining",
+            34.0178522,
+            -118.4990463,
+            4.5,
+            "American · oysters · bar"
+          ],
+          [
+            "Élephante",
+            "dining",
+            34.0152447,
+            -118.4979996,
+            4.3,
+            "Italian · rooftop · ocean view"
+          ],
+          [
+            "The Curious Palate",
+            "dining",
+            34.0140953,
+            -118.4932536,
+            4.7,
+            "American · farm-to-table"
+          ],
+          [
+            "All'antico Vinaio",
+            "dining",
+            34.0158515,
+            -118.4955313,
+            4.4,
+            "Italian sandwiches"
+          ],
+          [
+            "Barney's Beanery",
+            "dining",
+            34.016214,
+            -118.4962375,
+            4.2,
+            "Gastropub · sports bar"
+          ],
+          [
+            "LouLou",
+            "dining",
+            34.0133397,
+            -118.4946372,
+            4.3,
+            "French · Mediterranean"
+          ],
+          [
+            "Fred Fitness",
+            "fitness",
+            34.0166523,
+            -118.4958513,
+            4.5,
+            "AI gym · showers"
+          ],
+          [
+            "Anytime Fitness",
+            "fitness",
+            34.0157549,
+            -118.4940456,
+            4.5,
+            "24/7 · strength"
+          ],
+          [
+            "Equinox Santa Monica",
+            "fitness",
+            34.0153485,
+            -118.496934,
+            3.4,
+            "Full club · classes"
+          ],
+          [
+            "Whole Foods Market",
+            "grocery",
+            34.0149,
+            -118.4945,
+            4.3,
+            "Grocery · downtown"
+          ],
+          [
+            "Downtown Santa Monica Station",
+            "transit",
+            34.0149,
+            -118.4915,
+            4.2,
+            "Metro E Line terminus"
+          ],
+          [
+            "CVS Pharmacy",
+            "errands",
+            34.0156,
+            -118.4953,
+            3.8,
+            "Pharmacy · Promenade"
+          ],
+          [
+            "The Misfit Restaurant & Bar",
+            "bars",
+            34.0153,
+            -118.496,
+            4.4,
+            "Cocktail bar · happy hour"
+          ],
+          [
+            "Loews Santa Monica Beach",
+            "hotels",
+            34.0099,
+            -118.4949,
+            4.5,
+            "Oceanfront hotel"
+          ],
+          [
+            "Palisades Park",
+            "parks",
+            34.017,
+            -118.499,
+            4.7,
+            "Bluff park · ocean views"
+          ],
+          [
+            "Santa Monica Place Garage",
+            "parking",
+            34.0138,
+            -118.492,
+            4.1,
+            "Structure · EV charging"
+          ]
+        ],
+        "tenants": [
+          [
+            "Promenade Pictures",
+            "Media"
+          ],
+          [
+            "Third Street Media",
+            "Media"
+          ],
+          [
+            "Beacon Advertising",
+            "Professional services"
+          ],
+          [
+            "Civic Square Partners",
+            "Finance"
+          ],
+          [
+            "Marquee Talent Group",
+            "Media"
+          ],
+          [
+            "Ocean Ave Capital",
+            "Finance"
+          ],
+          [
+            "Highline Agency",
+            "Professional services"
+          ],
+          [
+            "Bluebird Brand Studio",
+            "Professional services"
+          ],
+          [
+            "Lantern Films",
+            "Media"
+          ],
+          [
+            "Pier Public Relations",
+            "Professional services"
+          ],
+          [
+            "Vanguard Wealth",
+            "Finance"
+          ]
+        ],
+        "access": {
+          "Freeways": "9 min to I-10 · 16 min to I-405",
+          "Airports": "13 min to SMO · 26 min to LAX",
+          "Transit": "Downtown SM Station — 7 min walk"
+        }
+      },
+      {
+        "id": "smbp",
+        "name": "Santa Monica Business Park",
+        "addr": "2850 Ocean Park Blvd, Santa Monica",
+        "submarket": "Sunset Park / near SMO",
+        "lat": 34.0198197,
+        "lng": -118.4517586,
+        "class": "A",
+        "parking": "3.3 / 1,000",
+        "size": "~1.2M (campus)",
+        "avail": "38,000",
+        "rent": "$4.25 – $4.95 FS",
+        "read": "Quieter and more self-contained, with a genuinely good little Ocean Park food cluster right at the door — Crimson, Vito, Il Forno, Pontu, and Society Kitchen are all a few minutes away. A 24 Hour Fitness with a sauna and two boutique studios sit close, parking is easy, and the airport-adjacent calm suits a heads-down team. Less coffee density and no Promenade buzz, which is the point for some tenants.",
+        "suites": [
+          {
+            "label": "Bldg 7 · Ste 200",
+            "sf": 16800,
+            "floor": 2,
+            "desc": "Full floor · campus green",
+            "rent": "$4.95/SF FS",
+            "status": "available"
+          },
+          {
+            "label": "Bldg 4 · Ste 110",
+            "sf": 9250,
+            "floor": 1,
+            "desc": "Ground · patio access",
+            "rent": "$4.55/SF FS",
+            "status": "available"
+          },
+          {
+            "label": "Bldg 12 · Ste 320",
+            "sf": 6400,
+            "floor": 3,
+            "desc": "Partial · skylit",
+            "rent": "$4.50/SF FS",
+            "status": "available"
+          },
+          {
+            "label": "Bldg 2 · Ste 105",
+            "sf": 3180,
+            "floor": 1,
+            "desc": "Move-in ready",
+            "rent": "$4.25/SF FS",
+            "status": "available"
+          }
+        ],
+        "amen": [
+          [
+            "blossom and friends",
+            "coffee",
+            34.0193133,
+            -118.4554179,
+            4.3,
+            "Cafe · banh mi"
+          ],
+          [
+            "Intelligentsia Coffee",
+            "coffee",
+            34.0254985,
+            -118.4578676,
+            4.1,
+            "Specialty · drive-thru"
+          ],
+          [
+            "Crimson",
+            "dining",
+            34.0200574,
+            -118.4542106,
+            4.5,
+            "Mediterranean · counter"
+          ],
+          [
+            "Vito Restaurant",
+            "dining",
+            34.0191215,
+            -118.455775,
+            4.5,
+            "Italian · pizza · bar"
+          ],
+          [
+            "Society Kitchen",
+            "dining",
+            34.0200485,
+            -118.4544695,
+            4.4,
+            "Breakfast · brunch"
+          ],
+          [
+            "Pontu",
+            "dining",
+            34.0210101,
+            -118.4525601,
+            5,
+            "Peruvian · rotisserie"
+          ],
+          [
+            "Il Forno",
+            "dining",
+            34.0199422,
+            -118.4548446,
+            4.5,
+            "Italian · validated parking"
+          ],
+          [
+            "24 Hour Fitness",
+            "fitness",
+            34.0195669,
+            -118.4507518,
+            3.4,
+            "Full club · pool · sauna"
+          ],
+          [
+            "Sunset Core",
+            "fitness",
+            34.0209152,
+            -118.4528685,
+            5,
+            "Lagree · boutique"
+          ],
+          [
+            "Spry Fitness",
+            "fitness",
+            34.0246794,
+            -118.4601603,
+            5,
+            "Small-group training"
+          ],
+          [
+            "Vons",
+            "grocery",
+            34.0167,
+            -118.456,
+            4.1,
+            "Grocery · pharmacy"
+          ],
+          [
+            "Big Blue Bus – Rapid 7",
+            "transit",
+            34.0186,
+            -118.452,
+            4,
+            "Rapid bus · Pico Blvd"
+          ],
+          [
+            "CVS Pharmacy",
+            "errands",
+            34.017,
+            -118.4565,
+            3.9,
+            "Pharmacy · drive-thru"
+          ],
+          [
+            "Clover Park",
+            "parks",
+            34.0214,
+            -118.4636,
+            4.5,
+            "Large park · SMO views"
+          ],
+          [
+            "Embassy Suites by Hilton",
+            "hotels",
+            34.0163,
+            -118.449,
+            4.1,
+            "All-suite hotel"
+          ],
+          [
+            "SMBP Parking Structure",
+            "parking",
+            34.0199,
+            -118.452,
+            4,
+            "Campus parking · EV charging"
+          ]
+        ],
+        "tenants": [
+          [
+            "Sunset Park Software",
+            "Technology/software"
+          ],
+          [
+            "Greenline Apps",
+            "Technology/software"
+          ],
+          [
+            "Cove Consumer Co.",
+            "Manufacturing"
+          ],
+          [
+            "Driftwood Brands",
+            "Manufacturing"
+          ],
+          [
+            "Pixel & Pine",
+            "Professional services"
+          ],
+          [
+            "Orbit Robotics",
+            "Hardware technology"
+          ],
+          [
+            "Ocean Park Outfitters",
+            "Manufacturing"
+          ],
+          [
+            "Bramble Foods",
+            "Manufacturing"
+          ],
+          [
+            "Foundry Digital",
+            "Professional services"
+          ],
+          [
+            "Sandbar Systems",
+            "Technology/software"
+          ],
+          [
+            "Halcyon Health",
+            "Healthcare"
+          ],
+          [
+            "Mainstay Marketing",
+            "Professional services"
+          ]
+        ],
+        "access": {
+          "Freeways": "5 min to I-10 · 9 min to I-405",
+          "Airports": "4 min to SMO · 20 min to LAX",
+          "Transit": "Big Blue Bus Rapid 7 — at the door"
+        }
+      },
+      {
+        "id": "lantana",
+        "name": "Lantana",
+        "addr": "3301 Exposition Blvd, Santa Monica",
+        "submarket": "Bergamot / media district",
+        "lat": 34.029815,
+        "lng": -118.4588438,
+        "class": "A (creative)",
+        "parking": "3.0 / 1,000",
+        "size": "~480,000",
+        "avail": "21,300",
+        "rent": "$5.25 – $6.00 FS",
+        "read": "Media-campus calm next to Bergamot Station. The catch is that almost nothing sits immediately at the door — the nearest cluster is a six-to-seven minute walk south to the Pico strip, where Rae's, The Brixton, and The Upper West anchor a solid run, with Intelligentsia for coffee and Spry for training. It rewards a team that drives in or values a quiet, design-forward base over walk-out density.",
+        "suites": [
+          {
+            "label": "South · Ste 250",
+            "sf": 12100,
+            "floor": 2,
+            "desc": "Full floor · production-ready",
+            "rent": "$6.00/SF FS",
+            "status": "available"
+          },
+          {
+            "label": "North · Ste 180",
+            "sf": 5900,
+            "floor": 1,
+            "desc": "Creative · roll-up doors",
+            "rent": "$5.60/SF FS",
+            "status": "available"
+          },
+          {
+            "label": "East · Ste 120",
+            "sf": 3300,
+            "floor": 1,
+            "desc": "Editorial suite",
+            "rent": "$5.25/SF FS",
+            "status": "available"
+          }
+        ],
+        "amen": [
+          [
+            "Intelligentsia Coffee",
+            "coffee",
+            34.0254985,
+            -118.4578676,
+            4.1,
+            "Specialty · drive-thru"
+          ],
+          [
+            "The Upper West",
+            "dining",
+            34.0272988,
+            -118.4550202,
+            4.6,
+            "American · gastropub"
+          ],
+          [
+            "Rae's Restaurant",
+            "dining",
+            34.0250248,
+            -118.4595917,
+            4.6,
+            "Classic diner"
+          ],
+          [
+            "The Brixton",
+            "dining",
+            34.0248212,
+            -118.4599269,
+            4.5,
+            "Gastropub · brunch"
+          ],
+          [
+            "Lunetta",
+            "dining",
+            34.0224296,
+            -118.4636025,
+            4.5,
+            "Californian · fireplace"
+          ],
+          [
+            "Spry Fitness",
+            "fitness",
+            34.0246794,
+            -118.4601603,
+            5,
+            "Small-group training"
+          ],
+          [
+            "Trader Joe's",
+            "grocery",
+            34.0258,
+            -118.4631,
+            4.5,
+            "Grocery · Pico"
+          ],
+          [
+            "Expo/26th St – Bergamot",
+            "transit",
+            34.0306,
+            -118.4699,
+            4.1,
+            "Metro E (Expo) Line"
+          ],
+          [
+            "CVS Pharmacy",
+            "errands",
+            34.0252,
+            -118.4598,
+            3.9,
+            "Pharmacy · Pico"
+          ],
+          [
+            "Pico Tap House",
+            "bars",
+            34.0252,
+            -118.4596,
+            4.2,
+            "Beer bar · Pico"
+          ],
+          [
+            "Hampton Inn & Suites",
+            "hotels",
+            34.0314,
+            -118.469,
+            4.2,
+            "Hotel · Cloverfield"
+          ],
+          [
+            "Stewart Street Park",
+            "parks",
+            34.0327,
+            -118.469,
+            4.3,
+            "Park · ball fields"
+          ],
+          [
+            "Lantana Parking",
+            "parking",
+            34.0299,
+            -118.4592,
+            4,
+            "Gated lot · EV charging"
+          ]
+        ],
+        "tenants": [
+          [
+            "Bergamot Studios",
+            "Media"
+          ],
+          [
+            "Exposition Pictures",
+            "Media"
+          ],
+          [
+            "Atelier Creative",
+            "Professional services"
+          ],
+          [
+            "Frame 24 Productions",
+            "Media"
+          ],
+          [
+            "Gallery Row Agency",
+            "Professional services"
+          ],
+          [
+            "Spectrum Post",
+            "Media"
+          ],
+          [
+            "Canvas & Co.",
+            "Professional services"
+          ],
+          [
+            "Mod Type Studio",
+            "Professional services"
+          ],
+          [
+            "Daylight Media",
+            "Media"
+          ],
+          [
+            "Loom Wellness",
+            "Healthcare"
+          ]
+        ],
+        "access": {
+          "Freeways": "6 min to I-10 · 12 min to I-405",
+          "Airports": "8 min to SMO · 23 min to LAX",
+          "Transit": "Expo/26th St — 12 min walk"
+        }
+      }
+    ]
+  };
+
+  // ---- helpers ----
+  function fmtSF(n){ return Number(n).toLocaleString('en-US'); }
+  function isBlank(v){ return v===null||v===undefined||String(v).trim()===''; }
+  function str(v){ return isBlank(v)?'':String(v).trim(); }
+
+  // ============================================================
+  //  STEP 1 — build & download the starter workbook from SEED
+  // ============================================================
+  function buildWorkbook(){
+    var B=[],S=[],T=[],A=[],I=[],C=[],X=[];
+    SEED.industries.forEach(function(name){ I.push({industry:name}); });
+    (SEED.categories||[]).forEach(function(c){ C.push({key:c.key,label:c.label,color:c.color,weighted:c.weighted?"yes":"no"}); });
+    SEED.buildings.forEach(function(b){
+      B.push({id:b.id,name:b.name,addr:b.addr,submarket:b.submarket,lat:b.lat,lng:b.lng,class:b.class,parking:b.parking,size:b.size,avail:b.avail,rent:b.rent,read:b.read});
+      b.suites.forEach(function(s){ S.push({building_id:b.id,label:s.label,sf:s.sf,floor:s.floor,desc:s.desc,rent:s.rent,status:s.status}); });
+      b.tenants.forEach(function(t){ T.push({building_id:b.id,company:t[0],industry:t[1]}); });
+      b.amen.forEach(function(a){ A.push({building_id:b.id,name:a[0],category:a[1],lat:a[2],lng:a[3],rating:a[4],blurb:a[5]}); });
+      var acc=b.access||{};
+      Object.keys(acc).forEach(function(k){ X.push({building_id:b.id,label:k,value:acc[k]}); });
+    });
+    var wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(C,{header:["key","label","color","weighted"]}), "Categories");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(I,{header:["industry"]}), "Industries");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(B,{header:["id","name","addr","submarket","lat","lng","class","parking","size","avail","rent","read"]}), "Buildings");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(S,{header:["building_id","label","sf","floor","desc","rent","status"]}), "Suites");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(T,{header:["building_id","company","industry"]}), "Tenants");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(A,{header:["building_id","name","category","lat","lng","rating","blurb"]}), "Amenities");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(X,{header:["building_id","label","value"]}), "Access");
+    XLSX.writeFile(wb, "vantage-tenant-index.xlsx");
+  }
+
+  // ============================================================
+  //  STEP 2 — read workbook, validate, build vantage-data.json
+  // ============================================================
+  // find a sheet by name, case-insensitive
+  function getSheet(wb,name){
+    var key=wb.SheetNames.filter(function(n){return n.toLowerCase()===name.toLowerCase();})[0];
+    return key?wb.Sheets[key]:null;
+  }
+  // read a sheet into rows of normalized-key objects + remember spreadsheet row numbers
+  function readSheet(ws){
+    var raw=XLSX.utils.sheet_to_json(ws,{defval:'',raw:true});
+    return raw.map(function(r,i){
+      var o={__row:i+2}; // +2: 1 for header, 1 for 1-based rows
+      Object.keys(r).forEach(function(k){
+        o[String(k).trim().toLowerCase().replace(/\s+/g,'_')]=r[k];
+      });
+      return o;
+    });
+  }
+  function numOrNaN(v){ if(isBlank(v)) return null; var n=Number(v); return isNaN(n)?NaN:n; }
+
+  function generate(wb){
+    var problems=[];
+    function bad(tab,row,msg){ problems.push({where:tab+(row?' row '+row:''),msg:msg}); }
+
+    var cSheet=getSheet(wb,"Categories"), iSheet=getSheet(wb,"Industries"), bSheet=getSheet(wb,"Buildings"),
+        sSheet=getSheet(wb,"Suites"), tSheet=getSheet(wb,"Tenants"), aSheet=getSheet(wb,"Amenities"), xSheet=getSheet(wb,"Access");
+    if(!cSheet) bad("Categories",0,"tab not found in the workbook.");
+    if(!iSheet) bad("Industries",0,"tab not found in the workbook.");
+    if(!bSheet){ bad("Buildings",0,"tab not found in the workbook."); }
+    if(!sSheet) bad("Suites",0,"tab not found in the workbook.");
+    if(!tSheet) bad("Tenants",0,"tab not found in the workbook.");
+    if(!aSheet) bad("Amenities",0,"tab not found in the workbook.");
+    // Access tab is optional — buildings simply have no access readout without it.
+    if(!bSheet) return {problems:problems,counts:null};
+
+    var bRows=readSheet(bSheet), sRows=sSheet?readSheet(sSheet):[],
+        tRows=tSheet?readSheet(tSheet):[], aRows=aSheet?readSheet(aSheet):[], xRows=xSheet?readSheet(xSheet):[];
+
+    // ---- amenity categories (allowed; order preserved for the app's display) ----
+    var categories=[], catLookup={}; // normalized key -> canonical key
+    (cSheet?readSheet(cSheet):[]).forEach(function(r){
+      var key=str(r.key); if(!key) return;
+      var lk=key.toLowerCase();
+      if(catLookup[lk]!==undefined){ bad("Categories",r.__row,'duplicate category key "'+key+'".'); return; }
+      var w=str(r.weighted).toLowerCase();
+      catLookup[lk]=key;
+      categories.push({key:key, label:str(r.label)||key, color:str(r.color)||'#8A93A0',
+        weighted:(w==='yes'||w==='true'||w==='1'||w==='y')});
+    });
+    if(cSheet && !categories.length) bad("Categories",0,"no categories listed — add at least one row.");
+
+    // ---- industries (allowed company types) — order preserved for the app's display ----
+    var industries=[], indLookup={}; // normalized -> canonical
+    (iSheet?readSheet(iSheet):[]).forEach(function(r){
+      var name=str(r.industry);
+      if(!name) return; // skip blank rows
+      var key=name.toLowerCase();
+      if(indLookup[key]!==undefined){ bad("Industries",r.__row,'duplicate company type "'+name+'".'); return; }
+      indLookup[key]=name; industries.push(name);
+    });
+    if(iSheet && !industries.length) bad("Industries",0,"no company types listed — add at least one row.");
+
+    // ---- buildings ----
+    var ids={}, order=[], byId={};
+    bRows.forEach(function(r){
+      var id=str(r.id);
+      if(!id){ bad("Buildings",r.__row,"missing id."); return; }
+      ["name","addr","submarket"].forEach(function(f){ if(isBlank(r[f])) bad("Buildings",r.__row,"missing "+f+"."); });
+      var lat=numOrNaN(r.lat), lng=numOrNaN(r.lng);
+      if(lat===null||isNaN(lat)) bad("Buildings",r.__row,"lat must be a number.");
+      if(lng===null||isNaN(lng)) bad("Buildings",r.__row,"lng must be a number.");
+      if(ids[id]){ bad("Buildings",r.__row,'duplicate id "'+id+'" (already used on row '+ids[id]+').'); return; }
+      ids[id]=r.__row;
+      var b={id:id,name:str(r.name),addr:str(r.addr),submarket:str(r.submarket),
+        lat:(lat||0),lng:(lng||0),"class":str(r.class),parking:str(r.parking),
+        size:str(r.size),avail:str(r.avail),rent:str(r.rent),
+        suites:[],availabilities:[],photos:[],floorplans:[],read:str(r.read),amen:[]};
+      byId[id]=b; order.push(id);
+    });
+
+    function checkBid(tab,r){
+      var bid=str(r.building_id);
+      if(!bid){ bad(tab,r.__row,"missing building_id."); return null; }
+      if(!byId[bid]){ bad(tab,r.__row,'building_id "'+bid+'" has no matching building.'); return null; }
+      return bid;
+    }
+
+    // ---- suites -> suites[] + availabilities[] ----
+    sRows.forEach(function(r){
+      var bid=checkBid("Suites",r); if(!bid) return;
+      var label=str(r.label); if(!label){ bad("Suites",r.__row,"missing label."); }
+      var sf=numOrNaN(r.sf);
+      if(sf===null||isNaN(sf)){ bad("Suites",r.__row,"sf must be a number."); }
+      var floor=numOrNaN(r.floor);
+      if(floor!==null&&isNaN(floor)) bad("Suites",r.__row,"floor must be a number (or blank).");
+      if(!label||sf===null||isNaN(sf)) return;
+      var b=byId[bid], rent=str(r.rent), status=str(r.status)||"available";
+      b.suites.push([label, fmtSF(sf)+" RSF", str(r.desc), rent]);
+      b.availabilities.push({suite:label, sf:sf, floor:(floor===null?null:floor), rent:rent, status:status});
+    });
+
+    // ---- tenants -> rosters ----
+    var rosters={};
+    order.forEach(function(id){ rosters[id]=[]; });
+    tRows.forEach(function(r){
+      var bid=checkBid("Tenants",r); if(!bid) return;
+      var company=str(r.company); if(!company){ bad("Tenants",r.__row,"missing company."); }
+      var raw=str(r.industry), canon=indLookup[raw.toLowerCase()];
+      if(!raw){ bad("Tenants",r.__row,"missing industry."); }
+      else if(canon===undefined){ bad("Tenants",r.__row,'industry "'+raw+'" is not on the Industries tab. Add it there, or use one of the listed types.'); }
+      if(company && canon!==undefined) rosters[bid].push([company,canon]); // store the canonical spelling
+    });
+
+    // ---- amenities ----
+    aRows.forEach(function(r){
+      var bid=checkBid("Amenities",r); if(!bid) return;
+      var name=str(r.name); if(!name) bad("Amenities",r.__row,"missing name.");
+      var rawcat=str(r.category), cat=catLookup[rawcat.toLowerCase()];
+      if(!rawcat){ bad("Amenities",r.__row,"missing category."); }
+      else if(cat===undefined){ bad("Amenities",r.__row,'category "'+rawcat+'" is not on the Categories tab. Add it there, or use one of the listed categories.'); }
+      var lat=numOrNaN(r.lat), lng=numOrNaN(r.lng), rating=numOrNaN(r.rating);
+      if(lat===null||isNaN(lat)) bad("Amenities",r.__row,"lat must be a number.");
+      if(lng===null||isNaN(lng)) bad("Amenities",r.__row,"lng must be a number.");
+      if(rating===null||isNaN(rating)) bad("Amenities",r.__row,"rating must be a number.");
+      if(name && cat!==undefined && !(lat===null||isNaN(lat)) && !(lng===null||isNaN(lng)) && !(rating===null||isNaN(rating)))
+        byId[bid].amen.push([name,cat,lat,lng,rating,str(r.blurb)]); // store the canonical category key
+    });
+
+    // ---- access -> building.access {label: value} (optional, order preserved) ----
+    xRows.forEach(function(r){
+      var bid=checkBid("Access",r); if(!bid) return;
+      var label=str(r.label), value=str(r.value);
+      if(!label){ bad("Access",r.__row,"missing label."); return; }
+      if(!value){ bad("Access",r.__row,"missing value."); return; }
+      var b=byId[bid]; if(!b.access) b.access={};
+      b.access[label]=value;
+    });
+
+    if(problems.length) return {problems:problems,counts:null};
+
+    var buildings=order.map(function(id){return byId[id];});
+    var out={_meta:META, industries:industries, categories:categories, buildings:buildings, rosters:rosters};
+    var counts={
+      categories:categories.length,
+      industries:industries.length,
+      buildings:buildings.length,
+      suites:buildings.reduce(function(n,b){return n+b.suites.length;},0),
+      tenants:order.reduce(function(n,id){return n+rosters[id].length;},0),
+      amenities:buildings.reduce(function(n,b){return n+b.amen.length;},0),
+      access:buildings.reduce(function(n,b){return n+(b.access?Object.keys(b.access).length:0);},0)
+    };
+    return {problems:[],counts:counts,json:out};
+  }
+
+  // ============================================================
+  //  UI wiring
+  // ============================================================
+  var $=function(id){return document.getElementById(id);};
+  var lastJson=null;
+
+  $("dlWorkbook").addEventListener("click",function(){
+    if(typeof XLSX==="undefined"){ alert("The spreadsheet engine didn't load. Check your internet connection and refresh."); return; }
+    try{ buildWorkbook(); }catch(e){ alert("Could not build the workbook: "+e.message); }
+  });
+
+  function showResult(res){
+    var result=$("result"), summary=$("summary"), counts=$("counts"),
+        problems=$("problems"), dlJson=$("dlJson");
+    result.classList.add("show");
+    problems.innerHTML=""; counts.innerHTML=""; dlJson.style.display="none"; lastJson=null;
+
+    if(res.problems && res.problems.length){
+      summary.className="summary err";
+      summary.innerHTML='<span class="ico">✕</span> Found '+res.problems.length+' thing'+(res.problems.length>1?'s':'')+' to fix. Nothing was generated.';
+      res.problems.forEach(function(p){
+        var li=document.createElement("li");
+        li.innerHTML='<span class="where">'+p.where+'</span>'+p.msg;
+        problems.appendChild(li);
+      });
+      return;
+    }
+    summary.className="summary ok";
+    summary.innerHTML='<span class="ico">✓</span> Looks clean. Your data file is ready.';
+    var c=res.counts;
+    counts.innerHTML='<span><b>'+c.categories+'</b> categories</span><span><b>'+c.industries+'</b> company types</span><span><b>'+c.buildings+'</b> buildings</span><span><b>'+c.suites+'</b> suites</span><span><b>'+c.tenants+'</b> tenants</span><span><b>'+c.amenities+'</b> amenities</span><span><b>'+c.access+'</b> access rows</span>';
+    lastJson=res.json;
+    dlJson.style.display="inline-flex";
+  }
+
+  function handleFile(file){
+    if(!file) return;
+    $("fname").textContent=file.name; $("fname").style.display="block";
+    if(typeof XLSX==="undefined"){ alert("The spreadsheet engine didn't load. Check your internet connection and refresh."); return; }
+    var reader=new FileReader();
+    reader.onload=function(e){
+      try{
+        var wb=XLSX.read(new Uint8Array(e.target.result),{type:"array"});
+        showResult(generate(wb));
+      }catch(err){
+        showResult({problems:[{where:"Workbook",msg:"could not be read — "+err.message+". Make sure it's an .xlsx file."}]});
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  $("fileInput").addEventListener("change",function(e){ handleFile(e.target.files[0]); });
+  var fz=$("filezone");
+  ["dragenter","dragover"].forEach(function(ev){ fz.addEventListener(ev,function(e){e.preventDefault();fz.classList.add("drag");}); });
+  ["dragleave","drop"].forEach(function(ev){ fz.addEventListener(ev,function(e){e.preventDefault();fz.classList.remove("drag");}); });
+  fz.addEventListener("drop",function(e){ if(e.dataTransfer.files&&e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+
+  $("dlJson").addEventListener("click",function(){
+    if(!lastJson) return;
+    var blob=new Blob([JSON.stringify(lastJson,null,2)],{type:"application/json"});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement("a");
+    a.href=url; a.download="vantage-data.json"; document.body.appendChild(a); a.click();
+    document.body.removeChild(a); setTimeout(function(){URL.revokeObjectURL(url);},1000);
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vantage — prepared by Havill &amp; Co.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+<link rel="stylesheet" href="assets/vantage.css"/>
+<style>
+  /* Client-Viewer-only chrome (everything else comes from vantage.css). */
+  .cv-topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+    padding:11px 22px;background:rgba(252,251,248,.92);backdrop-filter:saturate(1.4) blur(8px);
+    border-bottom:1px solid var(--line)}
+  .cv-lockup{display:flex;align-items:center;gap:9px;min-width:0}
+  .cv-lockup .logo{font:800 19px/1 'Bricolage Grotesque',sans-serif;color:var(--ink);letter-spacing:-.01em}
+  .cv-lockup .logo .dot{color:var(--accent)}
+  .cv-lockup .by{font:500 11.5px Inter;color:var(--ink-faint);white-space:nowrap}
+  .cv-nav{display:flex;gap:4px;margin-left:6px}
+  .cv-nav button{font:600 12.5px Inter;color:var(--ink-soft);background:none;border:0;cursor:pointer;
+    padding:6px 12px;border-radius:8px}
+  .cv-nav button.on{background:var(--ink);color:#fff}
+  .cv-prepared{margin-left:auto;display:flex;align-items:center;gap:12px;min-width:0}
+  .cv-prepared .for{text-align:right;min-width:0}
+  .cv-prepared .for .lbl{font:600 9.5px Inter;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint)}
+  .cv-prepared .for .nm{font:700 14px 'Bricolage Grotesque',sans-serif;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}
+  .cv-prepared .clogo{height:34px;max-width:140px;object-fit:contain}
+  .cv-prepared .sep{width:1px;height:26px;background:var(--line-2)}
+
+  /* passcode gate */
+  .cv-gate{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(120% 120% at 50% 0%,#1b2a4a 0%,#0f1626 60%,#0a0f1a 100%);padding:24px}
+  .cv-gate-card{width:min(420px,100%);background:var(--paper-2);border:1px solid var(--line);border-radius:18px;
+    padding:30px 30px 26px;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+  .cv-gate-card .logo{font:800 26px/1 'Bricolage Grotesque',sans-serif;color:var(--ink)}
+  .cv-gate-card .logo .dot{color:var(--accent)}
+  .cv-gate-card .by{font:500 12px Inter;color:var(--ink-faint);margin-top:4px}
+  .cv-gate-card h1{font:700 18px 'Bricolage Grotesque',sans-serif;color:var(--ink);margin:22px 0 4px}
+  .cv-gate-card p{font:400 13px/1.5 Inter;color:var(--ink-soft);margin:0 0 16px}
+  .cv-gate-card label{font:600 11px Inter;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-faint);display:block;margin-bottom:6px}
+  .cv-gate-card input{width:100%;font:500 15px Inter;padding:11px 13px;border:1px solid var(--line-2);
+    border-radius:10px;background:#fff;color:var(--ink);box-sizing:border-box}
+  .cv-gate-card input:focus{outline:none;border-color:var(--accent)}
+  .cv-gate-card button{width:100%;margin-top:14px;font:600 14px Inter;color:#fff;background:var(--building);
+    border:0;border-radius:10px;padding:12px;cursor:pointer}
+  .cv-gate-card button:disabled{opacity:.6;cursor:default}
+  .cv-gate-err{font:500 12.5px Inter;color:#C2453F;margin-top:10px;min-height:16px}
+
+  /* scoped landing */
+  .cv-land{display:grid;grid-template-columns:minmax(360px,440px) 1fr;height:calc(100vh - 57px)}
+  .cv-land-list{overflow:auto;padding:26px 26px 40px;border-right:1px solid var(--line)}
+  .cv-land-list h1{font:700 26px 'Bricolage Grotesque',sans-serif;color:var(--ink);margin:0 0 6px;letter-spacing:-.01em}
+  .cv-land-list .sub{font:400 13px/1.5 Inter;color:var(--ink-soft);margin-bottom:20px}
+  .cv-land-map{position:relative}
+  .cv-land-map #landMap{position:absolute;inset:0}
+  .cv-bc{display:flex;gap:14px;align-items:center;padding:15px 16px;border:1px solid var(--line);
+    border-radius:14px;background:var(--paper-2);margin-bottom:12px;cursor:pointer;transition:border-color .15s,transform .1s}
+  .cv-bc:hover{border-color:var(--line-2);transform:translateY(-1px)}
+  .cv-bc .rank{font:700 15px 'JetBrains Mono',monospace;color:var(--ink-faint);width:26px;text-align:center}
+  .cv-bc .nm{font:700 15px 'Bricolage Grotesque',sans-serif;color:var(--ink)}
+  .cv-bc .loc{font:500 12px Inter;color:var(--ink-faint);margin-top:1px}
+  .cv-bc .meta2{font:500 12px Inter;color:var(--ink-soft);margin-top:7px}
+  .cv-bc .open{font:600 12px Inter;color:var(--accent);margin-left:auto;white-space:nowrap}
+  .cv-disc{font:400 11.5px/1.5 Inter;color:var(--ink-faint);margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+
+  /* commute (compact, client-editable) */
+  .cv-commute{display:grid;grid-template-columns:minmax(320px,380px) 1fr;height:calc(100vh - 57px)}
+  .cv-cm-in{overflow:auto;padding:24px;border-right:1px solid var(--line)}
+  .cv-cm-in h1{font:700 22px 'Bricolage Grotesque',sans-serif;color:var(--ink);margin:0 0 6px}
+  .cv-cm-in .sub{font:400 12.5px/1.5 Inter;color:var(--ink-soft);margin-bottom:14px}
+  .cv-cm-priv{display:flex;gap:8px;font:400 11.5px/1.45 Inter;color:var(--ink-soft);background:var(--paper-2);
+    border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:16px}
+  .cv-cm-in label.fld{font:600 11px Inter;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-faint);display:block;margin:12px 0 6px}
+  .cv-cm-in textarea{width:100%;min-height:110px;font:500 13px Inter;padding:10px 12px;border:1px solid var(--line-2);
+    border-radius:10px;background:#fff;resize:vertical;box-sizing:border-box}
+  .cv-cm-in input[type=time]{font:500 13px Inter;padding:8px 10px;border:1px solid var(--line-2);border-radius:8px}
+  .cv-cm-btn{font:600 13.5px Inter;border:0;border-radius:10px;padding:11px 14px;cursor:pointer;margin-top:14px;width:100%}
+  .cv-cm-btn.primary{background:var(--building);color:#fff}
+  .cv-cm-btn.ghost{background:none;border:1px solid var(--line-2);color:var(--ink-soft);margin-top:8px}
+  .cv-cm-note{font:500 12px Inter;color:var(--ink-soft);margin-top:10px;min-height:16px}
+  .cv-cm-res{overflow:auto;padding:0}
+  .cv-cm-map{position:relative}
+  .cv-cm-map #cmvMap{position:absolute;inset:0}
+  .cv-cm-row{display:flex;align-items:center;gap:12px;padding:13px 18px;border-bottom:1px solid var(--line)}
+  .cv-cm-row .dot{width:12px;height:12px;border-radius:50%;flex:none}
+  .cv-cm-row .nm{font:700 14px 'Bricolage Grotesque',sans-serif;color:var(--ink)}
+  .cv-cm-row .loc{font:500 11.5px Inter;color:var(--ink-faint)}
+  .cv-cm-row .big{margin-left:auto;text-align:right}
+  .cv-cm-row .big .v{font:700 17px 'JetBrains Mono',monospace;color:var(--ink)}
+  .cv-cm-row .big .k{font:500 10px Inter;color:var(--ink-faint)}
+  .cv-cm-empty{padding:40px 24px;text-align:center;color:var(--ink-faint);font:500 13px Inter}
+  .cv-cm-baked{font:600 10.5px Inter;color:var(--accent);background:rgba(45,110,126,.1);border-radius:20px;padding:2px 9px}
+  /* the viewer has no priobar, so reclaim the height the Cockpit reserves for it */
+  #viewDetail.detail{height:calc(100vh - 57px)}
+  @media(max-width:900px){.cv-land,.cv-commute{grid-template-columns:1fr;height:auto}.cv-land-map,.cv-cm-map{height:50vh}#viewDetail.detail{height:auto}}
+</style>
+</head>
+<body>
+
+<!-- ============ PASSCODE GATE ============ -->
+<div class="cv-gate" id="gate">
+  <div class="cv-gate-card">
+    <div class="logo">Vantage<span class="dot">.</span></div>
+    <div class="by">Office search, prepared by Havill &amp; Co.</div>
+    <h1 id="gateTitle">This shortlist is passcode-protected</h1>
+    <p id="gateSub">Enter the passcode your broker shared with you to view the selected buildings.</p>
+    <label for="gatePass">Passcode</label>
+    <input id="gatePass" type="password" autocomplete="off" placeholder="••••••" />
+    <button id="gateBtn">View shortlist</button>
+    <div class="cv-gate-err" id="gateErr"></div>
+  </div>
+</div>
+
+<!-- ============ APP (hidden until unlocked) ============ -->
+<div id="app" style="display:none">
+  <div class="cv-topbar">
+    <div class="cv-lockup">
+      <span class="logo">Vantage<span class="dot">.</span></span>
+      <span class="by">by Havill &amp; Co.</span>
+    </div>
+    <div class="cv-nav" id="cvNav">
+      <button data-v="buildings" class="on">Buildings</button>
+      <button data-v="commute">Commute</button>
+    </div>
+    <div class="cv-prepared" id="cvPrepared"></div>
+  </div>
+
+  <!-- LANDING -->
+  <section id="viewBuildings">
+    <div class="cv-land">
+      <div class="cv-land-list">
+        <h1 id="landTitle">Your shortlist</h1>
+        <div class="sub" id="landSub"></div>
+        <div id="landCards"></div>
+        <div class="cv-disc"><b>What's real:</b> every amenity, rating, and walk distance is pulled from live Google Places. <b>Illustrative:</b> available suites and asking rents are sample figures for discussion — your broker will confirm current terms.</div>
+      </div>
+      <div class="cv-land-map"><div id="landMap"></div>
+        <div class="maptag"><span><i style="background:var(--building)"></i>Building</span><span>tap a marker to open</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DETAIL (dossier — identical IDs to the Cockpit, painted by vantage-view.js) -->
+  <section class="detail" id="viewDetail" style="display:none">
+    <div class="dsr-bar">
+      <span class="dsr-name" id="dsrName"></span>
+      <button class="dsr-back" id="dsrBack">Back to shortlist
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+      </button>
+    </div>
+    <div class="dsr-hero" id="dHero"></div>
+    <div class="dsr-specs" id="dSpecs"></div>
+    <div class="dsr-body">
+      <section class="dsr-sec">
+        <div class="dsr-h"><h3 class="display">Available spaces</h3><span class="sample-tag">Sample</span></div>
+        <div id="dSuites" class="dsr-suites"></div>
+      </section>
+      <section class="dsr-sec">
+        <div class="dsr-h"><h3 class="display">Tenants in the building</h3><span class="sample-tag">Sample</span></div>
+        <div id="dTenants"></div>
+      </section>
+      <section class="dsr-sec">
+        <div class="dsr-h"><h3 class="display">Neighborhood &amp; access</h3></div>
+        <div class="dsr-nbhd">
+          <div class="dsr-nbhd-left">
+            <div class="scorechips" id="dScores"></div>
+            <div class="access" id="dAccess" style="display:none"></div>
+            <div class="read"><div class="e"><span class="ai-dot"></span>Neighborhood read</div><p id="dRead"></p></div>
+            <div class="catdd" id="catDd" style="margin-top:14px">
+              <button class="catdd-btn" id="catDdBtn" type="button" aria-expanded="false">
+                <span id="catDdLabel">All categories</span>
+                <svg class="catdd-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <div class="catdd-panel" id="catDdPanel">
+                <label class="catdd-row catdd-allrow"><input type="checkbox" id="catDdAll" checked><span class="catdd-name">Select all</span></label>
+                <div class="catdd-sep"></div>
+                <div id="catDdList"></div>
+              </div>
+            </div>
+            <div class="list-head"><h3 class="display">Walkable amenities</h3><span class="count" id="dCount"></span></div>
+            <div id="dList" class="dsr-amlist"></div>
+          </div>
+          <div class="dsr-map">
+            <div id="detailMap"></div>
+            <div class="mapctrl">
+              <div class="layertog" id="layertog">
+                <button data-layer="map" class="on">Map</button>
+                <button data-layer="sat">Satellite</button>
+              </div>
+              <button class="svbtn" id="svOpenBtn" title="Look around this building">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path></svg>
+                Street View
+              </button>
+            </div>
+            <div class="maptag" id="detailLegend"></div>
+            <div class="svpanel" id="svPanel">
+              <div class="svhead">
+                <div style="flex:1;min-width:0"><div class="svt" id="svTitle">Street View</div><div class="svloc" id="svLoc"></div></div>
+                <button class="lk" id="svPop" title="Open full Street View in Google Maps">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                  Open in Google
+                </button>
+                <button class="x" id="svClose" aria-label="Close Street View">×</button>
+              </div>
+              <div class="svbody" id="svBody"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="dsr-sec" id="dLeaseSec"><div class="dsr-twocol" id="dLeaseWrap"></div></section>
+      <section class="dsr-sec" id="dMediaSec"></section>
+    </div>
+    <div class="lightbox" id="lightbox">
+      <button class="lb-x" id="lbX" aria-label="Close">×</button>
+      <button class="lb-nav lb-prev" id="lbPrev" aria-label="Previous">‹</button>
+      <button class="lb-nav lb-next" id="lbNext" aria-label="Next">›</button>
+      <img id="lbImg" src="" alt="">
+      <div class="lb-cap" id="lbCap"></div>
+    </div>
+  </section>
+
+  <!-- COMMUTE -->
+  <section id="viewCommute" style="display:none">
+    <div class="cv-commute">
+      <aside class="cv-cm-in">
+        <h1>Your team's commute</h1>
+        <div class="sub">See how each building drives from your team's homes. Add addresses below — they stay in your browser for this session only.</div>
+        <div class="cv-cm-priv">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex:none"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <span>Addresses are sent only to Google for the lookup, never saved, and gone when you refresh.</span>
+        </div>
+        <label class="fld">Home addresses (one per line)</label>
+        <textarea id="cmvPaste" placeholder="1200 Montana Ave, Santa Monica&#10;90291&#10;456 Rose Ave, Venice"></textarea>
+        <label class="fld">Morning departure</label>
+        <input type="time" id="cmvTime" value="08:30">
+        <button class="cv-cm-btn primary" id="cmvRun">Calculate drive times</button>
+        <button class="cv-cm-btn ghost" id="cmvClear">Clear</button>
+        <div class="cv-cm-note" id="cmvNote"></div>
+      </aside>
+      <aside class="cv-cm-res" id="cmvRes"></aside>
+      <div class="cv-cm-map"><div id="cmvMap"></div></div>
+    </div>
+  </section>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="assets/vantage-view.js"></script>
+<script>
+(function(){
+  "use strict";
+  var PKG=null, slug=null, pass=null, landMap=null, cmvMap=null, cmvLayer=null, cmvTeam=[], cmvRes=null, cmvSel=null;
+
+  function qs(k){ return new URLSearchParams(location.search).get(k); }
+  function esc(s){ return VV.esc(s); }
+
+  // ---- passcode gate ----
+  function unlock(){
+    var btn=document.getElementById('gateBtn'), err=document.getElementById('gateErr');
+    pass=document.getElementById('gatePass').value;
+    if(!pass){ err.textContent='Enter the passcode.'; return; }
+    btn.disabled=true; btn.textContent='Checking…'; err.textContent='';
+    fetch('/.netlify/functions/get-package',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slug:slug,passcode:pass})})
+      .then(function(r){ return r.text().then(function(t){ var d=null; try{d=JSON.parse(t);}catch(e){} if(!r.ok) throw new Error((d&&d.error)||('Error '+r.status)); return d; }); })
+      .then(function(d){ PKG=d; VV.setCommuteAuth({slug:slug,passcode:pass}); boot(); })
+      .catch(function(e){ btn.disabled=false; btn.textContent='View shortlist';
+        err.textContent=/failed to fetch|networkerror|load failed/i.test(e.message)?'Can’t reach the server. This viewer runs on the deployed site.':e.message; });
+  }
+
+  // ---- boot the app once unlocked ----
+  function boot(){
+    document.getElementById('gate').style.display='none';
+    document.getElementById('app').style.display='block';
+    // co-branded header
+    var p=document.getElementById('cvPrepared'), c=PKG.client||{};
+    p.innerHTML=(c.logoUrl?'<img class="clogo" src="'+esc(c.logoUrl)+'" alt="'+esc(c.name||'')+'" onerror="this.remove()"><span class="sep"></span>':'')+
+      '<div class="for"><div class="lbl">Prepared for</div><div class="nm">'+esc(c.name||'you')+'</div></div>';
+    VV.setData({buildings:PKG.buildings||[], categories:PKG.categories||[], industries:PKG.industries||[]});
+    var n=VV.buildings.length;
+    document.getElementById('landSub').textContent=n+' building'+(n===1?'':'s')+' selected for you across Santa Monica. Open any one for spaces, rents, the neighborhood, and a walkable-amenity map.';
+    document.title='Vantage — prepared for '+(c.name||'you');
+    renderLanding(); wireNav();
+    setTimeout(function(){ if(landMap) landMap.invalidateSize(); },80);
+  }
+
+  // ---- landing ----
+  function renderLanding(){
+    var ranked=VV.buildings.slice().sort(function(a,b){return VV.matchScore(b)-VV.matchScore(a);});
+    var wrap=document.getElementById('landCards'); wrap.innerHTML='';
+    ranked.forEach(function(b,i){
+      var card=document.createElement('div'); card.className='cv-bc';
+      card.onclick=function(){ openBuilding(b.id); };
+      card.innerHTML='<div class="rank">'+(i+1)+'</div>'+
+        '<div style="min-width:0"><div class="nm">'+esc(b.name)+'</div><div class="loc">'+esc(b.submarket)+'</div>'+
+          '<div class="meta2">'+(b.avail?'Avail <b>'+esc(b.avail)+' SF</b>':'')+(b.avail&&b.rent?' · ':'')+(b.rent?esc(b.rent):'')+'</div></div>'+
+        '<div class="open">Open →</div>';
+      wrap.appendChild(card);
+    });
+    if(!landMap){
+      landMap=L.map('landMap',{zoomControl:true,scrollWheelZoom:true}).setView([34.022,-118.472],13);
+      L.tileLayer(VV.TILE,{attribution:VV.ATTR,subdomains:'abcd',maxZoom:20}).addTo(landMap);
+    }
+    var grp=[];
+    ranked.forEach(function(b,i){
+      var m=L.marker([b.lat,b.lng],{icon:VV.buildingIcon(i+1)}).addTo(landMap);
+      m.bindPopup('<div class="pop-nm">'+esc(b.name)+'</div><div class="pop-sub">'+esc(b.submarket)+'</div>');
+      m.on('click',function(){ openBuilding(b.id); });
+      grp.push([b.lat,b.lng]);
+    });
+    if(grp.length) landMap.fitBounds(grp,{padding:[55,55],maxZoom:15});
+  }
+
+  // ---- nav ----
+  function show(view){
+    ['buildings','detail','commute'].forEach(function(v){
+      var el=document.getElementById('view'+v.charAt(0).toUpperCase()+v.slice(1));
+      if(el) el.style.display=(v===view)?'block':'none';
+    });
+    document.querySelectorAll('#cvNav button').forEach(function(b){ b.classList.toggle('on',b.dataset.v===view||(view==='detail'&&b.dataset.v==='buildings')); });
+    if(view==='buildings') setTimeout(function(){ if(landMap) landMap.invalidateSize(); },60);
+    if(view==='commute'){ renderCommute(); setTimeout(function(){ if(cmvMap) cmvMap.invalidateSize(); },60); }
+  }
+  function wireNav(){
+    document.getElementById('cvNav').addEventListener('click',function(e){ var b=e.target.closest('button'); if(b) show(b.dataset.v); });
+    document.getElementById('dsrBack').addEventListener('click',function(){ show('buildings'); });
+  }
+  function openBuilding(id){
+    show('detail');
+    VV.openDossier(id);
+    document.getElementById('viewDetail').scrollTop=0;
+    setTimeout(function(){ VV.invalidateMap(); },90);
+  }
+
+  // ---- commute (compact, client-driven; baked results shown if present) ----
+  function cmvDepartureISO(){
+    var t=(document.getElementById('cmvTime').value||'08:30').split(':');
+    var d=new Date(); d.setHours(+t[0]||8,+t[1]||30,0,0);
+    if(d.getTime()<Date.now()+60000) d.setDate(d.getDate()+1);
+    var dow=d.getDay(); if(dow===6) d.setDate(d.getDate()+2); else if(dow===0) d.setDate(d.getDate()+1);
+    return d.toISOString();
+  }
+  function note(m){ var n=document.getElementById('cmvNote'); n.textContent=m||''; }
+  function renderCommute(){
+    var el=document.getElementById('cmvRes');
+    var dests=VV.dests();
+    if(!cmvRes){
+      // baked (if the broker pre-ran it) or an empty prompt
+      var baked=PKG.bakedCommute&&PKG.bakedCommute.byBuilding;
+      if(baked){
+        el.innerHTML='<div style="padding:14px 18px;border-bottom:1px solid var(--line);font:500 12px Inter;color:var(--ink-soft)">Pre-calculated by your broker <span class="cv-cm-baked">baked</span></div>'+
+          dests.slice().sort(function(a,b){return (baked[a.id]==null?999:baked[a.id])-(baked[b.id]==null?999:baked[b.id]);}).map(function(b){
+            var m=baked[b.id];
+            return rowHtml(b,m);
+          }).join('');
+      } else {
+        el.innerHTML='<div class="cv-cm-empty">Add your team’s home addresses on the left and calculate to see drive times to each building.</div>';
+      }
+      drawCmvMap();
+      return;
+    }
+    el.innerHTML=dests.slice().sort(function(a,b){ var ma=cmvRes.stats[a.id].median, mb=cmvRes.stats[b.id].median; return (ma==null?999:ma)-(mb==null?999:mb); }).map(function(b){
+      return rowHtml(b,cmvRes.stats[b.id].median);
+    }).join('');
+    drawCmvMap();
+  }
+  function rowHtml(b,min){
+    return '<div class="cv-cm-row"><span class="dot" style="background:'+VV.cmColor(min)+'"></span>'+
+      '<div><div class="nm">'+esc(b.name)+'</div><div class="loc">'+esc(b.submarket)+'</div></div>'+
+      '<div class="big"><div class="v">'+(min!=null?Math.round(min)+'m':'—')+'</div><div class="k">median drive</div></div></div>';
+  }
+  function drawCmvMap(){
+    if(!cmvMap){
+      cmvMap=L.map('cmvMap',{zoomControl:true,scrollWheelZoom:true}).setView([34.02,-118.46],11);
+      L.tileLayer(VV.TILE,{attribution:VV.ATTR,subdomains:'abcd',maxZoom:20}).addTo(cmvMap);
+      cmvLayer=L.layerGroup().addTo(cmvMap);
+    }
+    cmvLayer.clearLayers();
+    var pts=[];
+    VV.dests().forEach(function(b){
+      var m=L.marker([b.lat,b.lng],{icon:VV.buildingIcon('')}).addTo(cmvLayer);
+      m.bindPopup('<div class="pop-nm">'+esc(b.name)+'</div><div class="pop-sub">'+esc(b.submarket)+'</div>');
+      pts.push([b.lat,b.lng]);
+    });
+    cmvTeam.forEach(function(t){
+      if(t.lat==null) return;
+      var ic=L.divIcon({className:'',iconSize:[16,16],iconAnchor:[8,8],html:'<div style="width:16px;height:16px;border-radius:50%;background:#55606F;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)"></div>'});
+      var m=L.marker([t.lat,t.lng],{icon:ic}).addTo(cmvLayer);
+      m.bindPopup('<div class="pop-sub">'+esc(t.raw||'Home')+'</div>');
+      pts.push([t.lat,t.lng]);
+    });
+    if(pts.length) cmvMap.fitBounds(pts,{padding:[50,50],maxZoom:13});
+  }
+  function cmvRun(){
+    var lines=(document.getElementById('cmvPaste').value||'').split('\n').map(function(s){return s.trim();}).filter(Boolean);
+    if(!lines.length){ note('Add at least one home address.'); return; }
+    if(lines.length>100){ note('Please keep it to 100 homes.'); return; }
+    cmvTeam=lines.map(function(l){return {raw:l,lat:null,lng:null};});
+    var btn=document.getElementById('cmvRun'); btn.disabled=true; btn.textContent='Looking up…'; note('');
+    var iso=cmvDepartureISO();
+    VV.callCommute({action:'geocode',items:lines}).then(function(res){
+      (res.points||[]).forEach(function(p,i){ if(p&&p.ok){cmvTeam[i].lat=p.lat;cmvTeam[i].lng=p.lng;} });
+      var origins=[],idx=[]; cmvTeam.forEach(function(t,i){ if(t.lat!=null){origins.push({lat:t.lat,lng:t.lng});idx.push(i);} });
+      if(!origins.length) throw new Error('None of those addresses could be located.');
+      btn.textContent='Calculating…';
+      return VV.callCommute({action:'matrix',origins:origins,destinations:VV.dests().map(function(d){return {lat:d.lat,lng:d.lng};}),departureTime:iso})
+        .then(function(mx){ return {durations:mx.durations,idx:idx}; });
+    }).then(function(out){
+      var dests=VV.dests(), stats={};
+      dests.forEach(function(b,j){
+        var times=out.durations.map(function(r){return r[j];}).filter(function(v){return v!=null;}).map(function(s){return s/60;});
+        stats[b.id]={median:VV.median(times),n:times.length};
+      });
+      cmvRes={stats:stats};
+      note(out.idx.length+' of '+cmvTeam.length+' homes located.');
+      renderCommute();
+    }).catch(function(e){ note(e.message||String(e)); })
+      .then(function(){ btn.disabled=false; btn.textContent='Calculate drive times'; });
+  }
+
+  // ---- init ----
+  slug=qs('c');
+  if(!slug || !/^[A-Za-z0-9]{6,40}$/.test(slug)){
+    document.getElementById('gateTitle').textContent='Link not found';
+    document.getElementById('gateSub').textContent='This link is missing or malformed. Please use the exact link your broker sent you.';
+    document.getElementById('gatePass').style.display='none';
+    document.getElementById('gateBtn').style.display='none';
+  }
+  document.getElementById('gateBtn').addEventListener('click',unlock);
+  document.getElementById('gatePass').addEventListener('keydown',function(e){ if(e.key==='Enter') unlock(); });
+  document.getElementById('cmvRun')&&document.getElementById('cmvRun').addEventListener('click',cmvRun);
+  document.getElementById('cmvClear')&&document.getElementById('cmvClear').addEventListener('click',function(){ cmvTeam=[]; cmvRes=null; document.getElementById('cmvPaste').value=''; note(''); renderCommute(); });
+})();
+</script>
+</body>
+</html>
