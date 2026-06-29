@@ -57,6 +57,10 @@ exports.handler = async (event) => {
     return json(500, { error: "Could not save the package: " + (e && e.message ? e.message : "blob store error") });
   }
 
-  const site = process.env.URL || ("https://" + (event.headers && event.headers.host ? event.headers.host : ""));
+  // Build the link from the domain the broker is actually on (survives site
+  // renames and custom domains without needing a redeploy); fall back to env.
+  const h = event.headers || {};
+  const host = h["x-forwarded-host"] || h.host || "";
+  const site = host ? ("https://" + host) : (process.env.URL || "");
   return json(200, { slug, url: site + "/client.html?c=" + slug });
 };
