@@ -40,17 +40,16 @@ exports.handler = async (event) => {
 
   const now = new Date().toISOString();
   try {
+    // APPEND-ONLY: every event is its own immutable key, so concurrent/rapid
+    // events can never overwrite each other (a read-modify-write aggregate would
+    // lose updates on the eventually-consistent store). get-stats aggregates by
+    // listing these keys. Key = "<slug>/<isoTs>_<type>_<building|->_<rand>"
+    // (slug/type/rand have no underscores and ISO timestamps have none either,
+    // so the parts parse cleanly; building ids are hyphen-slugs, never "_").
     const store = getStore("client-activity");
-    // strong consistency on the READ: each event must see the prior one, else
-    // rapid read-modify-write updates overwrite each other and counts are lost.
-    let a = await store.get(slug, { type: "json", consistency: "strong" });
-    if (!a || typeof a !== "object") a = { slug, opens: 0, views: 0, firstSeen: now, lastSeen: now, buildings: {}, log: [] };
-    a.lastSeen = now;
-    if (!a.firstSeen) a.firstSeen = now;
-    if (type === "open") a.opens = (a.opens || 0) + 1;
-    else { a.views = (a.views || 0) + 1; if (building) a.buildings[building] = (a.buildings[building] || 0) + 1; }
-    a.log = (a.log || []).concat([{ ts: now, type: type, b: building || undefined }]).slice(-100); // keep last 100
-    await store.setJSON(slug, a);
+    const rand = crypto.randomBytes(4).toString("hex");
+    const key = slug + "/" + now + "_" + type + "_" + (building || "-") + "_" + rand;
+    await store.setJSON(key, { ts: now, type: type, building: building || null });
   } catch (e) { /* tracking is best-effort; never fail the client over it */ }
 
   return json(200, { ok: true });

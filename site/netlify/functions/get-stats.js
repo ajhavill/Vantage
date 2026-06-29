@@ -28,8 +28,23 @@ exports.handler = async (event) => {
   try {
     const store = getStore("client-activity");
     for (const slug of slugs) {
-      try { stats[slug] = await store.get(slug, { type: "json", consistency: "strong" }); }
-      catch (e) { stats[slug] = null; }
+      try {
+        // list the append-only event keys for this package and aggregate them
+        const res = await store.list({ prefix: slug + "/" });
+        const blobs = (res && res.blobs) || [];
+        if (!blobs.length) { stats[slug] = null; continue; }
+        let opens = 0, views = 0, firstSeen = null, lastSeen = null;
+        const buildings = {};
+        for (const b of blobs) {
+          const segs = String(b.key).slice(slug.length + 1).split("_"); // [isoTs, type, building, rand]
+          const ts = segs[0], type = segs[1], bld = segs[2];
+          if (type === "open") opens++;
+          else if (type === "view") { views++; if (bld && bld !== "-") buildings[bld] = (buildings[bld] || 0) + 1; }
+          if (!firstSeen || ts < firstSeen) firstSeen = ts;
+          if (!lastSeen || ts > lastSeen) lastSeen = ts;
+        }
+        stats[slug] = { slug, opens, views, firstSeen, lastSeen, buildings };
+      } catch (e) { stats[slug] = null; }
     }
   } catch (e) {
     return json(500, { error: "Could not read activity: " + (e && e.message ? e.message : "blob store error") });
