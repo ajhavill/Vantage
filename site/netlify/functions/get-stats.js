@@ -26,7 +26,7 @@ exports.handler = async (event) => {
 
   const stats = {};
   try {
-    const store = getStore("client-activity");
+    const store = getStore({ name: "client-activity", consistency: "strong" });
     for (const slug of slugs) {
       try { stats[slug] = await store.get(slug, { type: "json" }); }
       catch (e) { stats[slug] = null; }

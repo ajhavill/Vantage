@@ -40,7 +40,9 @@ exports.handler = async (event) => {
 
   const now = new Date().toISOString();
   try {
-    const store = getStore("client-activity");
+    // strong consistency: each event must see the prior one, else rapid
+    // read-modify-write updates overwrite each other and counts are lost.
+    const store = getStore({ name: "client-activity", consistency: "strong" });
     let a = await store.get(slug, { type: "json" });
     if (!a || typeof a !== "object") a = { slug, opens: 0, views: 0, firstSeen: now, lastSeen: now, buildings: {}, log: [] };
     a.lastSeen = now;
