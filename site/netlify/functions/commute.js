@@ -15,7 +15,7 @@
 // at 100 elements (origins x destinations) per request — so origins are batched.
 // Addresses are used transiently for geocoding and are never logged or stored.
 
-const { getStore } = require("@netlify/blobs");
+const { getStore, connectLambda } = require("@netlify/blobs");
 const crypto = require("crypto");
 
 const KEY = process.env.GOOGLE_ROUTES_KEY;
@@ -45,6 +45,9 @@ async function authorize(body) {
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") return json(405, { error: "Use POST." });
   if (!KEY) return json(500, { error: "Server is missing GOOGLE_ROUTES_KEY. Set it in Netlify → Site settings → Environment variables." });
+  connectLambda(event); // wire up Netlify Blobs context for the slug+passcode auth path
+
+
 
   let body;
   try { body = JSON.parse(event.body || "{}"); }

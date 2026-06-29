@@ -4,7 +4,7 @@
 // correct. There is intentionally NO way to list packages or buildings. The
 // passcode hash + salt are stripped before returning.
 
-const { getStore } = require("@netlify/blobs");
+const { getStore, connectLambda } = require("@netlify/blobs");
 const crypto = require("crypto");
 
 const json = (statusCode, obj) => ({ statusCode, headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) });
@@ -20,6 +20,7 @@ function safeEq(a, b) {
 
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") return json(405, { error: "Use POST." });
+  connectLambda(event); // wire up Netlify Blobs context for this Lambda-style function
 
   let body;
   try { body = JSON.parse(event.body || "{}"); } catch (e) { return json(400, { error: "Malformed request body." }); }

@@ -5,7 +5,7 @@
 // the whole market. Gated by BROKER_SECRET so randoms can't create packages.
 // The passcode is stored HASHED (PBKDF2 + per-package salt), never in plaintext.
 
-const { getStore } = require("@netlify/blobs");
+const { getStore, connectLambda } = require("@netlify/blobs");
 const crypto = require("crypto");
 
 const json = (statusCode, obj) => ({ statusCode, headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) });
@@ -23,6 +23,7 @@ function hashPass(passcode, salt) {
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") return json(405, { error: "Use POST." });
   if (!process.env.BROKER_SECRET) return json(500, { error: "Server is missing BROKER_SECRET (set it in Netlify env vars)." });
+  connectLambda(event); // wire up Netlify Blobs context for this Lambda-style function
 
   let body;
   try { body = JSON.parse(event.body || "{}"); } catch (e) { return json(400, { error: "Malformed request body." }); }
