@@ -542,3 +542,25 @@
   .act-pass b{font:600 12px 'JetBrains Mono',monospace;color:var(--ink-soft)}
   .act-forget{margin-left:auto;font:600 11.5px Inter;color:var(--ink-faint);background:none;border:0;cursor:pointer}
   .act-forget:hover{color:#C2453F}
+
+  /* ---- Broker login gate (Cockpit) ---- */
+  #authGate{position:fixed;inset:0;z-index:500;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(120% 120% at 50% 0%,#1b2a4a 0%,#0f1626 60%,#0a0f1a 100%);padding:24px}
+  .ag-card{width:min(400px,100%);background:var(--paper-2);border:1px solid var(--line);border-radius:18px;
+    padding:30px 30px 24px;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+  .ag-logo{font:800 26px/1 'Bricolage Grotesque',sans-serif;color:var(--ink)}
+  .ag-logo .dot{color:var(--accent)}
+  .ag-by{font:500 12px Inter;color:var(--ink-faint);margin-top:4px}
+  .ag-card h1{font:700 18px 'Bricolage Grotesque',sans-serif;color:var(--ink);margin:22px 0 14px}
+  .ag-card label{font:600 11px Inter;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-faint);display:block;margin:0 0 6px}
+  .ag-card input{width:100%;font:500 15px Inter;padding:11px 13px;border:1px solid var(--line-2);border-radius:10px;
+    background:#fff;color:var(--ink);box-sizing:border-box;margin-bottom:14px}
+  .ag-card input:focus{outline:none;border-color:var(--accent)}
+  .ag-card button{width:100%;font:600 14px Inter;color:#fff;background:var(--building);border:0;border-radius:10px;padding:12px;cursor:pointer}
+  .ag-card button:disabled{opacity:.6;cursor:default}
+  .ag-err{font:500 12.5px Inter;color:#C2453F;margin-top:10px;min-height:16px}
+  .ag-note{font:400 11.5px Inter;color:var(--ink-faint);margin-top:14px;text-align:center}
+  .userchip{display:inline-flex;align-items:center;gap:8px;font:500 12px Inter;color:var(--ink-soft)}
+  .userchip .uemail{max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .userchip #signOutBtn{font:600 11.5px Inter;color:var(--ink-soft);background:var(--paper-2);border:1px solid var(--line-2);border-radius:8px;padding:5px 10px;cursor:pointer;width:auto}
+  .userchip #signOutBtn:hover{border-color:var(--accent);color:var(--accent)}

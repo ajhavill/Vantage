@@ -13,6 +13,22 @@
 </head>
 <body>
 
+<!-- LOGIN GATE (broker portal) — visible by default; hidden once authenticated -->
+<div id="authGate">
+  <div class="ag-card">
+    <div class="ag-logo">Vantage<span class="dot">.</span></div>
+    <div class="ag-by">Broker portal · Havill &amp; Co.</div>
+    <h1>Sign in</h1>
+    <label for="agEmail">Email</label>
+    <input id="agEmail" type="email" autocomplete="username" placeholder="you@havillco.com">
+    <label for="agPass">Password</label>
+    <input id="agPass" type="password" autocomplete="current-password" placeholder="••••••••">
+    <button id="agBtn">Sign in</button>
+    <div class="ag-err" id="agErr"></div>
+    <div class="ag-note">Access is invite-only. Need an account? Ask your administrator.</div>
+  </div>
+</div>
+
 <div class="topbar">
   <div class="brand" onclick="showPortfolio()">
     <span class="logo">Vantage<span class="dot">.</span></span>
@@ -40,6 +56,10 @@
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
     Client package
   </button>
+  <span class="userchip" id="userChip" style="display:none">
+    <span class="uemail" id="userEmail"></span>
+    <button id="signOutBtn" title="Sign out">Sign out</button>
+  </span>
   <span class="pill">Concept prototype</span>
 </div>
 
@@ -1589,6 +1609,49 @@
   })();
 
   loadData();
+})();
+</script>
+
+<!-- ============ SUPABASE AUTH (broker login gate) ============ -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(function(){
+  var SUPA_URL  = "https://siaoqjvvxuckyxpxftwt.supabase.co";
+  var SUPA_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNpYW9xanZ2eHVja3l4cHhmdHd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2OTU5MTMsImV4cCI6MjA5ODI3MTkxM30.HgWjVlB9e0rYgX-MCTee16UV5tZ6m-pCXXjwY1cu3b0";
+  var gate=document.getElementById('authGate');
+  function showApp(session){
+    gate.style.display='none';
+    var chip=document.getElementById('userChip'), em=document.getElementById('userEmail');
+    if(chip){ chip.style.display='inline-flex'; em.textContent=(session&&session.user&&session.user.email)||''; }
+  }
+  function showLogin(){
+    gate.style.display='flex';
+    var chip=document.getElementById('userChip'); if(chip) chip.style.display='none';
+  }
+  if(!window.supabase){ // library failed to load — don't lock the user out with a broken gate
+    var err=document.getElementById('agErr'); if(err) err.textContent='Could not reach the login service. Check your connection and refresh.';
+    return;
+  }
+  var sb=window.supabase.createClient(SUPA_URL, SUPA_ANON);
+  window.vantageSB=sb; // used by later phases (packages/activity move to Supabase)
+
+  async function login(){
+    var btn=document.getElementById('agBtn'), err=document.getElementById('agErr');
+    var email=(document.getElementById('agEmail').value||'').trim(), pass=document.getElementById('agPass').value||'';
+    if(!email||!pass){ err.textContent='Enter your email and password.'; return; }
+    btn.disabled=true; btn.textContent='Signing in…'; err.textContent='';
+    var res=await sb.auth.signInWithPassword({email:email, password:pass});
+    btn.disabled=false; btn.textContent='Sign in';
+    if(res.error){ err.textContent=(res.error.message||'Sign-in failed.'); return; }
+    // onAuthStateChange handles showApp
+  }
+  document.getElementById('agBtn').addEventListener('click',login);
+  document.getElementById('agPass').addEventListener('keydown',function(e){ if(e.key==='Enter') login(); });
+  var so=document.getElementById('signOutBtn');
+  if(so) so.addEventListener('click',async function(){ await sb.auth.signOut(); location.reload(); });
+
+  sb.auth.onAuthStateChange(function(evt, session){ if(session) showApp(session); else showLogin(); });
+  sb.auth.getSession().then(function(r){ if(r && r.data && r.data.session) showApp(r.data.session); else showLogin(); });
 })();
 </script>
 </body>
