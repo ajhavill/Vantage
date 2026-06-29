@@ -605,3 +605,13 @@
   .q-mscore .l{font:600 9px Inter;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint)}
   .q-detail-actions{margin-top:16px}
   .q-open-pf{font:600 13px Inter;color:#fff;background:var(--accent);border:0;border-radius:10px;padding:11px 18px;cursor:pointer}
+
+  /* ---- Questionnaire full answers (Cockpit detail view) ---- */
+  .q-dhead{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .qa-wrap{border:1px solid var(--line);border-radius:11px;background:var(--paper);padding:8px 14px 12px;margin:10px 0 16px}
+  .qa-sec{font:700 10.5px Inter;letter-spacing:.05em;text-transform:uppercase;color:var(--accent);margin:12px 0 4px;padding-top:9px;border-top:1px solid var(--line)}
+  .qa-sec:first-child{border-top:0;padding-top:2px}
+  .qa-row{display:flex;gap:14px;padding:4px 0;font:500 12.5px Inter;align-items:baseline}
+  .qa-l{flex:0 0 150px;color:var(--ink-soft)}
+  .qa-v{flex:1;color:var(--ink);word-break:break-word}
+  .qa-dim{color:var(--ink-faint)}

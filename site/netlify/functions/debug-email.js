@@ -18,6 +18,15 @@ exports.handler = async (event) => {
     hasSupabaseServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY
   };
 
+  // delete a test intake by slug (cleanup)
+  if (body.action === "deleteintake" && body.slug && process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    try {
+      const k = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      const d = await fetch(process.env.SUPABASE_URL + "/rest/v1/intakes?slug=eq." + encodeURIComponent(String(body.slug)), { method: "DELETE", headers: { apikey: k, Authorization: "Bearer " + k } });
+      out.deleteStatus = d.status;
+    } catch (e) { out.deleteError = String(e && e.message ? e.message : e); }
+  }
+
   // create a test intake owned by the first platform_admin, so we can run a real
   // submit-intake against it and exercise the actual email path.
   if (body.action === "makeintake" && process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {

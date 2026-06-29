@@ -1,0 +1,9 @@
+{
+  "name": "vantage-pdfgen",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Scratch generator for a sample office lease proposal PDF (test artifact).",
+  "dependencies": {
+    "pdfkit": "^0.15.0"
+  }
+}

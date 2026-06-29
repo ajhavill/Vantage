@@ -10,6 +10,28 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
 <link rel="stylesheet" href="assets/vantage.css"/>
+<style>
+  /* Questionnaire PDF: hidden on screen; the only thing shown when printing */
+  #qPrintDoc{display:none}
+  @media print{
+    body{background:#fff}
+    body > *{display:none !important}
+    #qPrintDoc{display:block !important;font-family:Arial,Helvetica,sans-serif;color:#1A2230}
+    @page{margin:15mm}
+    #qPrintDoc .pdq-head{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #1A2230;padding-bottom:8px}
+    #qPrintDoc .pdq-head .logo{font:800 20px Arial,sans-serif}
+    #qPrintDoc .pdq-head .logo span{color:#2D6E7E}
+    #qPrintDoc .pdq-head .meta{font-size:12px;color:#55606F}
+    #qPrintDoc h1{font-size:20px;margin:14px 0 2px}
+    #qPrintDoc h2{font-size:15px;margin:22px 0 6px;border-bottom:1px solid #D2CCBF;padding-bottom:4px}
+    #qPrintDoc .qa-sec{font-weight:700;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:#2D6E7E;margin:14px 0 4px}
+    #qPrintDoc .qa-row{display:flex;gap:14px;padding:3px 0;font-size:12px;border-bottom:1px solid #eee}
+    #qPrintDoc .qa-l{flex:0 0 175px;color:#55606F}
+    #qPrintDoc .qa-v{flex:1}
+    #qPrintDoc .pdq-m{font-size:12px;padding:4px 0;line-height:1.4}
+    #qPrintDoc .pdq-foot{margin-top:18px;font-size:10px;color:#8A93A0}
+  }
+</style>
 </head>
 <body>
 
@@ -289,6 +311,9 @@
     <div id="actBody"></div>
   </div>
 </div>
+
+<!-- questionnaire PDF (built on demand, only visible when printing) -->
+<div id="qPrintDoc"></div>
 
 <!-- client questionnaire modal -->
 <div class="sh-modal" id="qModal">
@@ -1706,27 +1731,48 @@
       return {b:b, score:score, reasons:reasons, flags:flags};
     }).sort(function(x,y){return y.score-x.score;});
   }
-  function qRespSummary(r){
-    var bits=[];
-    function add(l,v){ if(v && (!Array.isArray(v)||v.length)) bits.push('<span class="q-fact"><b>'+l+':</b> '+cmEsc(Array.isArray(v)?v.join(', '):v)+'</span>'); }
-    add('Contact',(r.contactName?r.contactName+' · ':'')+(r.contactEmail||''));
-    add('Industry',r.industry);
-    add('Team',r.headcount?(r.headcount+(r.headcountFuture?' → '+r.headcountFuture:'')+' people'):'');
-    add('SF',r.sf?r.sf+' SF':(r.headcount?'~'+(parseInt(r.headcount,10)*200).toLocaleString()+' SF (est.)':''));
-    add('Budget',r.budget); add('Move-in',r.timeline); add('Lease',r.term);
-    add('Layout',r.layout); add('Build-out',r.buildout); add('Must-haves',r.musthaves); add('Submarkets',r.areas);
-    if(r.amenities){ var pr=weightedCats().filter(function(c){return (r.amenities[c.key]||0)>=2;}).map(function(c){return c.label;}); add('Priorities',pr); }
-    if(r.rosterFileName) add('Roster',r.rosterFileName+' (uploaded)');
-    if(r.notes) add('Notes',r.notes);
-    return bits.join('');
+  // full, exact answers (every field), grouped like the questionnaire
+  var IQ_RATING=['Not important','Nice to have','Important','Must-have'];
+  var IQ_AMEN=[['coffee','Coffee shops'],['dining','Restaurants / dining'],['fitness','Gyms / fitness'],['grocery','Grocery'],['transit','Transit access']];
+  function qFullAnswers(r){
+    function v(x){ if(x===null||x===undefined||x===''||(Array.isArray(x)&&!x.length)) return '<span class="qa-dim">—</span>'; return cmEsc(Array.isArray(x)?x.join(', '):String(x)); }
+    function row(l,val){ return '<div class="qa-row"><span class="qa-l">'+l+'</span><span class="qa-v">'+val+'</span></div>'; }
+    function sec(t){ return '<div class="qa-sec">'+t+'</div>'; }
+    var amen=IQ_AMEN.map(function(a){ var x=(r.amenities&&r.amenities[a[0]]); return a[1]+': '+(x==null?'—':(IQ_RATING[x]||x)); }).join(' &nbsp;·&nbsp; ');
+    return sec('Company')+
+      row('Company',v(r.company))+row('Industry',v(r.industry))+
+      row('Contact name',v(r.contactName))+row('Contact email',v(r.contactEmail))+
+      row('Current team size',v(r.headcount))+row('Expected size (2–3 yrs)',v(r.headcountFuture))+
+      sec('Space needs')+
+      row('Square footage',v(r.sf?r.sf+' SF':''))+row('Parking',v(r.parking))+
+      row('Layout',v(r.layout))+row('Move-in readiness',v(r.buildout))+row('Must-have spaces',v(r.musthaves))+
+      sec('Budget &amp; timing')+
+      row('Target rent',v(r.budget))+row('Move-in timeline',v(r.timeline))+row('Lease term',v(r.term))+
+      sec('Location &amp; lifestyle')+
+      row('Preferred submarkets',v(r.areas))+row('Amenity priorities',amen)+
+      row('Team roster',r.rosterFileName?cmEsc(r.rosterFileName)+' <span class="qa-dim">(uploaded)</span>':'<span class="qa-dim">— none uploaded</span>')+
+      row('Additional notes',v(r.notes));
+  }
+  function qBuildPrintDoc(it){
+    var r=it.responses||{}, matches=matchFromIntake(r).slice(0,8), dateStr='';
+    try{ dateStr=new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}); }catch(e){}
+    document.getElementById('qPrintDoc').innerHTML=
+      '<div class="pdq-head"><div class="logo">Vantage<span>.</span></div><div class="meta">Client questionnaire'+(dateStr?' · '+dateStr:'')+'</div></div>'+
+      '<h1>'+cmEsc(it.company_name||'Client')+'</h1>'+
+      qFullAnswers(r)+
+      '<h2>Best-fit buildings</h2>'+
+      matches.map(function(m,i){ return '<div class="pdq-m"><b>'+(i+1)+'. '+cmEsc(m.b.name)+'</b> — '+cmEsc(m.b.submarket)+' · fit '+m.score+(m.reasons.length?' · '+m.reasons.map(cmEsc).join(', '):'')+'</div>'; }).join('')+
+      '<div class="pdq-foot">Amenity scores reflect live Google Places data. Building stats &amp; rents are illustrative — Havill &amp; Co. will confirm current terms.</div>';
+    window.print();
   }
   function qShowDetail(it){
     document.getElementById('qMain').style.display='none';
     var el=document.getElementById('qDetail'); el.style.display='';
     var r=it.responses||{}, matches=matchFromIntake(r).slice(0,8);
     el.innerHTML='<button class="q-back" id="qBack">← All questionnaires</button>'+
-      '<h3>'+cmEsc(it.company_name||'Client')+'</h3>'+
-      '<div class="q-facts">'+qRespSummary(r)+'</div>'+
+      '<div class="q-dhead"><h3>'+cmEsc(it.company_name||'Client')+'</h3>'+
+        '<button class="cv-pdf-btn" id="qPdfBtn" title="Download these answers as a PDF"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> PDF</button></div>'+
+      '<div class="qa-wrap">'+qFullAnswers(r)+'</div>'+
       '<div class="q-matchhead">Best-fit buildings <span>ranked from their answers</span></div>'+
       '<div class="q-matches">'+matches.map(function(m,i){
         return '<div class="q-match"><div class="q-mrank">'+(i+1)+'</div><div style="flex:1;min-width:0"><div class="q-mnm">'+cmEsc(m.b.name)+'</div>'+
@@ -1737,6 +1783,7 @@
       }).join('')+'</div>'+
       '<div class="q-detail-actions"><button class="q-open-pf" id="qOpenPkg">Build a package from the top matches →</button></div>';
     document.getElementById('qBack').onclick=function(){ el.style.display='none'; document.getElementById('qMain').style.display=''; };
+    document.getElementById('qPdfBtn').onclick=function(){ qBuildPrintDoc(it); };
     document.getElementById('qOpenPkg').onclick=function(){ qClose(); if(window.openShareWith) window.openShareWith(matches.slice(0,6).map(function(m){return m.b.id;}), it.company_name); };
   }
   (function qWire(){ var m=document.getElementById('qModal'); if(!m) return;
