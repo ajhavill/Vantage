@@ -1506,9 +1506,10 @@
     document.getElementById('crumb').innerHTML='Santa Monica · <b>'+BUILDINGS.length+' buildings</b>';
     if(window.L){ initOverview(); }
     else{ document.getElementById('overviewMap').innerHTML='<div style="padding:20px;font:13px Inter;color:#8A93A0">Map library could not load. Serve this over http (Netlify or a local server) with internet access.</div>'; renderCards(); }
-    if(window.showModule) showModule('home');
+    if(window.showModule) showModule(initialModule());
   }
   // ============ PORTAL NAVIGATION (sidebar modules) ============
+  function initialModule(){ var m=new URLSearchParams(location.search).get('m'); return (['home','market','clients','settings'].indexOf(m)>=0)?m:'home'; }
   window.showModule=function(m){
     var map={home:'homeView',market:'marketModule',clients:'clientsView',settings:'settingsView'};
     Object.keys(map).forEach(function(k){ var el=document.getElementById(map[k]); if(el) el.style.display=(k===m)?'':'none'; });
@@ -1901,8 +1902,8 @@
     gate.style.display='none';
     var chip=document.getElementById('userChip'), em=document.getElementById('userEmail');
     if(chip){ chip.style.display='inline-flex'; em.textContent=(session&&session.user&&session.user.email)||''; }
-    // land on Home with the signed-in session (refreshes greeting + attention)
-    if(window.showModule) showModule('home');
+    // land on the right module (supports ?m= deep links), refreshing greeting + attention
+    if(window.showModule) showModule(initialModule());
     // email-notification deep link: ?intake=<slug> opens straight to that response
     if(!showApp._linked){
       var iq=new URLSearchParams(location.search).get('intake');
