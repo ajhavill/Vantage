@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vantage — Your deal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/vantage.css"/>
+<style>
+  .cv-top{display:flex;align-items:center;gap:14px;padding:15px 24px;border-bottom:1px solid var(--line);background:var(--paper-2);position:sticky;top:0;z-index:10}
+  .cv-brand{font:800 18px 'Bricolage Grotesque';color:var(--ink)}
+  .cv-brand .dot{color:var(--accent)}
+  .cv-by{font:500 11px Inter;color:var(--ink-faint);letter-spacing:.04em;text-transform:uppercase}
+  .cv-for{margin-left:auto;font:500 12.5px Inter;color:var(--ink-soft);text-align:right}
+  .cv-for b{color:var(--ink);font-weight:700}
+  .cv-logo{height:30px;width:auto;border-radius:5px}
+
+  .cv-wrap{max-width:1080px;margin:0 auto;padding:26px 24px 60px}
+  .cv-h{font:700 23px 'Bricolage Grotesque';color:var(--ink);margin-bottom:4px}
+  .cv-sub{font:400 13px Inter;color:var(--ink-faint);margin-bottom:24px}
+  .cv-sec{margin-top:30px}
+  .cv-sec-h{font:700 15px 'Bricolage Grotesque';color:var(--ink);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+
+  .bgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+  .bcard2{border:1px solid var(--line);border-radius:13px;background:var(--paper-2);padding:15px 16px}
+  .bcard2 .nm{font:700 15px 'Bricolage Grotesque';color:var(--ink)}
+  .bcard2 .ad{font:500 12px Inter;color:var(--ink-soft);margin-top:2px}
+  .bcard2 .ne{margin-top:10px;font:500 12px Inter;color:var(--ink-faint)}
+  .bcard2 .ne b{font:800 18px 'Bricolage Grotesque';color:var(--accent);display:block;margin-top:1px}
+
+  .cmpwrap{overflow-x:auto;border:1px solid var(--line);border-radius:13px;background:var(--paper-2)}
+  .cmp{border-collapse:collapse;width:100%;min-width:520px;font-size:12.5px}
+  .cmp th,.cmp td{border-bottom:1px solid var(--line);padding:10px 14px;text-align:left;vertical-align:top}
+  .cmp tr:last-child td{border-bottom:0}
+  .cmp .rl{font:600 10.5px Inter;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);white-space:nowrap;background:var(--paper);position:sticky;left:0}
+  .cmp .colh{font:700 13.5px 'Bricolage Grotesque';color:var(--ink);min-width:170px;background:var(--paper)}
+  .cmp .colh .ad{font:500 11px Inter;color:var(--ink-soft);margin-top:1px}
+  .cmp .num{font-family:'JetBrains Mono';white-space:nowrap}
+  .cmp .sub2{font:400 10px Inter;color:var(--ink-faint);margin-top:2px}
+  .cmp tr.ne td{background:rgba(45,110,126,.06)}
+  .cmp tr.ne .rl{background:rgba(45,110,126,.11);color:var(--accent)}
+  .cmp .ne-val{font:800 16px 'Bricolage Grotesque';color:var(--ink)}
+  .cmp td.best .ne-val{color:var(--accent)}
+  .cmp .bestbadge{display:inline-block;font:700 9px Inter;text-transform:uppercase;letter-spacing:.06em;color:#fff;background:var(--accent);border-radius:5px;padding:2px 6px;margin-left:6px;vertical-align:2px}
+  .cv-note{font:400 11.5px Inter;color:var(--ink-faint);line-height:1.55;margin-top:14px}
+
+  .cv-empty{font:500 13px Inter;color:var(--ink-faint);padding:34px 0;text-align:center}
+  .cv-disc{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font:400 11px Inter;color:var(--ink-faint);line-height:1.5}
+
+  /* passcode gate */
+  #gate{position:fixed;inset:0;z-index:3000;display:flex;align-items:center;justify-content:center;background:var(--paper);padding:20px}
+  .gate-card{width:min(390px,100%);background:var(--paper-2);border:1px solid var(--line);border-radius:18px;padding:30px 28px;box-shadow:var(--shadow);text-align:left}
+  .gate-logo{font:800 24px 'Bricolage Grotesque';color:var(--ink)}
+  .gate-logo .dot{color:var(--accent)}
+  .gate-by{font:500 12px Inter;color:var(--ink-faint);margin-top:4px}
+  .gate-card h1{font:700 17px 'Bricolage Grotesque';color:var(--ink);margin:22px 0 5px}
+  .gate-card p{font:400 12.5px Inter;color:var(--ink-soft);margin:0 0 16px}
+  .gate-card label{font:600 11px Inter;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-faint);display:block;margin-bottom:6px}
+  .gate-card input{width:100%;font:500 15px Inter;padding:11px 13px;border:1px solid var(--line-2);border-radius:10px;background:var(--paper)}
+  .gate-card input:focus{outline:none;border-color:var(--accent)}
+  .gate-card button{width:100%;font:600 14px Inter;color:#fff;background:var(--building);border:0;border-radius:10px;padding:12px;cursor:pointer;margin-top:14px}
+  .gate-card button:disabled{opacity:.6;cursor:default}
+  .gate-err{font:500 12.5px Inter;color:#C2453F;margin-top:10px;min-height:16px}
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="gate-card">
+    <div class="gate-logo">Vantage<span class="dot">.</span></div>
+    <div class="gate-by">by Havill &amp; Co.</div>
+    <h1>Your deal</h1>
+    <p id="gateMsg">Enter the passcode your broker shared with you.</p>
+    <label for="gatePass">Passcode</label>
+    <input id="gatePass" type="password" autocomplete="off" placeholder="••••••••">
+    <button id="gateBtn">View</button>
+    <div class="gate-err" id="gateErr"></div>
+  </div>
+</div>
+
+<div class="cv-top" id="cvTop" style="display:none">
+  <span class="cv-brand">Vantage<span class="dot">.</span></span>
+  <span class="cv-by">by Havill &amp; Co.</span>
+  <span class="cv-for" id="cvFor"></span>
+</div>
+
+<main class="cv-wrap" id="cvView" style="display:none"></main>
+
+<script>
+(function(){
+  "use strict";
+  var slug=new URLSearchParams(location.search).get('d')||'';
+  var RENT_BASES={FSG:'FSG',MG:'Modified Gross',IG:'Industrial Gross',NNN:'NNN',NN:'NN',N:'N',GROSS:'Flat Gross',ABS:'Absolute Net',OTHER:'Other'};
+
+  function $(id){ return document.getElementById(id); }
+  function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function num(v){ if(v==null||v==='') return null; var n=Number(v); return isFinite(n)?n:null; }
+  function psf(v){ return v==null?'—':('$'+Number(v).toFixed(2)); }
+  function basisLabel(code,custom){ if(code==='OTHER'&&custom) return custom; return RENT_BASES[code]||code||'—'; }
+
+  // identical net-effective engine to the broker side
+  function effectiveRent(r){
+    var base=num(r.base_rent_psf), T=num(r.term_months);
+    if(base==null||!T||T<=0) return null;
+    var opex=num(r.opex_psf)||0, e=(num(r.annual_escalation_pct)||0)/100, free=num(r.free_rent_months)||0, ti=num(r.ti_psf)||0;
+    var totalBase=0;
+    for(var m=1;m<=T;m++){ var yr=Math.floor((m-1)/12); var monthly=(base/12)*Math.pow(1+e,yr); if(m>free) totalBase+=monthly; }
+    var years=T/12, costPerSF=totalBase+opex*years-ti;
+    return { netEff:costPerSF/years, costPerSF:costPerSF, grossStart:base+opex, years:years };
+  }
+
+  function unlock(){
+    var pass=($('gatePass').value||'').trim();
+    if(!pass){ $('gateErr').textContent='Enter the passcode.'; return; }
+    if(!slug){ $('gateErr').textContent='This link is missing its deal code.'; return; }
+    var btn=$('gateBtn'); btn.disabled=true; btn.textContent='Checking…'; $('gateErr').textContent='';
+    fetch('/.netlify/functions/deal-client-get',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slug:slug,passcode:pass})})
+      .then(function(res){ return res.json().then(function(d){ return {status:res.status,d:d}; }); })
+      .then(function(r){
+        btn.disabled=false; btn.textContent='View';
+        if(r.status===200){ render(r.d); return; }
+        $('gateErr').textContent=(r.d&&r.d.error)||'Could not open this deal.';
+      })
+      .catch(function(){ btn.disabled=false; btn.textContent='View'; $('gateErr').textContent='Network error — please try again.'; });
+  }
+
+  function render(data){
+    $('gate').style.display='none';
+    $('cvTop').style.display='flex'; $('cvView').style.display='block';
+    var logo=data.client_logo_url?'<img class="cv-logo" src="'+esc(data.client_logo_url)+'" alt=""> ':'';
+    $('cvFor').innerHTML=logo+(data.client_name?'Prepared for <b>'+esc(data.client_name)+'</b>':'');
+
+    var props=data.properties||[], proposals=data.proposals||[], rounds=data.rounds||[];
+    // latest FINAL round per proposal
+    var latestByProp={};
+    rounds.forEach(function(r){ var cur=latestByProp[r.proposal_id]; if(!cur||r.round_no>cur.round_no) latestByProp[r.proposal_id]=r; });
+    var propName={}; props.forEach(function(p){ propName[p.id]=p.name; });
+
+    var cols=proposals.filter(function(pr){ return latestByProp[pr.id]; }).map(function(pr){
+      return { proposal:pr, building:(pr.property_id&&propName[pr.property_id])?propName[pr.property_id]:null, round:latestByProp[pr.id] };
+    });
+
+    var html='<div class="cv-h">'+(data.client_name?esc(data.client_name)+' — ':'')+'your options</div>'
+      +'<div class="cv-sub">A live, read-only view of the buildings and proposals we’re working on for you. It updates as the deal progresses.</div>';
+
+    // compare
+    if(cols.length){
+      html+='<div class="cv-sec"><div class="cv-sec-h">Proposals side by side</div>'+compareTable(cols)+'</div>';
+    }
+    // buildings
+    if(props.length){
+      html+='<div class="cv-sec"><div class="cv-sec-h">Buildings</div><div class="bgrid">'
+        + props.map(function(p){
+            // find a proposal for this building to surface its net effective
+            var col=cols.filter(function(c){ return c.proposal.property_id===p.id; })[0];
+            var eff=col?effectiveRent(col.round):null;
+            return '<div class="bcard2"><div class="nm">'+esc(p.name||'Building')+'</div>'
+              +(p.address?'<div class="ad">'+esc(p.address)+'</div>':'')
+              +(eff?'<div class="ne">Net effective<b>'+psf(eff.netEff)+' <span style="font:500 11px Inter;color:var(--ink-faint)">/SF/yr</span></b></div>':'')
+              +'</div>';
+          }).join('')
+        +'</div></div>';
+    }
+    if(!cols.length && !props.length){
+      html+='<div class="cv-empty">Your broker hasn’t shared any buildings or proposals yet. Check back soon.</div>';
+    }
+
+    html+='<div class="cv-disc">Net effective rent normalizes each proposal to one $/SF/yr (gross-equivalent), accounting for the rent structure, escalations, free rent, and tenant-improvement allowance, spread over the lease term — so different deal structures can be compared fairly. Figures are estimates for comparison and are subject to the final executed lease. Prepared by Havill &amp; Co.</div>';
+    $('cvView').innerHTML=html;
+  }
+
+  function compareTable(cols){
+    var sel=cols.map(function(c){ return c.round; });
+    var eff=sel.map(effectiveRent);
+    var bestIdx=-1,bestVal=Infinity;
+    eff.forEach(function(x,i){ if(x&&x.netEff<bestVal){bestVal=x.netEff;bestIdx=i;} });
+
+    function row(label,cells,cls){ return '<tr'+(cls?' class="'+cls+'"':'')+'><td class="rl">'+label+'</td>'+cells.map(function(x){return '<td>'+x+'</td>';}).join('')+'</tr>'; }
+    function fmtTerm(r){ return r.term_months==null?'—':(r.term_months+' mo · '+(r.term_months/12).toFixed(1)+' yr'); }
+
+    var headCells=cols.map(function(c){
+      return '<th class="colh">'+esc(c.proposal.title||'Proposal')+(c.building?'<div class="ad">'+esc(c.building)+'</div>':'')+'</th>';
+    }).join('');
+
+    var neCells=sel.map(function(r,i){
+      if(!eff[i]) return '<td class="num">—</td>';
+      return '<td'+(i===bestIdx?' class="best"':'')+'><span class="ne-val">'+psf(eff[i].netEff)+'</span>'
+        +(i===bestIdx?'<span class="bestbadge">Best value</span>':'')+'<div class="sub2">$/SF/yr</div></td>';
+    }).join('');
+
+    var body=''
+      + row('Building', sel.map(function(r,i){ return esc(cols[i].building||'—'); }))
+      + row('Rent structure', sel.map(function(r){ return esc(basisLabel(r.rent_basis,r.rent_basis_label)); }))
+      + row('Size', sel.map(function(r){ return '<span class="num">'+(r.size_sf==null?'—':Number(r.size_sf).toLocaleString()+' SF')+'</span>'; }))
+      + row('Term', sel.map(function(r){ return '<span class="num">'+fmtTerm(r)+'</span>'; }))
+      + row('Starting rate', sel.map(function(r){ return '<span class="num">'+psf(r.base_rent_psf)+'</span>'; }))
+      + row('Annual escalation', sel.map(function(r){ return '<span class="num">'+(r.annual_escalation_pct==null?'—':Number(r.annual_escalation_pct).toFixed(1)+'%')+'</span>'; }))
+      + row('Free rent', sel.map(function(r){ return '<span class="num">'+(r.free_rent_months==null?'—':r.free_rent_months+' mo')+'</span>'; }))
+      + row('TI allowance', sel.map(function(r){ return '<span class="num">'+(r.ti_psf==null?'—':psf(r.ti_psf))+'</span>'; }))
+      + '<tr class="ne"><td class="rl">Net effective rent</td>'+neCells+'</tr>';
+
+    return '<div class="cmpwrap"><table class="cmp"><thead><tr><th class="rl"></th>'+headCells+'</tr></thead><tbody>'+body+'</tbody></table></div>'
+      +'<div class="cv-note">Lowest net effective rent = best overall value once all concessions are accounted for.</div>';
+  }
+
+  $('gateBtn').addEventListener('click',unlock);
+  $('gatePass').addEventListener('keydown',function(e){ if(e.key==='Enter') unlock(); });
+  if(!slug){ $('gateMsg').textContent='This link is missing its deal code. Please use the full link your broker sent.'; }
+})();
+</script>
+</body>
+</html>

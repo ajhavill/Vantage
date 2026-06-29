@@ -93,6 +93,13 @@
   .delx:hover{color:var(--dining)}
   .loading{font:500 13px Inter;color:var(--ink-faint);text-align:center;padding:40px}
 
+  /* share + visibility */
+  .dhactions{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .vis{font:600 10.5px Inter;border:1px solid var(--line-2);background:var(--paper);color:var(--ink-faint);border-radius:999px;padding:4px 11px;cursor:pointer;white-space:nowrap}
+  .vis:hover{border-color:var(--ink-faint)}
+  .vis.on{background:rgba(63,143,107,.12);border-color:rgba(63,143,107,.4);color:var(--fitness)}
+  .linkbox input{width:100%;font:500 12.5px 'JetBrains Mono';padding:9px 11px;border:1px solid var(--line-2);border-radius:9px;background:var(--paper);color:var(--ink)}
+
   /* side-by-side compare */
   .cmpwrap{overflow-x:auto;border:1px solid var(--line);border-radius:13px;background:var(--paper-2)}
   .cmp{border-collapse:collapse;width:100%;min-width:520px;font-size:12.5px}
@@ -229,6 +236,15 @@ window.DF = (function(){
 
   async function q(promise){ var r=await promise; if(r.error){ throw r.error; } return r.data; }
 
+  /* crypto helpers for the client share link (must match deal-client-get.js: PBKDF2 sha256, 100k, 32 bytes, hex) */
+  function toHex(u8){ return [].map.call(u8,function(b){ return ('0'+b.toString(16)).slice(-2); }).join(''); }
+  function randSlug(n){ var c='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789', u=new Uint8Array(n); crypto.getRandomValues(u); var s=''; for(var i=0;i<n;i++) s+=c[u[i]%c.length]; return s; }
+  async function makeHash(passcode, saltBytes){
+    var km=await crypto.subtle.importKey('raw', new TextEncoder().encode(passcode), 'PBKDF2', false, ['deriveBits']);
+    var bits=await crypto.subtle.deriveBits({name:'PBKDF2', salt:saltBytes, iterations:100000, hash:'SHA-256'}, km, 256);
+    return toHex(new Uint8Array(bits));
+  }
+
   /* ---------- auth gate ---------- */
   function showApp(session){
     $('authGate').style.display='none';
@@ -324,10 +340,12 @@ window.DF = (function(){
       var bldg = pr.property_id && propById[pr.property_id] ? propById[pr.property_id].name : null;
       var rowsHtml = rs.length ? rs.map(roundRow).join('') :
         '<tr><td colspan="9" style="color:var(--ink-faint)">No rounds yet — add the first proposal terms.</td></tr>';
+      var visBtn='<button class="vis '+(pr.client_visible?'on':'')+'" onclick="DF.toggleProposalVisible(\''+pr.id+'\','+(pr.client_visible?'false':'true')+',\''+d.id+'\')" title="Toggle whether the client can see this proposal">'
+        +(pr.client_visible?'● Shown to client':'○ Hidden from client')+'</button>';
       return '<div class="pcard">'
         + '<div class="top"><div><div class="nm">'+esc(pr.title||'Proposal')+'</div>'
         +   (bldg?'<div class="ad">'+esc(bldg)+'</div>':'')+'</div>'
-        +   '<span class="tag">'+esc(pr.status)+'</span></div>'
+        +   '<div style="display:flex;gap:8px;align-items:center">'+visBtn+'<span class="tag">'+esc(pr.status)+'</span></div></div>'
         + '<div class="rounds"><table class="rtable"><thead><tr>'
         +   '<th>Rd</th><th>From</th><th>Structure</th><th class="num">Base $/SF</th><th class="num">Opex</th>'
         +   '<th class="num">≈ Gross</th><th class="num">Size SF</th><th class="num">Term</th><th>Notes</th>'
@@ -342,9 +360,14 @@ window.DF = (function(){
     $('dealView').innerHTML =
       '<button class="dsr-back" style="margin-bottom:14px" onclick="DF.showPipeline()">‹ All deals</button>'
       + '<div class="dealhead"><div><h1>'+esc(d.client_name||'Untitled client')+'</h1>'
-      +   '<div class="meta">Created '+new Date(d.created_at).toLocaleDateString()+'</div></div>'
-      +   '<div class="stagepick"><label>Stage</label>'
-      +   '<select class="fld" style="width:auto" onchange="DF.setStage(\''+d.id+'\',this.value)">'+stageOpts+'</select></div>'
+      +   '<div class="meta">Created '+new Date(d.created_at).toLocaleDateString()+(d.slug?' · <span style="color:var(--fitness)">client link active</span>':'')+'</div></div>'
+      +   '<div class="dhactions">'
+      +     '<button class="act-btn" onclick="DF.shareDeal(\''+d.id+'\')" title="Create a private, read-only link for the client">'
+      +       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>'
+      +       (d.slug?'Client link':'Share with client')+'</button>'
+      +     '<div class="stagepick"><label>Stage</label>'
+      +     '<select class="fld" style="width:auto" onchange="DF.setStage(\''+d.id+'\',this.value)">'+stageOpts+'</select></div>'
+      +   '</div>'
       + '</div>'
       + '<div class="sec"><div class="sec-h"><h2>Buildings</h2><span class="hint">The properties in play for this client</span></div>'+propsHtml2+'</div>'
       + '<div class="sec"><div class="sec-h"><h2>Proposals &amp; rounds</h2>'+addProposalBtn+'</div>'+propsHtmlList+'</div>';
@@ -581,6 +604,40 @@ window.DF = (function(){
       +   'Lowest wins. Switch any column\'s round to compare at a given point in the negotiation.</div>';
   }
 
+  /* ---------- client sharing ---------- */
+  async function shareDeal(dealId){
+    var d=deals.filter(function(x){return x.id===dealId;})[0]; if(!d) return;
+    openSheet('<h3>Share with client</h3><div class="ssub">Create a private, read-only link. The client opens it with a passcode — no login. They see only the buildings and proposals you mark “Shown to client”.</div>'
+      + fld('Passcode','<input id="f_pass" placeholder="choose a passcode (min 4 chars)" autofocus>')
+      + (d.slug?'<div class="ge">A link already exists for this deal. Saving keeps the same link and updates the passcode.</div>':'')
+      + '<div id="f_linkout"></div>'
+      + '<div class="formerr" id="f_err"></div>'
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Close</button><button class="btn pri" id="f_save">Save &amp; get link</button></div>');
+    $('f_save').addEventListener('click',async function(){
+      var pass=($('f_pass').value||'').trim();
+      if(pass.length<4){ $('f_err').textContent='Use at least 4 characters.'; return; }
+      this.disabled=true; this.textContent='Saving…'; $('f_err').textContent='';
+      try{
+        var saltBytes=new Uint8Array(16); crypto.getRandomValues(saltBytes);
+        var hash=await makeHash(pass, saltBytes);
+        var slug=d.slug||randSlug(14);
+        await q(sb.from('deals').update({slug:slug, passcode_hash:hash, salt:toHex(saltBytes), updated_at:new Date().toISOString()}).eq('id',dealId).select().single());
+        d.slug=slug;
+        var link=location.origin+'/deal-client.html?d='+slug;
+        $('f_linkout').innerHTML='<div class="fld linkbox"><label>Shareable link</label><input readonly value="'+esc(link)+'" onclick="this.select()"></div>'
+          +'<div class="ge"><b>Passcode:</b> '+esc(pass)+' — send this to the client separately from the link.</div>';
+        this.textContent='Saved ✓';
+      }catch(e){ $('f_err').textContent=e.message; this.disabled=false; this.textContent='Save & get link'; }
+    });
+  }
+
+  async function toggleProposalVisible(proposalId, makeVisible, dealId){
+    try{
+      await q(sb.from('proposals').update({client_visible:makeVisible}).eq('id',proposalId).select().single());
+      openDeal(dealId);
+    }catch(e){ alert('Could not update visibility: '+e.message); }
+  }
+
   /* ---------- boot ---------- */
   document.addEventListener('DOMContentLoaded',bindAuth);
 
@@ -588,6 +645,7 @@ window.DF = (function(){
     showPipeline:renderPipeline, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound,
     newDeal:newDeal, newProperty:newProperty, newProposal:newProposal, newRound:newRound,
     setStage:setStage, basisChange:basisChange, close:closeSheet,
+    shareDeal:shareDeal, toggleProposalVisible:toggleProposalVisible,
     effectiveRent:effectiveRent, grossEquiv:grossEquiv
   };
 })();

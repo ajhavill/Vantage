@@ -1,0 +1,75 @@
+// Vantage — deal-client-get (Netlify Function, called by the client Deal Viewer).
+//
+// Looks up ONE deal by slug and returns it only if the passcode is correct, scoped
+// to what the broker chose to share: only client_visible buildings + proposals, and
+// only FINAL rounds (drafts never leave the broker side). Uses the Supabase
+// service_role key (server-only) to bypass RLS after the passcode check. There is no
+// way to list deals — the unguessable slug + passcode is the only entry point.
+
+const sb = require("./_sb");
+const crypto = require("crypto");
+
+const json = (statusCode, obj) => ({ statusCode, headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) });
+
+// Match the broker page's Web-Crypto PBKDF2: passcode + raw salt bytes (stored hex),
+// 100k iterations, SHA-256, 32-byte output, hex.
+function hashPass(passcode, saltHex) {
+  return crypto.pbkdf2Sync(String(passcode), Buffer.from(String(saltHex), "hex"), 100000, 32, "sha256").toString("hex");
+}
+function safeEq(a, b) {
+  const ab = Buffer.from(String(a)), bb = Buffer.from(String(b));
+  if (ab.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ab, bb);
+}
+
+const ROUND_COLS = "id,proposal_id,round_no,from_party,rent_basis,rent_basis_label," +
+  "base_rent_psf,opex_psf,size_sf,term_months,annual_escalation_pct,free_rent_months,ti_psf,summary";
+
+exports.handler = async (event) => {
+  if (event.httpMethod !== "POST") return json(405, { error: "Use POST." });
+  if (!sb.configured()) return json(500, { error: "Server not configured." });
+
+  let body;
+  try { body = JSON.parse(event.body || "{}"); } catch (e) { return json(400, { error: "Malformed request body." }); }
+
+  const slug = String(body.slug || "");
+  if (!/^[A-Za-z0-9]{6,40}$/.test(slug)) return json(404, { error: "Link not found." });
+
+  // fetch the deal by slug
+  let deal = null;
+  try {
+    const r = await sb.rest("deals?slug=eq." + encodeURIComponent(slug) + "&select=*&limit=1");
+    if (r.ok && r.data && r.data[0]) deal = r.data[0];
+  } catch (e) { deal = null; }
+
+  if (!deal || !deal.passcode_hash || !deal.salt) return json(404, { error: "Link not found." });
+
+  if (!body.passcode || !safeEq(hashPass(body.passcode, deal.salt), deal.passcode_hash)) {
+    return json(401, { error: "Incorrect passcode." });
+  }
+
+  const id = deal.id;
+  // visible buildings + visible proposals
+  const props = (await sb.rest("deal_properties?deal_id=eq." + id + "&client_visible=eq.true" +
+    "&select=id,name,address,status,sort_order&order=sort_order")).data || [];
+  const proposals = (await sb.rest("proposals?deal_id=eq." + id + "&client_visible=eq.true" +
+    "&select=id,title,property_id,status&order=created_at")).data || [];
+
+  // final rounds for those visible proposals only
+  let rounds = [];
+  const ids = proposals.map((p) => p.id);
+  if (ids.length) {
+    const r = await sb.rest("proposal_rounds?proposal_id=in.(" + ids.join(",") + ")&status=eq.final" +
+      "&select=" + ROUND_COLS + "&order=round_no");
+    rounds = r.data || [];
+  }
+
+  return json(200, {
+    client_name: deal.client_name || null,
+    client_logo_url: deal.client_logo_url || null,
+    stage: deal.stage,
+    properties: props,
+    proposals: proposals,
+    rounds: rounds
+  });
+};
