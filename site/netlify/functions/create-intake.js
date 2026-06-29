@@ -1,10 +1,10 @@
 // Vantage — create-intake (Netlify Function, called by the Cockpit / logged-in broker).
 //
 // Creates an empty intake row owned by the signed-in broker and returns a
-// shareable questionnaire link. Authorized by the broker's Supabase session
-// token (verified server-side); the row is scoped to that broker's user id.
+// shareable questionnaire link. Authorized by the broker's Supabase access token
+// (validated via GoTrue); org_id is auto-stamped from the owner by a DB trigger.
 
-const { createClient } = require("@supabase/supabase-js");
+const { configured, rest, userFromToken } = require("./_sb");
 
 const json = (statusCode, obj) => ({ statusCode, headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) });
 
@@ -18,22 +18,24 @@ function slugGen() {
 
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") return json(405, { error: "Use POST." });
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return json(500, { error: "Server is missing Supabase config." });
+  if (!configured()) return json(500, { error: "Server is missing Supabase config." });
 
   let body;
   try { body = JSON.parse(event.body || "{}"); } catch (e) { return json(400, { error: "Malformed request body." }); }
 
   const token = String(body.token || "");
   if (!token) return json(401, { error: "Not signed in." });
-
-  const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
-  const { data: ures, error: uerr } = await sb.auth.getUser(token);
-  if (uerr || !ures || !ures.user) return json(401, { error: "Your session has expired — please sign in again." });
+  const user = await userFromToken(token);
+  if (!user) return json(401, { error: "Your session has expired — please sign in again." });
 
   const slug = slugGen();
   const company = String(body.company || "Client").slice(0, 160);
-  const { error } = await sb.from("intakes").insert({ slug: slug, owner_id: ures.user.id, company_name: company, status: "sent" });
-  if (error) return json(500, { error: error.message });
+  const r = await rest("intakes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify({ slug: slug, owner_id: user.id, company_name: company, status: "sent" })
+  });
+  if (!r.ok) return json(500, { error: "Could not create: " + (r.text || r.status) });
 
   const h = event.headers || {};
   const host = h["x-forwarded-host"] || h.host || "";
