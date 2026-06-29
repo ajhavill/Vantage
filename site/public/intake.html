@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tell us about your space — Havill &amp; Co.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/vantage.css"/>
+<style>
+  .iq-top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:10px;padding:12px 22px;
+    background:rgba(252,251,248,.92);backdrop-filter:saturate(1.4) blur(8px);border-bottom:1px solid var(--line)}
+  .iq-top .logo{font:800 19px/1 'Bricolage Grotesque',sans-serif;color:var(--ink)}
+  .iq-top .logo .dot{color:var(--accent)}
+  .iq-top .by{font:500 11.5px Inter;color:var(--ink-faint)}
+  .iq-wrap{max-width:760px;margin:0 auto;padding:34px 22px 80px}
+  .iq-hero h1{font:700 30px/1.15 'Bricolage Grotesque',sans-serif;color:var(--ink);margin:0 0 8px;letter-spacing:-.01em}
+  .iq-hero p{font:400 14px/1.6 Inter;color:var(--ink-soft);margin:0 0 6px}
+  .iq-for{font:600 12px Inter;color:var(--accent);margin-top:10px}
+  .iq-sec{margin-top:30px;border:1px solid var(--line);border-radius:16px;background:var(--paper-2);padding:22px 22px 8px}
+  .iq-sec h2{font:700 15px Inter;color:var(--ink);margin:0 0 2px;display:flex;align-items:center;gap:9px}
+  .iq-sec .step{font:700 11px 'JetBrains Mono',monospace;color:#fff;background:var(--accent);border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;flex:none}
+  .iq-sec .sh{font:400 12.5px Inter;color:var(--ink-faint);margin:0 0 14px 31px}
+  .iq-f{margin-bottom:18px}
+  .iq-f>label{display:block;font:600 12.5px Inter;color:var(--ink);margin-bottom:7px}
+  .iq-f .hint{font-weight:400;color:var(--ink-faint)}
+  .iq-f input[type=text],.iq-f input[type=email],.iq-f input[type=number],.iq-f select,.iq-f textarea{
+    width:100%;font:500 14px Inter;padding:10px 12px;border:1px solid var(--line-2);border-radius:10px;background:#fff;color:var(--ink);box-sizing:border-box}
+  .iq-f textarea{min-height:74px;resize:vertical}
+  .iq-f input:focus,.iq-f select:focus,.iq-f textarea:focus{outline:none;border-color:var(--accent)}
+  .iq-row2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .iq-chips{display:flex;flex-wrap:wrap;gap:8px}
+  .iq-chip{display:inline-flex;align-items:center;gap:7px;font:500 13px Inter;color:var(--ink);background:#fff;
+    border:1px solid var(--line-2);border-radius:30px;padding:8px 14px;cursor:pointer;user-select:none}
+  .iq-chip input{display:none}
+  .iq-chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .iq-seg{display:flex;flex-wrap:wrap;gap:0;border:1px solid var(--line-2);border-radius:10px;overflow:hidden}
+  .iq-seg label{flex:1;text-align:center;font:500 12.5px Inter;color:var(--ink-soft);padding:9px 8px;cursor:pointer;border-left:1px solid var(--line-2);min-width:84px}
+  .iq-seg label:first-child{border-left:0}
+  .iq-seg input{display:none}
+  .iq-seg label.on{background:var(--accent);color:#fff}
+  .iq-upload{display:flex;flex-direction:column;align-items:center;gap:4px;border:1.5px dashed var(--line-2);
+    border-radius:12px;padding:22px;cursor:pointer;text-align:center;background:#fff}
+  .iq-upload:hover{border-color:var(--accent)}
+  .iq-upload input[type=file]{display:none}
+  .iq-upload .big{font:600 14px Inter;color:var(--ink)}
+  .iq-upload .small{font:400 12px/1.5 Inter;color:var(--ink-faint);max-width:430px}
+  .iq-upload svg{color:var(--ink-faint);margin-bottom:4px}
+  .iq-filename{font:500 12.5px Inter;color:var(--accent);margin-top:8px}
+  .iq-amen{display:flex;flex-direction:column;gap:10px}
+  .iq-amrow{display:grid;grid-template-columns:130px 1fr;align-items:center;gap:12px}
+  .iq-amrow .nm{font:600 13px Inter;color:var(--ink)}
+  .iq-submit{margin-top:28px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .iq-submit button{font:600 15px Inter;color:#fff;background:var(--building);border:0;border-radius:11px;padding:13px 28px;cursor:pointer}
+  .iq-submit button:disabled{opacity:.6;cursor:default}
+  .iq-submit .note{font:400 12px Inter;color:var(--ink-faint)}
+  .iq-err{font:500 13px Inter;color:#C2453F;margin-top:10px}
+  .iq-thanks{max-width:560px;margin:80px auto;text-align:center;padding:0 22px}
+  .iq-thanks .ic{width:64px;height:64px;border-radius:50%;background:rgba(45,110,126,.12);display:flex;align-items:center;justify-content:center;margin:0 auto 18px}
+  .iq-thanks h1{font:700 26px 'Bricolage Grotesque',sans-serif;color:var(--ink);margin:0 0 10px}
+  .iq-thanks p{font:400 14px/1.6 Inter;color:var(--ink-soft)}
+  @media(max-width:560px){.iq-row2{grid-template-columns:1fr}.iq-amrow{grid-template-columns:1fr;gap:6px}.iq-seg label{min-width:64px}}
+</style>
+</head>
+<body>
+
+<div class="iq-top">
+  <span class="logo">Vantage<span class="dot">.</span></span>
+  <span class="by">by Havill &amp; Co.</span>
+</div>
+
+<!-- FORM -->
+<div class="iq-wrap" id="iqForm">
+  <div class="iq-hero">
+    <h1>Let's find your team's next office</h1>
+    <p>Answer a few quick questions and we'll match you with the buildings and spaces that fit best — on size, budget, location, and the things your team cares about. Takes about 3 minutes.</p>
+    <div class="iq-for" id="iqFor"></div>
+  </div>
+
+  <!-- 1. Company -->
+  <section class="iq-sec">
+    <h2><span class="step">1</span> About your company</h2>
+    <div class="sh">So we know who we're helping.</div>
+    <div class="iq-row2">
+      <div class="iq-f"><label>Company name</label><input type="text" id="q_company"></div>
+      <div class="iq-f"><label>Industry <span class="hint">/ what you do</span></label>
+        <select id="q_industry">
+          <option value="">Select…</option>
+          <option>Technology / software</option><option>Finance</option><option>Professional services</option>
+          <option>Media</option><option>Entertainment</option><option>Healthcare</option>
+          <option>Legal</option><option>Manufacturing</option><option>Hardware technology</option>
+          <option>Research &amp; development</option><option>Nonprofit / education</option><option>Other</option>
+        </select>
+      </div>
+    </div>
+    <div class="iq-row2">
+      <div class="iq-f"><label>Your name</label><input type="text" id="q_contact_name"></div>
+      <div class="iq-f"><label>Your email</label><input type="email" id="q_contact_email" placeholder="you@company.com"></div>
+    </div>
+    <div class="iq-row2">
+      <div class="iq-f"><label>Current team size <span class="hint">(headcount in the office)</span></label><input type="number" id="q_headcount" min="1" placeholder="e.g. 24"></div>
+      <div class="iq-f"><label>Expected size in 2–3 years</label><input type="number" id="q_headcount_future" min="1" placeholder="e.g. 40"></div>
+    </div>
+  </section>
+
+  <!-- 2. Space -->
+  <section class="iq-sec">
+    <h2><span class="step">2</span> Your space needs</h2>
+    <div class="sh">Don't worry if you're unsure — we can estimate from your headcount.</div>
+    <div class="iq-row2">
+      <div class="iq-f"><label>Square footage needed <span class="hint">(leave blank if unsure)</span></label><input type="number" id="q_sf" min="0" step="100" placeholder="e.g. 6000"></div>
+      <div class="iq-f"><label>Parking needed <span class="hint">(spaces or ratio)</span></label><input type="text" id="q_parking" placeholder="e.g. 12 spaces"></div>
+    </div>
+    <div class="iq-f"><label>Layout preference</label>
+      <div class="iq-seg" data-single="q_layout">
+        <label><input type="radio" name="q_layout" value="Mostly private offices">Mostly private offices</label>
+        <label><input type="radio" name="q_layout" value="A mix">A mix</label>
+        <label><input type="radio" name="q_layout" value="Mostly open">Mostly open</label>
+      </div>
+    </div>
+    <div class="iq-f"><label>Move-in readiness</label>
+      <div class="iq-seg" data-single="q_buildout">
+        <label><input type="radio" name="q_buildout" value="Move-in ready">Move-in ready</label>
+        <label><input type="radio" name="q_buildout" value="Light build-out OK">Light build-out OK</label>
+        <label><input type="radio" name="q_buildout" value="Full build-out">Full build-out</label>
+      </div>
+    </div>
+    <div class="iq-f"><label>Must-have spaces</label>
+      <div class="iq-chips" data-multi="q_musthaves">
+        <label class="iq-chip"><input type="checkbox" value="Conference rooms">Conference rooms</label>
+        <label class="iq-chip"><input type="checkbox" value="Kitchen / break room">Kitchen / break room</label>
+        <label class="iq-chip"><input type="checkbox" value="Reception / lobby">Reception / lobby</label>
+        <label class="iq-chip"><input type="checkbox" value="Phone booths">Phone booths</label>
+        <label class="iq-chip"><input type="checkbox" value="Outdoor / patio">Outdoor / patio</label>
+        <label class="iq-chip"><input type="checkbox" value="Showers / bike room">Showers / bike room</label>
+        <label class="iq-chip"><input type="checkbox" value="Dog-friendly">Dog-friendly</label>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. Budget & timing -->
+  <section class="iq-sec">
+    <h2><span class="step">3</span> Budget &amp; timing</h2>
+    <div class="sh">Ballpark is fine — it helps us focus the search.</div>
+    <div class="iq-row2">
+      <div class="iq-f"><label>Target rent <span class="hint">($/SF per month, full-service)</span></label>
+        <select id="q_budget">
+          <option value="">Select…</option>
+          <option>Under $3.00</option><option>$3.00 – $4.00</option><option>$4.00 – $5.00</option>
+          <option>$5.00 – $6.00</option><option>$6.00 – $7.00</option><option>$7.00+</option><option>Not sure yet</option>
+        </select>
+      </div>
+      <div class="iq-f"><label>Desired move-in</label>
+        <select id="q_timeline">
+          <option value="">Select…</option>
+          <option>ASAP</option><option>1–3 months</option><option>3–6 months</option>
+          <option>6–12 months</option><option>Just exploring</option>
+        </select>
+      </div>
+    </div>
+    <div class="iq-f"><label>Lease term you're considering</label>
+      <div class="iq-seg" data-single="q_term">
+        <label><input type="radio" name="q_term" value="1–2 years">1–2 years</label>
+        <label><input type="radio" name="q_term" value="3–5 years">3–5 years</label>
+        <label><input type="radio" name="q_term" value="5+ years">5+ years</label>
+        <label><input type="radio" name="q_term" value="Flexible">Flexible</label>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. Location & lifestyle -->
+  <section class="iq-sec">
+    <h2><span class="step">4</span> Location &amp; lifestyle</h2>
+    <div class="sh">This is where Vantage really tailors your matches.</div>
+    <div class="iq-f"><label>Preferred submarkets <span class="hint">(pick any across LA)</span></label>
+      <div class="iq-chips" data-multi="q_areas">
+        <label class="iq-chip"><input type="checkbox" value="Santa Monica">Santa Monica</label>
+        <label class="iq-chip"><input type="checkbox" value="Venice / Marina del Rey">Venice / Marina del Rey</label>
+        <label class="iq-chip"><input type="checkbox" value="Playa Vista / Silicon Beach">Playa Vista / Silicon Beach</label>
+        <label class="iq-chip"><input type="checkbox" value="Culver City">Culver City</label>
+        <label class="iq-chip"><input type="checkbox" value="Brentwood / West LA">Brentwood / West LA</label>
+        <label class="iq-chip"><input type="checkbox" value="Century City">Century City</label>
+        <label class="iq-chip"><input type="checkbox" value="Beverly Hills">Beverly Hills</label>
+        <label class="iq-chip"><input type="checkbox" value="West Hollywood">West Hollywood</label>
+        <label class="iq-chip"><input type="checkbox" value="Downtown LA">Downtown LA</label>
+        <label class="iq-chip"><input type="checkbox" value="El Segundo / South Bay">El Segundo / South Bay</label>
+        <label class="iq-chip"><input type="checkbox" value="No preference">No preference</label>
+      </div>
+    </div>
+    <div class="iq-f"><label>How much do these nearby amenities matter to your team?</label>
+      <div class="iq-amen" id="iqAmen"></div>
+    </div>
+    <div class="iq-f"><label>Your team roster <span class="hint">(optional — for commute analysis)</span></label>
+      <label class="iq-upload" id="iqUploadLabel">
+        <input type="file" id="q_roster" accept=".xlsx,.xls,.csv">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <span class="big">Upload a spreadsheet</span>
+        <span class="small">Excel or CSV, any format. Include your team's home cities or zip codes — and mark your critical people if you can. We'll handle the rest.</span>
+      </label>
+      <div class="iq-filename" id="iqFileName"></div>
+    </div>
+    <div class="iq-f"><label>Anything else we should know? <span class="hint">(dealbreakers, wishlist, etc.)</span></label>
+      <textarea id="q_notes"></textarea>
+    </div>
+  </section>
+
+  <div class="iq-submit">
+    <button id="iqSubmit">Submit &amp; get matched</button>
+    <span class="note">🔒 Your answers go only to your broker at Havill &amp; Co.</span>
+  </div>
+  <div class="iq-err" id="iqErr"></div>
+</div>
+
+<!-- THANK YOU -->
+<div class="iq-thanks" id="iqThanks" style="display:none">
+  <div class="ic"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#2D6E7E" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+  <h1>Thank you!</h1>
+  <p id="iqThanksMsg">Your answers are on their way to your broker at Havill &amp; Co. They'll put together a tailored shortlist of buildings that fit your team and follow up shortly.</p>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var AMENITIES=[["coffee","Coffee shops"],["dining","Restaurants / dining"],["fitness","Gyms / fitness"],["grocery","Grocery"],["transit","Transit access"]];
+  var RATINGS=["Not important","Nice to have","Important","Must-have"]; // index 0..3 -> weight
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
+  function qs(k){ return new URLSearchParams(location.search).get(k); }
+  var slug=qs('i')||'';
+
+  // build amenity importance rows
+  document.getElementById('iqAmen').innerHTML=AMENITIES.map(function(a){
+    return '<div class="iq-amrow"><span class="nm">'+a[1]+'</span>'+
+      '<div class="iq-seg" data-single="amen_'+a[0]+'">'+RATINGS.map(function(r,i){
+        return '<label><input type="radio" name="amen_'+a[0]+'" value="'+i+'"'+(i===1?'':'')+'>'+r+'</label>';
+      }).join('')+'</div></div>';
+  }).join('');
+
+  // segmented controls + chips: toggle the .on class on the visible label
+  document.addEventListener('change',function(e){
+    var seg=e.target.closest('.iq-seg');
+    if(seg){ Array.prototype.forEach.call(seg.querySelectorAll('label'),function(l){ l.classList.toggle('on', l.querySelector('input').checked); }); }
+    var chip=e.target.closest('.iq-chip');
+    if(chip){ chip.classList.toggle('on', chip.querySelector('input').checked); }
+  });
+
+  // roster spreadsheet upload (held in memory; uploaded to storage when the backend is wired)
+  var rosterFile=null;
+  document.getElementById('q_roster').addEventListener('change',function(e){
+    rosterFile=(e.target.files&&e.target.files[0])||null;
+    var fn=document.getElementById('iqFileName');
+    if(rosterFile){
+      if(rosterFile.size>5*1024*1024){ fn.textContent='That file is over 5 MB — please send a smaller spreadsheet.'; fn.style.color='#C2453F'; rosterFile=null; e.target.value=''; return; }
+      fn.style.color=''; fn.textContent='✓ '+rosterFile.name;
+    } else fn.textContent='';
+  });
+
+  function val(id){ var el=document.getElementById(id); return el?el.value.trim():''; }
+  function radioVal(name){ var el=document.querySelector('input[name="'+name+'"]:checked'); return el?el.value:''; }
+  function multiVals(container){ return Array.prototype.map.call(document.querySelectorAll('[data-multi="'+container+'"] input:checked'),function(i){return i.value;}); }
+
+  function collect(){
+    var amen={}; AMENITIES.forEach(function(a){ var v=radioVal('amen_'+a[0]); amen[a[0]]=(v===''?null:parseInt(v,10)); });
+    return {
+      company: val('q_company'), industry: val('q_industry'),
+      contactName: val('q_contact_name'), contactEmail: val('q_contact_email'),
+      headcount: val('q_headcount'), headcountFuture: val('q_headcount_future'),
+      sf: val('q_sf'), parking: val('q_parking'),
+      layout: radioVal('q_layout'), buildout: radioVal('q_buildout'),
+      musthaves: multiVals('q_musthaves'),
+      budget: val('q_budget'), timeline: val('q_timeline'), term: radioVal('q_term'),
+      areas: multiVals('q_areas'), amenities: amen,
+      rosterFileName: rosterFile ? rosterFile.name : '', notes: val('q_notes')
+    };
+  }
+
+  document.getElementById('iqSubmit').addEventListener('click',function(){
+    var err=document.getElementById('iqErr');
+    var data=collect();
+    if(!data.company){ err.textContent='Please add your company name.'; window.scrollTo({top:0,behavior:'smooth'}); return; }
+    if(!data.contactEmail){ err.textContent='Please add your email so your broker can follow up.'; return; }
+    err.textContent='';
+    // BACKEND COMES NEXT: this will POST {slug, responses:data} to submit-intake.
+    console.log('Intake responses (slug='+slug+'):', data);
+    document.getElementById('iqForm').style.display='none';
+    document.getElementById('iqThanks').style.display='block';
+    window.scrollTo({top:0,behavior:'smooth'});
+  });
+})();
+</script>
+</body>
+</html>
