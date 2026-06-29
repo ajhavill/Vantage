@@ -93,9 +93,27 @@
   .cv-cm-row .big .k{font:500 10px Inter;color:var(--ink-faint)}
   .cv-cm-empty{padding:40px 24px;text-align:center;color:var(--ink-faint);font:500 13px Inter}
   .cv-cm-baked{font:600 10.5px Inter;color:var(--accent);background:rgba(45,110,126,.1);border-radius:20px;padding:2px 9px}
+  /* compare (side-by-side grid) */
+  .cv-cmp{padding:26px 26px 50px;max-width:100%}
+  .cv-cmp-head h1{font:700 26px 'Bricolage Grotesque',sans-serif;color:var(--ink);margin:0 0 6px;letter-spacing:-.01em}
+  .cv-cmp-head .sub{font:400 13px Inter;color:var(--ink-soft);margin-bottom:20px}
+  .cv-cmp-scroll{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--paper-2)}
+  .cv-cmp-tbl{border-collapse:collapse;width:100%;min-width:520px}
+  .cv-cmp-tbl th,.cv-cmp-tbl td{padding:12px 16px;text-align:left;border-bottom:1px solid var(--line);font:500 13px Inter;color:var(--ink);white-space:nowrap}
+  .cv-cmp-tbl thead th{position:sticky;top:0;background:var(--paper-2);vertical-align:bottom;border-bottom:2px solid var(--line-2)}
+  .cv-cmp-tbl tbody tr:last-child td{border-bottom:0}
+  .cmp-rowh{font:600 12px Inter !important;color:var(--ink-soft) !important;background:var(--paper);position:sticky;left:0;z-index:1}
+  .cmp-sw{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:middle}
+  .cmp-bnm{font:700 14px 'Bricolage Grotesque',sans-serif;color:var(--ink);white-space:normal;max-width:180px}
+  .cmp-bloc{font:500 11.5px Inter;color:var(--ink-faint);margin-top:1px}
+  .cmp-open{margin-top:8px;font:600 11.5px Inter;color:var(--accent);background:none;border:0;cursor:pointer;padding:0}
+  .cmp-best{background:rgba(45,110,126,.10);font-weight:700 !important;color:var(--ink) !important;position:relative}
+  .cmp-best::after{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent)}
   /* the viewer has no priobar, so reclaim the height the Cockpit reserves for it */
   #viewDetail.detail{height:calc(100vh - 57px)}
   @media(max-width:900px){.cv-land,.cv-commute{grid-template-columns:1fr;height:auto}.cv-land-map,.cv-cm-map{height:50vh}#viewDetail.detail{height:auto}}
+  @media(max-width:860px){.cv-lockup .by{display:none}}
+  @media(max-width:560px){.cv-prepared .for .lbl{display:none}.cv-prepared .for .nm{max-width:130px}.cv-topbar{gap:10px;padding:10px 14px}}
 </style>
 </head>
 <body>
@@ -123,6 +141,7 @@
     </div>
     <div class="cv-nav" id="cvNav">
       <button data-v="buildings" class="on">Buildings</button>
+      <button data-v="compare">Compare</button>
       <button data-v="commute">Commute</button>
     </div>
     <div class="cv-prepared" id="cvPrepared"></div>
@@ -244,6 +263,17 @@
       <div class="cv-cm-map"><div id="cmvMap"></div></div>
     </div>
   </section>
+
+  <!-- COMPARE -->
+  <section id="viewCompare" style="display:none">
+    <div class="cv-cmp">
+      <div class="cv-cmp-head">
+        <h1>Side-by-side</h1>
+        <div class="sub">Your shortlist at a glance. The best value in each row is highlighted.</div>
+      </div>
+      <div class="cv-cmp-scroll"><table class="cv-cmp-tbl" id="cmpTable"></table></div>
+    </div>
+  </section>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -315,14 +345,60 @@
 
   // ---- nav ----
   function show(view){
-    ['buildings','detail','commute'].forEach(function(v){
+    ['buildings','detail','commute','compare'].forEach(function(v){
       var el=document.getElementById('view'+v.charAt(0).toUpperCase()+v.slice(1));
       if(el) el.style.display=(v===view)?'block':'none';
     });
     document.querySelectorAll('#cvNav button').forEach(function(b){ b.classList.toggle('on',b.dataset.v===view||(view==='detail'&&b.dataset.v==='buildings')); });
     if(view==='buildings') setTimeout(function(){ if(landMap) landMap.invalidateSize(); },60);
     if(view==='commute'){ renderCommute(); setTimeout(function(){ if(cmvMap) cmvMap.invalidateSize(); },60); }
+    if(view==='compare') renderCompare();
   }
+
+  // ---- compare (side-by-side grid; reuses package data, no backend) ----
+  function renderCompare(){
+    var tbl=document.getElementById('cmpTable'); if(!tbl) return;
+    var bs=VV.buildings.slice().sort(function(a,b){return VV.matchScore(b)-VV.matchScore(a);});
+    if(!bs.length){ tbl.innerHTML=''; return; }
+    var cats=VV.weightedCats();
+    // each row: {label, get(b)->display string, num(b)->comparable number|null, best:'high'|'low'}
+    var rows=[
+      {label:'Match score', num:function(b){return VV.matchScore(b);}, get:function(b){return String(VV.matchScore(b));}, best:'high'},
+      {label:'Available', num:function(b){return sfNum(b.avail);}, get:function(b){return b.avail?esc(b.avail)+' SF':'—';}, best:'high'},
+      {label:'Asking rent', num:function(b){return rentNum(b.rent);}, get:function(b){return b.rent?esc(b.rent):'—';}, best:'low'},
+      {label:'Class', get:function(b){return b['class']?esc(b['class']):'—';}},
+      {label:'Built', get:function(b){return b.yearBuilt?esc(b.yearBuilt):'—';}},
+      {label:'Parking', get:function(b){return b.parking?esc(b.parking):'—';}}
+    ];
+    cats.forEach(function(c){
+      rows.push({label:c.label+' score', cat:c.key, color:c.color,
+        num:function(b){return (b.cscore&&b.cscore[c.key]!=null)?b.cscore[c.key]:null;},
+        get:function(b){return (b.cscore&&b.cscore[c.key]!=null)?b.cscore[c.key].toFixed(1):'—';}, best:'high'});
+    });
+    // header
+    var html='<thead><tr><th class="cmp-rowh"></th>'+bs.map(function(b){
+      return '<th><div class="cmp-bnm">'+esc(b.name)+'</div><div class="cmp-bloc">'+esc(b.submarket||'')+'</div>'+
+        '<button class="cmp-open" data-id="'+esc(b.id)+'">Open →</button></th>';
+    }).join('')+'</tr></thead><tbody>';
+    rows.forEach(function(r){
+      // find best value index for highlight
+      var bestIdx=-1;
+      if(r.num && r.best){
+        var bestVal=null;
+        bs.forEach(function(b,i){ var v=r.num(b); if(v==null) return;
+          if(bestVal==null || (r.best==='high'?v>bestVal:v<bestVal)){ bestVal=v; bestIdx=i; } });
+      }
+      html+='<tr><td class="cmp-rowh">'+(r.color?'<span class="cmp-sw" style="background:'+r.color+'"></span>':'')+esc(r.label)+'</td>'+
+        bs.map(function(b,i){ return '<td'+(i===bestIdx?' class="cmp-best"':'')+'>'+r.get(b)+'</td>'; }).join('')+'</tr>';
+    });
+    html+='</tbody>';
+    tbl.innerHTML=html;
+    Array.prototype.forEach.call(tbl.querySelectorAll('.cmp-open'),function(btn){
+      btn.onclick=function(){ openBuilding(btn.getAttribute('data-id')); };
+    });
+  }
+  function sfNum(s){ var m=String(s||'').replace(/[^0-9]/g,''); return m?parseInt(m,10):null; }
+  function rentNum(s){ var m=String(s||'').match(/[\d.]+/); return m?parseFloat(m[0]):null; }
   function wireNav(){
     document.getElementById('cvNav').addEventListener('click',function(e){ var b=e.target.closest('button'); if(b) show(b.dataset.v); });
     document.getElementById('dsrBack').addEventListener('click',function(){ show('buildings'); });
