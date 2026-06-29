@@ -1891,6 +1891,9 @@
       '<div class="q-dhead"><h3>'+cmEsc(it.company_name||'Client')+'</h3>'+
         '<button class="cv-pdf-btn" id="qPdfBtn" title="Download these answers as a PDF"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> PDF</button></div>'+
       '<div class="qa-wrap">'+qFullAnswers(r)+'</div>'+
+      (it.roster_filename ? '<div class="qr-sec"><div class="qr-head"><span class="qr-h">Team roster</span><span class="qr-file">'+cmEsc(it.roster_filename)+'</span></div>'+
+        '<div id="qrBody"><button class="qr-btn" id="qrRead"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg> Read roster with AI</button>'+
+        '<div class="qr-hint">Pulls each teammate out of the uploaded file, flags the key people, and can feed their home addresses straight into the commute analysis.</div></div></div>' : '')+
       '<div class="q-matchhead">Best-fit buildings <span>ranked from their answers</span></div>'+
       '<div class="q-matches">'+matches.map(function(m,i){
         return '<div class="q-match"><div class="q-mrank">'+(i+1)+'</div><div style="flex:1;min-width:0"><div class="q-mnm">'+cmEsc(m.b.name)+'</div>'+
@@ -1903,6 +1906,62 @@
     document.getElementById('qBack').onclick=function(){ el.style.display='none'; document.getElementById('qMain').style.display=''; };
     document.getElementById('qPdfBtn').onclick=function(){ qBuildPrintDoc(it); };
     document.getElementById('qOpenPkg').onclick=function(){ qClose(); if(window.openShareWith) window.openShareWith(matches.slice(0,6).map(function(m){return m.b.id;}), it.company_name); };
+    var qrBtn=document.getElementById('qrRead'); if(qrBtn) qrBtn.onclick=function(){ qReadRoster(it); };
+  }
+  // ---- AI roster reader: fetch the uploaded sheet, parse it client-side, let Claude extract the team ----
+  function qrBody(){ return document.getElementById('qrBody'); }
+  function qrMsg(html){ var b=qrBody(); if(b) b.innerHTML='<div class="qr-msg">'+html+'</div>'; }
+  function b64ToBytes(b64){ var bin=atob(String(b64||'').replace(/\s+/g,'')); var len=bin.length, out=new Uint8Array(len); for(var i=0;i<len;i++) out[i]=bin.charCodeAt(i); return out; }
+  function rosterToRows(filename, b64){
+    var bytes=b64ToBytes(b64);
+    if(/\.csv$/i.test(filename||'')){ try{ return new TextDecoder('utf-8').decode(bytes); }catch(e){ return ''; } }
+    if(typeof XLSX==='undefined') throw new Error('Spreadsheet reader not loaded — refresh and try again.');
+    var wb=XLSX.read(bytes,{type:'array'});
+    var name=wb.SheetNames[0]; if(!name) return '';
+    return XLSX.utils.sheet_to_csv(wb.Sheets[name],{blankrows:false});
+  }
+  async function qReadRoster(it){
+    var btn=document.getElementById('qrRead'); if(btn){ btn.disabled=true; btn.innerHTML='Reading roster…'; }
+    try{
+      var token=await qToken();
+      var gr=await fetch('/.netlify/functions/get-roster',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token, slug:it.slug})});
+      var gd=await gr.json(); if(!gr.ok) throw new Error(gd.error||'Could not load the roster.');
+      var rows=rosterToRows(gd.filename, gd.data);
+      if(!rows || !rows.trim()) throw new Error('That roster file looks empty.');
+      var ar=await fetch('/.netlify/functions/ai-roster',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token, rows:rows})});
+      var ad=await ar.json(); if(!ar.ok) throw new Error(ad.error||'The AI reader hit an error.');
+      if(ad.configured===false){ qrMsg('AI roster reading isn’t switched on yet. Add your <b>Anthropic API key</b> as the <code>ANTHROPIC_API_KEY</code> environment variable in Netlify, redeploy, and this will light up.'); return; }
+      qrRenderPeople(it, ad.people||[], ad.note||'');
+    }catch(e){
+      qrMsg(cmEsc(/failed to fetch|load failed/i.test(e.message)?'The AI roster reader runs on the deployed site.':e.message)+' <button class="qr-retry" id="qrRetry">Try again</button>');
+      var rt=document.getElementById('qrRetry'); if(rt) rt.onclick=function(){ qReadRoster(it); };
+    }
+  }
+  function qrRenderPeople(it, people, note){
+    var b=qrBody(); if(!b) return;
+    if(!people.length){ qrMsg('No team members could be pulled from that file.'+(note?' '+cmEsc(note):'')); return; }
+    var withHome=people.filter(function(p){return (p.home||'').trim();}).length;
+    var crit=people.filter(function(p){return p.critical;}).length;
+    var html='<div class="qr-stat">'+people.length+' on the team'+(crit?' · '+crit+' flagged key':'')+(withHome?' · '+withHome+' with a home location':'')+'</div>'+
+      '<div class="qr-list">'+people.map(function(p){
+        return '<div class="qr-row'+(p.critical?' key':'')+'"><div class="qr-who"><span class="qr-nm">'+cmEsc(p.name||'—')+(p.critical?' <span class="qr-key">KEY</span>':'')+'</span>'+
+          (p.title?'<span class="qr-ti">'+cmEsc(p.title)+'</span>':'')+'</div>'+
+          '<div class="qr-home">'+(p.home?cmEsc(p.home):'<span class="qa-dim">no home on file</span>')+'</div></div>';
+      }).join('')+'</div>'+
+      (note?'<div class="qr-note">'+cmEsc(note)+'</div>':'')+
+      (withHome?'<button class="qr-commute" id="qrCommute">Use these '+withHome+' home'+(withHome>1?'s':'')+' in the commute analysis →</button>':'');
+    b.innerHTML=html;
+    var cb=document.getElementById('qrCommute'); if(cb) cb.onclick=function(){ qrToCommute(people); };
+  }
+  function qrToCommute(people){
+    var homes=people.filter(function(p){return (p.home||'').trim();});
+    if(!homes.length) return;
+    cmTeam=homes.map(function(p){ return {name:p.name||'', raw:(p.home||'').trim(), lat:null, lng:null, geo:'', times:null}; });
+    qClose();
+    if(window.showModule) window.showModule('market');
+    if(window.showCommute) window.showCommute();
+    if(typeof cmRenderTeam==='function') cmRenderTeam();
+    if(typeof cmNote==='function') cmNote('Loaded '+homes.length+' home'+(homes.length>1?'s':'')+' from the roster — press “Run analysis” to map their commutes.');
   }
   (function qWire(){ var m=document.getElementById('qModal'); if(!m) return;
     document.getElementById('qX').addEventListener('click',qClose);

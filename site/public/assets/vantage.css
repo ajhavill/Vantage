@@ -616,6 +616,30 @@
   .qa-v{flex:1;color:var(--ink);word-break:break-word}
   .qa-dim{color:var(--ink-faint)}
 
+  /* ---- AI roster reader (Cockpit questionnaire detail) ---- */
+  .qr-sec{border:1px solid var(--line);border-radius:11px;background:var(--paper-2);padding:12px 14px;margin:0 0 16px}
+  .qr-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:9px}
+  .qr-h{font:700 13px 'Bricolage Grotesque',sans-serif;color:var(--ink)}
+  .qr-file{font:500 11.5px 'JetBrains Mono',monospace;color:var(--ink-faint);word-break:break-all;text-align:right}
+  .qr-btn{display:inline-flex;align-items:center;gap:8px;font:600 12.5px Inter;color:#fff;background:var(--accent);border:0;border-radius:9px;padding:9px 15px;cursor:pointer}
+  .qr-btn:disabled{opacity:.6;cursor:default}
+  .qr-hint{font:500 11.5px Inter;color:var(--ink-faint);margin-top:8px;line-height:1.45}
+  .qr-msg{font:500 12.5px Inter;color:var(--ink-soft);line-height:1.5}
+  .qr-msg code{font:600 11.5px 'JetBrains Mono',monospace;background:var(--paper);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+  .qr-retry,.qr-commute{font:600 12px Inter;cursor:pointer}
+  .qr-retry{margin-left:6px;color:var(--accent);background:none;border:0;text-decoration:underline}
+  .qr-stat{font:600 11.5px Inter;color:var(--ink-soft);margin-bottom:9px}
+  .qr-list{display:flex;flex-direction:column;gap:6px}
+  .qr-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 11px;border:1px solid var(--line);border-radius:9px;background:var(--paper)}
+  .qr-row.key{border-color:var(--accent);background:rgba(45,110,126,.05)}
+  .qr-who{min-width:0}
+  .qr-nm{font:600 12.5px Inter;color:var(--ink);display:flex;align-items:center;gap:7px}
+  .qr-key{font:700 9px Inter;letter-spacing:.06em;color:#fff;background:var(--accent);border-radius:4px;padding:2px 5px}
+  .qr-ti{display:block;font:500 11px Inter;color:var(--ink-faint);margin-top:1px}
+  .qr-home{font:500 12px Inter;color:var(--ink-soft);text-align:right;flex:none;max-width:48%;word-break:break-word}
+  .qr-note{font:500 11.5px Inter;color:var(--ink-faint);margin-top:9px;font-style:italic}
+  .qr-commute{display:block;width:100%;margin-top:12px;color:#fff;background:var(--building);border:0;border-radius:9px;padding:10px 14px}
+
   /* ============ Broker portal shell: sidebar + modules ============ */
   .app-shell{display:flex;min-height:100vh}
   .vnav{width:212px;flex:none;background:var(--building);color:#fff;display:flex;flex-direction:column;padding:16px 12px;position:sticky;top:0;height:100vh;box-sizing:border-box}
