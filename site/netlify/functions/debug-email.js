@@ -18,6 +18,24 @@ exports.handler = async (event) => {
     hasSupabaseServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY
   };
 
+  // create a test intake owned by the first platform_admin, so we can run a real
+  // submit-intake against it and exercise the actual email path.
+  if (body.action === "makeintake" && process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    try {
+      const k = process.env.SUPABASE_SERVICE_ROLE_KEY, U = process.env.SUPABASE_URL;
+      const H = { apikey: k, Authorization: "Bearer " + k, "Content-Type": "application/json" };
+      const pr = await fetch(U + "/rest/v1/profiles?select=id&role=eq.platform_admin&limit=1", { headers: H });
+      const owner = (await pr.json())[0].id;
+      const a = "abcdefghijklmnopqrstuvwxyz0123456789";
+      let slug = "dbg"; for (let i = 0; i < 11; i++) slug += a[Math.floor(((Date.now() + i * 7) % a.length))];
+      const ins = await fetch(U + "/rest/v1/intakes", { method: "POST", headers: Object.assign({ Prefer: "return=minimal" }, H), body: JSON.stringify({ slug: slug, owner_id: owner, company_name: "Email Path Test", status: "sent" }) });
+      out.testIntakeSlug = ins.ok ? slug : null;
+      out.testIntakeOwner = owner;
+      out.insertStatus = ins.status;
+      if (!ins.ok) out.insertBody = (await ins.text()).slice(0, 300);
+    } catch (e) { out.makeintakeError = String(e && e.message ? e.message : e); }
+  }
+
   // dump profiles (id/email/role) so we can see if broker emails are populated
   if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
     try {
