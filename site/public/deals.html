@@ -169,16 +169,8 @@
 </div>
 
 <div class="topbar">
-  <div class="brand" onclick="DF.showPipeline()">
-    <span class="logo">Vantage<span class="dot">.</span></span>
-    <span class="by">by Havill &amp; Co.</span>
-  </div>
   <span class="crumb" id="crumb">Deal flow</span>
-  <a class="navlink" href="index.html" style="margin-left:auto" title="Back to the market cockpit">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5"/><path d="M5 9.5V21h14V9.5"/></svg>
-    Cockpit
-  </a>
-  <span class="userchip" id="userChip" style="display:none">
+  <span class="userchip" id="userChip" style="display:none;margin-left:auto">
     <span class="uemail" id="userEmail"></span>
     <button id="signOutBtn" title="Sign out">Sign out</button>
   </span>
@@ -424,7 +416,7 @@ window.DF = (function(){
       + '<td class="num">'+(ge==null?'—':psf(ge))+'</td>'
       + '<td class="num">'+(r.size_sf==null?'—':Number(r.size_sf).toLocaleString())+'</td>'
       + '<td class="num">'+(r.term_months==null?'—':(r.term_months+'mo'))+'</td>'
-      + '<td>'+esc(r.summary||'')+(r.status==='draft'?'<button class="rev" onclick="DF.reviewDraft(\''+r.id+'\',\''+r.deal_id+'\')">review</button>':'')+'</td>'
+      + '<td>'+esc(r.summary||'')+'<button class="rev" onclick="DF.editRound(\''+r.id+'\',\''+r.deal_id+'\')">'+(r.status==='draft'?'review':'edit')+'</button></td>'
       + '</tr>';
   }
 
@@ -511,44 +503,52 @@ window.DF = (function(){
     });
   }
 
+  /* ---------- round form (shared by create + edit) ---------- */
+  function roundFields(v){
+    v=v||{};
+    var basis=v.rent_basis||'FSG';
+    function val(x){ return x==null?'':x; }
+    return '<div class="grid2">'
+      + fld('From','<select id="f_party"><option value="tenant"'+(v.from_party!=='landlord'?' selected':'')+'>Our side (tenant)</option>'
+          + '<option value="landlord"'+(v.from_party==='landlord'?' selected':'')+'>Landlord response</option></select>')
+      + fld('Rent structure','<select id="f_basis" onchange="DF.basisChange()">'+selOpts(RENT_BASES,basis)+'</select>')
+      + '<div class="fld" id="f_otherwrap" style="display:'+(basis==='OTHER'?'flex':'none')+'"><label>Custom structure label</label><input id="f_otherlbl" value="'+esc(val(v.rent_basis_label))+'" placeholder="describe it"></div>'
+      + fld('Base rent','<input id="f_base" type="number" step="0.01" inputmode="decimal" value="'+val(v.base_rent_psf)+'" placeholder="0.00">','$/SF/yr')
+      + fld('Opex / NNN load','<input id="f_opex" type="number" step="0.01" inputmode="decimal" value="'+val(v.opex_psf)+'" placeholder="0.00">','$/SF/yr')
+      + fld('Size','<input id="f_size" type="number" step="1" inputmode="numeric" value="'+val(v.size_sf)+'" placeholder="0">','SF')
+      + fld('Term','<input id="f_term" type="number" step="1" inputmode="numeric" value="'+val(v.term_months)+'" placeholder="0">','months')
+      + fld('Annual escalation','<input id="f_esc" type="number" step="0.1" inputmode="decimal" value="'+val(v.annual_escalation_pct)+'" placeholder="0">','%')
+      + fld('Free rent','<input id="f_free" type="number" step="0.5" inputmode="decimal" value="'+val(v.free_rent_months)+'" placeholder="0">','months')
+      + fld('TI allowance','<input id="f_ti" type="number" step="0.01" inputmode="decimal" value="'+val(v.ti_psf)+'" placeholder="0.00">','$/SF')
+      + '</div>'
+      + fld('Notes','<textarea id="f_sum" placeholder="e.g. LL held on TI, countered to $46">'+esc(val(v.summary))+'</textarea>');
+  }
+  function readRoundForm(){
+    var basis=$('f_basis').value;
+    return {
+      from_party:$('f_party').value, rent_basis:basis,
+      rent_basis_label: basis==='OTHER' ? (($('f_otherlbl').value||'').trim()||null) : null,
+      base_rent_psf:num($('f_base').value), opex_psf:num($('f_opex').value),
+      size_sf:num($('f_size').value), term_months:num($('f_term').value),
+      annual_escalation_pct:num($('f_esc').value), free_rent_months:num($('f_free').value),
+      ti_psf:num($('f_ti').value), summary:($('f_sum').value||'').trim()||null
+    };
+  }
+  function basisChange(){ var w=$('f_otherwrap'); if(w) w.style.display = $('f_basis').value==='OTHER' ? 'flex':'none'; }
+
   /* ---------- create: round ---------- */
   async function newRound(dealId, proposalId){
-    // default next round number + carry forward the prior round's structure
     var prior=[];
     try{ prior=await q(sb.from('proposal_rounds').select('*').eq('proposal_id',proposalId).order('round_no',{ascending:false})); }catch(e){}
     var last=prior[0]; var nextNo=last?(last.round_no+1):1;
-    var defBasis=last?last.rent_basis:'FSG';
     openSheet('<h3>Round '+nextNo+'</h3><div class="ssub">Log a set of proposal terms — yours or the landlord\'s response.</div>'
-      + '<div class="grid2">'
-      + fld('From','<select id="f_party"><option value="tenant">Our side (tenant)</option><option value="landlord">Landlord response</option></select>')
-      + fld('Rent structure','<select id="f_basis" onchange="DF.basisChange()">'+selOpts(RENT_BASES,defBasis)+'</select>')
-      + '<div class="fld" id="f_otherwrap" style="display:'+(defBasis==='OTHER'?'flex':'none')+'"><label>Custom structure label</label><input id="f_otherlbl" placeholder="describe it"></div>'
-      + fld('Base rent','<input id="f_base" type="number" step="0.01" inputmode="decimal" placeholder="0.00">','$/SF/yr')
-      + fld('Opex / NNN load','<input id="f_opex" type="number" step="0.01" inputmode="decimal" placeholder="0.00">','$/SF/yr')
-      + fld('Size','<input id="f_size" type="number" step="1" inputmode="numeric" placeholder="0">','SF')
-      + fld('Term','<input id="f_term" type="number" step="1" inputmode="numeric" placeholder="0">','months')
-      + fld('Annual escalation','<input id="f_esc" type="number" step="0.1" inputmode="decimal" placeholder="0">','%')
-      + fld('Free rent','<input id="f_free" type="number" step="0.5" inputmode="decimal" placeholder="0">','months')
-      + fld('TI allowance','<input id="f_ti" type="number" step="0.01" inputmode="decimal" placeholder="0.00">','$/SF')
-      + '</div>'
-      + fld('Notes','<textarea id="f_sum" placeholder="e.g. LL held on TI, countered to $46"></textarea>')
+      + roundFields({ rent_basis: last?last.rent_basis:'FSG' })   // carry forward prior structure
       + '<div class="formerr" id="f_err"></div>'
       + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button>'
       +   '<button class="btn" id="f_draft">Save as draft</button>'
       +   '<button class="btn pri" id="f_final">Save round</button></div>');
-
     function save(status){
-      var basis=$('f_basis').value;
-      var row={
-        deal_id:dealId, proposal_id:proposalId, round_no:nextNo,
-        from_party:$('f_party').value, rent_basis:basis,
-        rent_basis_label: basis==='OTHER' ? (($('f_otherlbl').value||'').trim()||null) : null,
-        base_rent_psf:num($('f_base').value), opex_psf:num($('f_opex').value),
-        size_sf:num($('f_size').value), term_months:num($('f_term').value),
-        annual_escalation_pct:num($('f_esc').value), free_rent_months:num($('f_free').value),
-        ti_psf:num($('f_ti').value), summary:($('f_sum').value||'').trim()||null,
-        status:status, source:'manual', created_by:me.id
-      };
+      var row=Object.assign(readRoundForm(), {deal_id:dealId, proposal_id:proposalId, round_no:nextNo, status:status, source:'manual', created_by:me.id});
       var btn=$(status==='final'?'f_final':'f_draft'); btn.disabled=true; btn.textContent='Saving…';
       q(sb.from('proposal_rounds').insert(row).select().single())
         .then(function(){ closeSheet(); openDeal(dealId); })
@@ -557,7 +557,43 @@ window.DF = (function(){
     $('f_final').addEventListener('click',function(){ save('final'); });
     $('f_draft').addEventListener('click',function(){ save('draft'); });
   }
-  function basisChange(){ var w=$('f_otherwrap'); if(w) w.style.display = $('f_basis').value==='OTHER' ? 'flex':'none'; }
+
+  /* ---------- edit: round (manual or AI draft) ---------- */
+  async function editRound(roundId, dealId){
+    var r; try{ r=(await q(sb.from('proposal_rounds').select('*').eq('id',roundId).limit(1)))[0]; }catch(e){ alert('Could not load the round.'); return; }
+    if(!r) return;
+    var isDraft=r.status==='draft', hasProse=r.draft_text!=null;
+    var draftSec = hasProse ? fld('Proposal draft'+(r.source==='ai'?' <span class="draftpill">AI</span>':''),'<textarea id="f_draft_text" style="min-height:150px">'+esc(r.draft_text)+'</textarea>') : '';
+    openSheet('<h3>Edit round '+esc(r.round_no)+(isDraft?' <span class="draftpill">draft</span>':'')+'</h3>'
+      + '<div class="ssub">Adjust the terms'+(hasProse?' and proposal wording':'')+(isDraft?', then save — or mark it final to make it a real round you can compare and share.':'.')+'</div>'
+      + draftSec + roundFields(r)
+      + '<div class="formerr" id="f_err"></div>'
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button>'
+      +   '<button class="btn" id="f_del">Delete</button>'
+      +   (isDraft ? '<button class="btn" id="f_savedraft">Save draft</button><button class="btn pri" id="f_final">Save &amp; mark final</button>'
+                   : '<button class="btn pri" id="f_save">Save changes</button>')
+      + '</div>');
+    function persist(status, btn){
+      var patch=readRoundForm();
+      if(status) patch.status=status;
+      var dt=$('f_draft_text'); if(dt) patch.draft_text=dt.value;
+      btn.disabled=true; var orig=btn.textContent; btn.textContent='Saving…';
+      q(sb.from('proposal_rounds').update(patch).eq('id',roundId).select().single())
+        .then(function(){ closeSheet(); openDeal(dealId); })
+        .catch(function(e){ $('f_err').textContent=e.message; btn.disabled=false; btn.textContent=orig; });
+    }
+    if(isDraft){
+      $('f_savedraft').addEventListener('click',function(){ persist('draft', this); });
+      $('f_final').addEventListener('click',function(){ persist('final', this); });
+    } else {
+      $('f_save').addEventListener('click',function(){ persist(null, this); });
+    }
+    $('f_del').addEventListener('click',async function(){
+      if(!confirm('Delete this round?')) return;
+      try{ await q(sb.from('proposal_rounds').delete().eq('id',roundId)); closeSheet(); openDeal(dealId); }
+      catch(e){ $('f_err').textContent=e.message; }
+    });
+  }
 
   /* ---------- stage change ---------- */
   async function setStage(dealId, stage){
@@ -797,40 +833,6 @@ window.DF = (function(){
       setTimeout(function(){ openDeal(dealId); }, 32000);
     }catch(e){ $('ai_err').textContent=e.message; btn.disabled=false; btn.textContent='✨ Generate draft'; }
   }
-  async function reviewDraft(roundId, dealId){
-    var r; try{ r=(await q(sb.from('proposal_rounds').select('*').eq('id',roundId).limit(1)))[0]; }catch(e){ alert('Could not load the draft.'); return; }
-    if(!r) return;
-    function cell(l,v){ return '<tr><td>'+l+'</td><td class="num">'+v+'</td></tr>'; }
-    var econ='<div class="rounds"><table class="rtable"><tbody>'
-      + cell('Structure', esc(basisLabel(r.rent_basis,r.rent_basis_label)))
-      + cell('Base $/SF', psf(r.base_rent_psf))
-      + cell('Opex $/SF', r.opex_psf==null?'—':psf(r.opex_psf))
-      + cell('Size SF', r.size_sf==null?'—':Number(r.size_sf).toLocaleString())
-      + cell('Term', r.term_months==null?'—':r.term_months+' mo')
-      + cell('Escalation', r.annual_escalation_pct==null?'—':Number(r.annual_escalation_pct).toFixed(1)+'%')
-      + cell('Free rent', r.free_rent_months==null?'—':r.free_rent_months+' mo')
-      + cell('TI $/SF', r.ti_psf==null?'—':psf(r.ti_psf))
-      + '</tbody></table></div>';
-    openSheet('<h3>Review draft — round '+esc(r.round_no)+(r.source==='ai'?' <span class="draftpill">AI</span>':'')+'</h3>'
-      + '<div class="ssub">Read the draft, then finalize it (turns it into a real round you can compare and share) or delete it.</div>'
-      + '<div class="fld"><label>Proposal draft</label><div class="draftbox">'+(r.draft_text?esc(r.draft_text).replace(/\n/g,'<br>'):'<span style="color:var(--ink-faint)">No prose — economics only.</span>')+'</div></div>'
-      + '<div class="fld"><label>Economics</label>'+econ+'</div>'
-      + '<div class="formerr" id="rv_err"></div>'
-      + '<div class="srow"><button class="btn" onclick="DF.close()">Close</button>'
-      +   '<button class="btn" id="rv_del">Delete draft</button>'
-      +   '<button class="btn pri" id="rv_fin">Mark as final</button></div>');
-    $('rv_fin').addEventListener('click',async function(){
-      this.disabled=true; this.textContent='Finalizing…';
-      try{ await q(sb.from('proposal_rounds').update({status:'final'}).eq('id',roundId).select().single()); closeSheet(); openDeal(dealId); }
-      catch(e){ $('rv_err').textContent=e.message; this.disabled=false; this.textContent='Mark as final'; }
-    });
-    $('rv_del').addEventListener('click',async function(){
-      if(!confirm('Delete this draft round?')) return;
-      try{ await q(sb.from('proposal_rounds').delete().eq('id',roundId)); closeSheet(); openDeal(dealId); }
-      catch(e){ $('rv_err').textContent=e.message; }
-    });
-  }
-
   /* ---------- boot ---------- */
   document.addEventListener('DOMContentLoaded',bindAuth);
 
@@ -840,7 +842,7 @@ window.DF = (function(){
     setStage:setStage, basisChange:basisChange, close:closeSheet,
     shareDeal:shareDeal, toggleProposalVisible:toggleProposalVisible,
     attachDoc:attachDoc, downloadDoc:downloadDoc, deleteDoc:deleteDoc, toggleDocVisible:toggleDocVisible,
-    aiDraft:aiDraft, aiPickTmpl:aiPickTmpl, aiDocx:aiDocx, toggleVoice:toggleVoice, reviewDraft:reviewDraft,
+    aiDraft:aiDraft, aiPickTmpl:aiPickTmpl, aiDocx:aiDocx, toggleVoice:toggleVoice, editRound:editRound,
     effectiveRent:effectiveRent, grossEquiv:grossEquiv
   };
 })();
