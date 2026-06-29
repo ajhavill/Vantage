@@ -121,6 +121,20 @@
   .tcard .tnotes{font:400 12px Inter;color:var(--ink-soft);margin-top:4px}
   .tcard .trow{display:flex;gap:9px;align-items:center;margin-top:9px;flex-wrap:wrap}
 
+  /* lease abstract */
+  .la-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px 16px;margin-top:12px}
+  .la-l{font:600 10px Inter;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);margin-bottom:2px}
+  .la-cell .la-v{font:600 13px Inter;color:var(--ink)}
+  .la-opts{margin-top:13px;font:400 12.5px Inter;color:var(--ink-soft);line-height:1.5}
+  .la-kd{margin-top:13px}
+  .la-kdrow{display:flex;justify-content:space-between;gap:12px;font:500 12.5px Inter;color:var(--ink-soft);padding:5px 0;border-bottom:1px solid var(--line)}
+  .la-kdrow b{color:var(--ink);font-family:'JetBrains Mono';font-size:12px}
+  .kdrow{display:flex;gap:8px;align-items:center;margin-bottom:6px}
+  .kdrow .kd-l{flex:1;font:500 13px Inter;padding:8px 10px;border:1px solid var(--line-2);border-radius:8px;background:var(--paper);color:var(--ink)}
+  .kdrow .kd-d{font:500 13px Inter;padding:8px 10px;border:1px solid var(--line-2);border-radius:8px;background:var(--paper);color:var(--ink)}
+  .kdrow .kd-x{font-size:17px;line-height:1;background:none;border:0;color:var(--ink-faint);cursor:pointer;padding:4px 8px}
+  .kdrow .kd-x:hover{color:var(--dining)}
+
   /* side-by-side compare */
   .cmpwrap{overflow-x:auto;border:1px solid var(--line);border-radius:13px;background:var(--paper-2)}
   .cmp{border-collapse:collapse;width:100%;min-width:520px;font-size:12.5px}
@@ -349,11 +363,12 @@ window.DF = (function(){
       var rounds=await q(sb.from('proposal_rounds').select('*').eq('deal_id',id).order('round_no'));
       var docs=await q(sb.from('documents').select('*').eq('deal_id',id).order('created_at'));
       var tours=await q(sb.from('tour_stops').select('*').eq('deal_id',id).order('scheduled_at',{ascending:true,nullsFirst:false}));
-      renderDeal(d,props,proposals,rounds,docs,tours);
+      var abstracts=await q(sb.from('lease_abstracts').select('*').eq('deal_id',id).order('created_at'));
+      renderDeal(d,props,proposals,rounds,docs,tours,abstracts[0]||null);
     }catch(e){ v.innerHTML='<div class="loading">Could not load deal: '+esc(e.message)+'</div>'; }
   }
 
-  function renderDeal(d,props,proposals,rounds,docs,tours){
+  function renderDeal(d,props,proposals,rounds,docs,tours,abstract){
     var stageOpts=Object.keys(STAGE_LABEL).map(function(k){
       return '<option value="'+k+'"'+(d.stage===k?' selected':'')+'>'+STAGE_LABEL[k]+'</option>';
     }).join('');
@@ -416,7 +431,33 @@ window.DF = (function(){
       + '</div>'
       + '<div class="sec"><div class="sec-h"><h2>Buildings</h2><span class="hint">The properties in play for this client</span></div>'+propsHtml2+'</div>'
       + '<div class="sec"><div class="sec-h"><h2>Tour schedule</h2><span class="hint">Building visits for this client</span></div>'+toursSection+'</div>'
-      + '<div class="sec"><div class="sec-h"><h2>Proposals &amp; rounds</h2>'+addProposalBtn+'</div>'+propsHtmlList+'</div>';
+      + '<div class="sec"><div class="sec-h"><h2>Proposals &amp; rounds</h2>'+addProposalBtn+'</div>'+propsHtmlList+'</div>'
+      + '<div class="sec"><div class="sec-h"><h2>Lease abstract</h2><span class="hint">The executed lease\'s key terms — your client\'s permanent record</span></div>'
+      +   (abstract ? abstractCard(abstract, d.id)
+                    : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No lease abstract yet.</div><button class="miniadd" onclick="DF.editAbstract(\''+d.id+'\')">+ Create lease abstract</button>')
+      + '</div>';
+  }
+
+  function fmtDate(d){ if(!d) return '—'; var dt=new Date(d+'T00:00:00'); return isNaN(dt)?esc(d):dt.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}); }
+  function abstractCard(a, dealId){
+    function cell(l,v){ return '<div class="la-cell"><div class="la-l">'+l+'</div><div class="la-v">'+v+'</div></div>'; }
+    var kds=(a.key_dates&&a.key_dates.length)?a.key_dates:[];
+    var visBtn='<button class="vis '+(a.client_visible?'on':'')+'" onclick="DF.toggleAbstractVisible(\''+a.id+'\','+(a.client_visible?'false':'true')+',\''+dealId+'\')" title="Toggle whether the client sees the lease abstract">'+(a.client_visible?'● Shown to client':'○ Hidden')+'</button>';
+    return '<div class="pcard">'
+      + '<div class="top"><div><div class="nm">Lease abstract</div>'+((a.tenant_name||a.landlord_name)?'<div class="ad">'+esc(a.tenant_name||'')+(a.landlord_name?' · Landlord: '+esc(a.landlord_name):'')+'</div>':'')+'</div>'
+      +   '<div style="display:flex;gap:8px;align-items:center">'+visBtn+'<button class="rev" onclick="DF.editAbstract(\''+dealId+'\')">edit</button></div></div>'
+      + '<div class="la-grid">'
+      +   cell('Premises', esc(a.premises||'—'))
+      +   cell('Size', a.size_sf==null?'—':Number(a.size_sf).toLocaleString()+' SF')
+      +   cell('Commencement', fmtDate(a.commencement_date))
+      +   cell('Expiration', fmtDate(a.expiration_date))
+      +   cell('Base rent', a.base_rent_psf==null?'—':psf(a.base_rent_psf)+'/SF/yr')
+      +   cell('Escalations', esc(a.escalations||'—'))
+      +   cell('Security deposit', a.security_deposit==null?'—':'$'+Number(a.security_deposit).toLocaleString())
+      + '</div>'
+      + (a.options?'<div class="la-opts"><div class="la-l">Options</div>'+esc(a.options)+'</div>':'')
+      + (kds.length?'<div class="la-kd"><div class="la-l">Critical dates</div>'+kds.map(function(k){return '<div class="la-kdrow"><span>'+esc(k.label||'—')+'</span><b>'+fmtDate(k.date)+'</b></div>';}).join('')+'</div>':'')
+      + '</div>';
   }
 
   function tourCard(s, propById, dealId){
@@ -685,6 +726,68 @@ window.DF = (function(){
     catch(e){ alert('Could not update visibility: '+(e.message||e)); }
   }
 
+  /* ---------- lease abstract ---------- */
+  function kdRow(label, date){
+    return '<div class="kdrow"><input class="kd-l" value="'+esc(label||'')+'" placeholder="e.g. Renewal option notice deadline"><input class="kd-d" type="date" value="'+esc(date||'')+'"><button type="button" class="kd-x" onclick="this.parentNode.remove()" title="Remove">×</button></div>';
+  }
+  function addKeyDate(){ var c=$('kdrows'); if(c) c.insertAdjacentHTML('beforeend', kdRow('','')); }
+  function readKeyDates(){
+    var out=[]; [].forEach.call(document.querySelectorAll('#kdrows .kdrow'), function(r){
+      var l=(r.querySelector('.kd-l').value||'').trim(), d=r.querySelector('.kd-d').value||'';
+      if(l||d) out.push({label:l, date:d});
+    });
+    return out;
+  }
+  async function editAbstract(dealId){
+    var a=null; try{ a=(await q(sb.from('lease_abstracts').select('*').eq('deal_id',dealId).order('created_at').limit(1)))[0]; }catch(e){}
+    var v=a||{}; var kds=(v.key_dates&&v.key_dates.length)?v.key_dates:[];
+    openSheet('<h3>'+(a?'Edit':'Create')+' lease abstract</h3><div class="ssub">The critical terms of the executed lease — your client\'s permanent reference.</div>'
+      + '<div class="grid2">'
+      + fld('Tenant','<input id="la_tenant" value="'+esc(v.tenant_name||'')+'">')
+      + fld('Landlord','<input id="la_landlord" value="'+esc(v.landlord_name||'')+'">')
+      + fld('Premises','<input id="la_premises" value="'+esc(v.premises||'')+'" placeholder="Suite 350, 3rd floor">')
+      + fld('Size','<input id="la_size" type="number" step="1" inputmode="numeric" value="'+(v.size_sf==null?'':v.size_sf)+'">','SF')
+      + fld('Commencement','<input id="la_comm" type="date" value="'+esc(v.commencement_date||'')+'">')
+      + fld('Expiration','<input id="la_exp" type="date" value="'+esc(v.expiration_date||'')+'">')
+      + fld('Base rent','<input id="la_base" type="number" step="0.01" inputmode="decimal" value="'+(v.base_rent_psf==null?'':v.base_rent_psf)+'">','$/SF/yr')
+      + fld('Security deposit','<input id="la_dep" type="number" step="0.01" inputmode="decimal" value="'+(v.security_deposit==null?'':v.security_deposit)+'">','$')
+      + '</div>'
+      + fld('Escalations','<input id="la_esc" value="'+esc(v.escalations||'')+'" placeholder="3% annually">')
+      + fld('Options','<textarea id="la_opts" placeholder="One 5-yr renewal at 95% FMV; ROFO on Suite 360; one-time termination at month 60">'+esc(v.options||'')+'</textarea>')
+      + '<div class="fld"><label>Critical dates <span class="u">option deadlines, renewal notice, etc.</span></label>'
+      +   '<div id="kdrows">'+kds.map(function(k){return kdRow(k.label,k.date);}).join('')+'</div>'
+      +   '<button type="button" class="miniadd" onclick="DF.addKeyDate()">+ Add critical date</button></div>'
+      + '<div class="formerr" id="f_err"></div>'
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button>'
+      +   (a?'<button class="btn" id="f_del">Delete</button>':'')
+      +   '<button class="btn pri" id="f_save">'+(a?'Save':'Create')+'</button></div>');
+    $('f_save').addEventListener('click',function(){
+      var btn=this; btn.disabled=true; btn.textContent='Saving…';
+      var row={
+        deal_id:dealId,
+        tenant_name:($('la_tenant').value||'').trim()||null, landlord_name:($('la_landlord').value||'').trim()||null,
+        premises:($('la_premises').value||'').trim()||null, size_sf:num($('la_size').value),
+        commencement_date:$('la_comm').value||null, expiration_date:$('la_exp').value||null,
+        base_rent_psf:num($('la_base').value), security_deposit:num($('la_dep').value),
+        escalations:($('la_esc').value||'').trim()||null, options:($('la_opts').value||'').trim()||null,
+        key_dates:readKeyDates(), updated_at:new Date().toISOString()
+      };
+      var p = a ? sb.from('lease_abstracts').update(row).eq('id',a.id).select().single()
+                : sb.from('lease_abstracts').insert(row).select().single();
+      q(p).then(function(){ closeSheet(); openDeal(dealId); })
+        .catch(function(e){ $('f_err').textContent=e.message; btn.disabled=false; btn.textContent=a?'Save':'Create'; });
+    });
+    if(a){ $('f_del').addEventListener('click',async function(){
+      if(!confirm('Delete this lease abstract?')) return;
+      try{ await q(sb.from('lease_abstracts').delete().eq('id',a.id)); closeSheet(); openDeal(dealId); }
+      catch(e){ $('f_err').textContent=e.message; }
+    }); }
+  }
+  async function toggleAbstractVisible(id, makeVisible, dealId){
+    try{ await q(sb.from('lease_abstracts').update({client_visible:makeVisible}).eq('id',id).select().single()); openDeal(dealId); }
+    catch(e){ alert('Could not update visibility: '+(e.message||e)); }
+  }
+
   /* ---------- stage change ---------- */
   async function setStage(dealId, stage){
     try{
@@ -938,6 +1041,7 @@ window.DF = (function(){
     attachDoc:attachDoc, downloadDoc:downloadDoc, deleteDoc:deleteDoc, toggleDocVisible:toggleDocVisible,
     aiDraft:aiDraft, aiPickTmpl:aiPickTmpl, aiDocx:aiDocx, toggleVoice:toggleVoice, editRound:editRound,
     newTourStop:newTourStop, editTourStop:editTourStop, toggleTourVisible:toggleTourVisible, tourPropChange:tourPropChange,
+    editAbstract:editAbstract, addKeyDate:addKeyDate, toggleAbstractVisible:toggleAbstractVisible,
     effectiveRent:effectiveRent, grossEquiv:grossEquiv
   };
 })();

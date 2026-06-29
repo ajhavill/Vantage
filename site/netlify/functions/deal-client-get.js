@@ -72,6 +72,9 @@ exports.handler = async (event) => {
     "&select=id,title,property_id,status&order=created_at")).data || [];
   const tours = (await sb.rest("tour_stops?deal_id=eq." + id + "&client_visible=eq.true" +
     "&select=id,property_id,label,scheduled_at,status,notes&order=scheduled_at.asc.nullslast")).data || [];
+  const abstractRows = (await sb.rest("lease_abstracts?deal_id=eq." + id + "&client_visible=eq.true" +
+    "&select=tenant_name,landlord_name,premises,size_sf,commencement_date,expiration_date,base_rent_psf,escalations,options,security_deposit,key_dates&order=created_at&limit=1")).data || [];
+  const lease_abstract = abstractRows[0] || null;
 
   // final rounds + client-visible documents for those visible proposals only
   let rounds = [], documents = [];
@@ -98,6 +101,7 @@ exports.handler = async (event) => {
     proposals: proposals,
     rounds: rounds,
     documents: documents,
-    tours: tours
+    tours: tours,
+    lease_abstract: lease_abstract
   });
 };

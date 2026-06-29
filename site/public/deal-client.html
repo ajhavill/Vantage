@@ -52,6 +52,16 @@
   .docitem .dn{font:600 13px Inter;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .docitem .dp{margin-left:auto;font:500 11.5px Inter;color:var(--ink-faint);white-space:nowrap}
 
+  .la-card{border:1px solid var(--line);border-radius:13px;background:var(--paper-2);padding:16px 18px}
+  .la-parties{font:600 14px 'Bricolage Grotesque';color:var(--ink);margin-bottom:4px}
+  .la-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:13px 18px;margin-top:6px}
+  .la-l{font:600 10px Inter;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);margin-bottom:2px}
+  .la-cell .la-v{font:600 13.5px Inter;color:var(--ink)}
+  .la-opts{margin-top:14px;font:400 12.5px Inter;color:var(--ink-soft);line-height:1.55}
+  .la-kd{margin-top:14px}
+  .la-kdrow{display:flex;justify-content:space-between;gap:12px;font:500 12.5px Inter;color:var(--ink-soft);padding:5px 0;border-bottom:1px solid var(--line)}
+  .la-kdrow b{color:var(--ink);font-family:'JetBrains Mono';font-size:12px}
+
   .tourlist{display:flex;flex-direction:column;gap:8px}
   .touritem{position:relative;border:1px solid var(--line);border-radius:11px;background:var(--paper-2);padding:11px 14px}
   .touritem .tw{font:600 11.5px Inter;color:var(--accent)}
@@ -145,7 +155,7 @@
     var logo=data.client_logo_url?'<img class="cv-logo" src="'+esc(data.client_logo_url)+'" alt=""> ':'';
     $('cvFor').innerHTML=logo+(data.client_name?'Prepared for <b>'+esc(data.client_name)+'</b>':'');
 
-    var props=data.properties||[], proposals=data.proposals||[], rounds=data.rounds||[], documents=data.documents||[], tours=data.tours||[];
+    var props=data.properties||[], proposals=data.proposals||[], rounds=data.rounds||[], documents=data.documents||[], tours=data.tours||[], la=data.lease_abstract||null;
     // latest FINAL round per proposal
     var latestByProp={};
     rounds.forEach(function(r){ var cur=latestByProp[r.proposal_id]; if(!cur||r.round_no>cur.round_no) latestByProp[r.proposal_id]=r; });
@@ -157,6 +167,27 @@
 
     var html='<div class="cv-h">'+(data.client_name?esc(data.client_name)+' — ':'')+'your options</div>'
       +'<div class="cv-sub">A live, read-only view of the buildings and proposals we’re working on for you. It updates as the deal progresses.</div>';
+
+    // lease abstract — the permanent record of the executed lease
+    if(la){
+      var fmtD=function(d){ if(!d) return '—'; var dt=new Date(d+'T00:00:00'); return isNaN(dt)?esc(d):dt.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}); };
+      var lc=function(l,v){ return '<div class="la-cell"><div class="la-l">'+l+'</div><div class="la-v">'+v+'</div></div>'; };
+      var lkds=(la.key_dates&&la.key_dates.length)?la.key_dates:[];
+      html+='<div class="cv-sec"><div class="cv-sec-h">Your lease — key terms</div><div class="la-card">'
+        + ((la.tenant_name||la.landlord_name)?'<div class="la-parties">'+esc(la.tenant_name||'')+(la.landlord_name?' &nbsp;·&nbsp; Landlord: '+esc(la.landlord_name):'')+'</div>':'')
+        + '<div class="la-grid">'
+        + lc('Premises', esc(la.premises||'—'))
+        + lc('Size', la.size_sf==null?'—':Number(la.size_sf).toLocaleString()+' SF')
+        + lc('Commencement', fmtD(la.commencement_date))
+        + lc('Expiration', fmtD(la.expiration_date))
+        + lc('Base rent', la.base_rent_psf==null?'—':psf(la.base_rent_psf)+'/SF/yr')
+        + lc('Escalations', esc(la.escalations||'—'))
+        + lc('Security deposit', la.security_deposit==null?'—':'$'+Number(la.security_deposit).toLocaleString())
+        + '</div>'
+        + (la.options?'<div class="la-opts"><div class="la-l">Options</div>'+esc(la.options)+'</div>':'')
+        + (lkds.length?'<div class="la-kd"><div class="la-l">Critical dates</div>'+lkds.map(function(k){return '<div class="la-kdrow"><span>'+esc(k.label||'—')+'</span><b>'+fmtD(k.date)+'</b></div>';}).join('')+'</div>':'')
+        + '</div></div>';
+    }
 
     // tour schedule
     if(tours.length){
@@ -203,7 +234,7 @@
           }).join('')
         + '</div></div>';
     }
-    if(!cols.length && !props.length && !documents.length && !tours.length){
+    if(!cols.length && !props.length && !documents.length && !tours.length && !la){
       html+='<div class="cv-empty">Your broker hasn’t shared any buildings or proposals yet. Check back soon.</div>';
     }
 
