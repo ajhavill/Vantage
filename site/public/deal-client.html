@@ -139,7 +139,16 @@
 (function(){
   "use strict";
   var slug=new URLSearchParams(location.search).get('d')||'';
+  var unlockedPass='';
   var RENT_BASES={FSG:'FSG',MG:'Modified Gross',IG:'Industrial Gross',NNN:'NNN',NN:'NN',N:'N',GROSS:'Flat Gross',ABS:'Absolute Net',OTHER:'Other'};
+
+  // fire-and-forget engagement ping (records that the client opened / downloaded)
+  function track(type, detail){
+    if(!slug||!unlockedPass) return;
+    try{ fetch('/.netlify/functions/deal-track',{method:'POST',headers:{'Content-Type':'application/json'},keepalive:true,
+      body:JSON.stringify({slug:slug,passcode:unlockedPass,type:type,detail:detail||null})}); }catch(e){}
+  }
+  window.cvPrint=function(){ track('download','pdf'); setTimeout(function(){ window.print(); }, 120); };
 
   function $(id){ return document.getElementById(id); }
   function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
@@ -167,7 +176,7 @@
       .then(function(res){ return res.json().then(function(d){ return {status:res.status,d:d}; }); })
       .then(function(r){
         btn.disabled=false; btn.textContent='View';
-        if(r.status===200){ render(r.d); return; }
+        if(r.status===200){ unlockedPass=pass; render(r.d); track('open'); return; }
         $('gateErr').textContent=(r.d&&r.d.error)||'Could not open this deal.';
       })
       .catch(function(){ btn.disabled=false; btn.textContent='View'; $('gateErr').textContent='Network error — please try again.'; });
@@ -189,7 +198,7 @@
       return { proposal:pr, building:(pr.property_id&&propName[pr.property_id])?propName[pr.property_id]:null, round:latestByProp[pr.id] };
     });
 
-    var html='<div class="cv-toolbar"><button class="cv-pdf" onclick="window.print()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg> Download PDF</button></div>'
+    var html='<div class="cv-toolbar"><button class="cv-pdf" onclick="cvPrint()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg> Download PDF</button></div>'
       +'<div class="cv-h">'+(data.client_name?esc(data.client_name)+' — ':'')+'your options</div>'
       +'<div class="cv-sub">A live, read-only view of the buildings and proposals we’re working on for you. It updates as the deal progresses.</div>';
 

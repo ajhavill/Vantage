@@ -382,11 +382,17 @@ window.DF = (function(){
       var docs=await q(sb.from('documents').select('*').eq('deal_id',id).order('created_at'));
       var tours=await q(sb.from('tour_stops').select('*').eq('deal_id',id).order('scheduled_at',{ascending:true,nullsFirst:false}));
       var abstracts=await q(sb.from('lease_abstracts').select('*').eq('deal_id',id).order('created_at'));
-      renderDeal(d,props,proposals,rounds,docs,tours,abstracts[0]||null);
+      var events=[]; try{ events=await q(sb.from('deal_events').select('type,created_at').eq('deal_id',id).order('created_at',{ascending:false})); }catch(e){}
+      renderDeal(d,props,proposals,rounds,docs,tours,abstracts[0]||null,events);
     }catch(e){ v.innerHTML='<div class="loading">Could not load deal: '+esc(e.message)+'</div>'; }
   }
 
-  function renderDeal(d,props,proposals,rounds,docs,tours,abstract){
+  function ago(iso){ if(!iso) return ''; var s=Math.floor((Date.now()-new Date(iso).getTime())/1000); if(s<60) return 'just now'; if(s<3600) return Math.floor(s/60)+'m ago'; if(s<86400) return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago'; }
+  function renderDeal(d,props,proposals,rounds,docs,tours,abstract,events){
+    var ev=events||[];
+    var opens=ev.filter(function(e){return e.type==='open';}).length;
+    var dls=ev.filter(function(e){return e.type==='download';}).length;
+    var engLine = ev.length ? '<div class="meta" style="margin-top:3px"><span style="color:var(--accent)">👁 Client opened '+opens+'×</span>'+(ev[0]?' · last '+ago(ev[0].created_at):'')+(dls?' · '+dls+' PDF download'+(dls>1?'s':''):'')+'</div>' : '';
     var stageOpts=Object.keys(STAGE_LABEL).map(function(k){
       return '<option value="'+k+'"'+(d.stage===k?' selected':'')+'>'+STAGE_LABEL[k]+'</option>';
     }).join('');
@@ -438,7 +444,7 @@ window.DF = (function(){
     $('dealView').innerHTML =
       '<button class="dsr-back" style="margin-bottom:14px" onclick="DF.showPipeline()">‹ All deals</button>'
       + '<div class="dealhead"><div><h1>'+esc(d.client_name||'Untitled client')+'</h1>'
-      +   '<div class="meta">Created '+new Date(d.created_at).toLocaleDateString()+(d.slug?' · <span style="color:var(--fitness)">client link active</span>':'')+'</div></div>'
+      +   '<div class="meta">Created '+new Date(d.created_at).toLocaleDateString()+(d.slug?' · <span style="color:var(--fitness)">client link active</span>':'')+'</div>'+engLine+'</div>'
       +   '<div class="dhactions">'
       +     '<button class="act-btn" onclick="DF.shareDeal(\''+d.id+'\')" title="Create a private, read-only link for the client">'
       +       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>'
