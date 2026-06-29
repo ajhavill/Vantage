@@ -1560,12 +1560,49 @@
   function renderClients(){
     var el=document.getElementById('clientsView'); if(!el) return;
     el.innerHTML='<div class="mod-wrap"><h1 class="mod-h">Clients</h1>'+
-      '<div class="mod-sub">Send questionnaires, build co-branded packages, and see who’s engaging.</div>'+
-      '<div class="mod-cards">'+
-        '<button class="mod-tool" onclick="openQuestionnaire()"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div><h4>Questionnaires</h4><p>Send a prospect a link — their answers auto-rank your buildings.</p></button>'+
-        '<button class="mod-tool" onclick="openShare()"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></div><h4>Client packages</h4><p>Bundle chosen buildings into a private, co-branded link.</p></button>'+
-        '<button class="mod-tool" onclick="openActivity()"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-6"/></svg></div><h4>Engagement</h4><p>See who opened a package and which buildings they revisit.</p></button>'+
-      '</div></div>';
+      '<div class="mod-sub">Your prospects — questionnaires sent, packages shared, and how they’re engaging.</div>'+
+      '<div class="home-qa"><button class="primary" onclick="openQuestionnaire()">+ New questionnaire</button>'+
+        '<button onclick="openShare()">+ Client package</button>'+
+        '<button onclick="openActivity()">Engagement detail</button></div>'+
+      '<div class="cw-sec"><div class="cw-h">Questionnaires</div><div id="cwQList"><div class="q-empty">Loading…</div></div></div>'+
+      '<div class="cw-sec"><div class="cw-h">Client packages</div><div id="cwPList"><div class="q-empty">Loading…</div></div></div>'+
+      '</div>';
+    cwLoadQuestionnaires(); cwLoadPackages();
+  }
+  async function cwLoadQuestionnaires(){
+    var el=document.getElementById('cwQList'); if(!el) return;
+    try{
+      var token=await qToken();
+      var res=await fetch('/.netlify/functions/list-intakes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token})});
+      var d=await res.json(); var list=d.intakes||[];
+      if(!list.length){ el.innerHTML='<div class="q-empty">No questionnaires yet — click “New questionnaire” to send one.</div>'; return; }
+      el.innerHTML=list.map(function(it){
+        var done=it.status==='completed';
+        return '<div class="q-row'+(done?' done':'')+'"'+(done?' onclick="openIntakeFromLink(\''+cmEsc(it.slug)+'\')"':'')+'>'+
+          '<div style="min-width:0"><div class="q-co">'+cmEsc(it.company_name||'Client')+'</div>'+
+          '<div class="q-meta">'+(done?'Responded '+timeAgo(it.completed_at):'Sent '+timeAgo(it.created_at)+' · awaiting response')+'</div></div>'+
+          '<span class="q-badge'+(done?'':' pend')+'">'+(done?'✓ View results':'Awaiting')+'</span></div>';
+      }).join('');
+    }catch(e){ el.innerHTML='<div class="q-empty">Sign in on the live site to see your questionnaires.</div>'; }
+  }
+  async function cwLoadPackages(){
+    var el=document.getElementById('cwPList'); if(!el) return;
+    var pkgs=(typeof shLoadPackages==='function')?shLoadPackages():[];
+    if(!pkgs.length){ el.innerHTML='<div class="q-empty">No client packages yet — click “Client package” to create one.</div>'; return; }
+    el.innerHTML=pkgs.map(function(p,i){
+      return '<div class="q-row" style="cursor:pointer" onclick="openActivity()"><div style="min-width:0"><div class="q-co">'+cmEsc(p.clientName||'Client')+'</div>'+
+        '<div class="q-meta">'+(p.buildingIds?p.buildingIds.length:0)+' buildings · created '+timeAgo(p.createdAt)+'</div></div>'+
+        '<span class="q-badge pend" id="cwEng'+i+'">—</span></div>';
+    }).join('');
+    try{
+      var secret=localStorage.getItem('vantage_broker_secret')||''; if(!secret) return;
+      var res=await fetch('/.netlify/functions/get-stats',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brokerSecret:secret, slugs:pkgs.map(function(p){return p.slug;})})});
+      var d=await res.json(); var stats=d.stats||{};
+      pkgs.forEach(function(p,i){ var s=stats[p.slug], b=document.getElementById('cwEng'+i); if(!b) return;
+        if(s&&s.opens>0){ b.className='q-badge'; b.textContent=s.opens+' open'+(s.opens>1?'s':'')+' · '+timeAgo(s.lastSeen); }
+        else { b.className='q-badge pend'; b.textContent='Not opened yet'; }
+      });
+    }catch(e){}
   }
   function renderSettings(){
     var el=document.getElementById('settingsView'); if(!el) return;

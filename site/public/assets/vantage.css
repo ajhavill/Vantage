@@ -662,3 +662,6 @@
   .mod-tool h4{font:700 15px 'Bricolage Grotesque',sans-serif;color:var(--ink);margin:0 0 4px}
   .mod-tool p{font:500 12.5px/1.5 Inter;color:var(--ink-soft);margin:0}
   @media(max-width:760px){.vnav{width:58px;padding:14px 8px}.vnav-item span,.vnav-logo .by,.vnav .userchip .uemail,.vnav .pill{display:none}.vnav-logo .logo{font-size:0}.vnav-logo .logo .dot{font-size:20px}.home-wrap,.mod-wrap{padding:22px 18px 40px}}
+  /* Clients workspace lists */
+  .cw-sec{margin-bottom:24px}
+  .cw-h{font:700 14px 'Bricolage Grotesque',sans-serif;color:var(--ink);margin:0 0 10px}
