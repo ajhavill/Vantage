@@ -513,3 +513,32 @@
   .sh-open{display:inline-block;margin-top:12px;font:600 13px Inter;color:var(--accent);text-decoration:none}
   .sh-again{margin-top:14px;font:600 12.5px Inter;color:var(--ink-soft);background:none;border:0;cursor:pointer;padding:0}
   @media(max-width:560px){.sh-row2{grid-template-columns:1fr}}
+
+  /* ---- Engagement / Activity dashboard (Cockpit) ---- */
+  .act-btn{display:inline-flex;align-items:center;gap:6px;font:600 12.5px Inter;color:var(--ink-soft);
+    background:var(--paper-2);border:1px solid var(--line-2);border-radius:9px;padding:7px 11px;cursor:pointer}
+  .act-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .act-card-wrap{width:min(620px,100%)}
+  #actBody{margin-top:6px}
+  .act-empty,.act-msg{font:500 13px Inter;color:var(--ink-soft);padding:18px;text-align:center;background:var(--paper);border:1px solid var(--line);border-radius:12px}
+  .act-msg{text-align:left;color:#9a6a2a;background:#fdf6ea;border-color:#f0e2c8;margin-bottom:12px}
+  .act-card{border:1px solid var(--line);border-radius:13px;padding:14px 16px;margin-bottom:12px;background:var(--paper-2)}
+  .act-card.hot{border-color:var(--accent);box-shadow:0 0 0 1px rgba(45,110,126,.25)}
+  .act-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+  .act-nm{font:700 15px 'Bricolage Grotesque',sans-serif;color:var(--ink);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .act-badge{font:600 9.5px Inter;letter-spacing:.04em;text-transform:uppercase;color:#fff;background:var(--accent);border-radius:20px;padding:2px 8px}
+  .act-badge.cold{background:var(--line-2);color:var(--ink-soft)}
+  .act-meta{font:500 11.5px Inter;color:var(--ink-faint);margin-top:2px}
+  .act-stat{text-align:center;flex:none}
+  .act-stat .v{font:700 22px 'JetBrains Mono',monospace;color:var(--ink);line-height:1}
+  .act-stat .l{font:600 9px Inter;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint)}
+  .act-sub{font:500 12px Inter;color:var(--ink-soft);margin-top:8px}
+  .act-blds{margin-top:8px;border-top:1px solid var(--line);padding-top:8px;display:flex;flex-direction:column;gap:4px}
+  .act-bld{display:flex;justify-content:space-between;font:500 12px Inter;color:var(--ink)}
+  .act-bld .ct{font:600 11.5px 'JetBrains Mono',monospace;color:var(--accent)}
+  .act-actions{display:flex;align-items:center;gap:12px;margin-top:11px;flex-wrap:wrap}
+  .act-link{font:600 11.5px Inter;color:#fff;background:var(--accent);border:0;border-radius:8px;padding:5px 12px;cursor:pointer}
+  .act-pass{font:500 11.5px Inter;color:var(--ink-faint)}
+  .act-pass b{font:600 12px 'JetBrains Mono',monospace;color:var(--ink-soft)}
+  .act-forget{margin-left:auto;font:600 11.5px Inter;color:var(--ink-faint);background:none;border:0;cursor:pointer}
+  .act-forget:hover{color:#C2453F}

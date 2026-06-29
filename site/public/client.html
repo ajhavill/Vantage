@@ -327,6 +327,16 @@
   function qs(k){ return new URLSearchParams(location.search).get(k); }
   function esc(s){ return VV.esc(s); }
 
+  // fire-and-forget engagement ping (never blocks or breaks the viewer)
+  function track(eventName, building){
+    if(!slug || !pass) return;
+    try{
+      fetch('/.netlify/functions/track',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({slug:slug,passcode:pass,event:eventName,building:building||undefined}),keepalive:true})
+        .catch(function(){});
+    }catch(e){}
+  }
+
   // ---- passcode gate ----
   function unlock(){
     var btn=document.getElementById('gateBtn'), err=document.getElementById('gateErr');
@@ -353,6 +363,7 @@
     document.getElementById('landSub').textContent=n+' building'+(n===1?'':'s')+' selected for you across Santa Monica. Open any one for spaces, rents, the neighborhood, and a walkable-amenity map.';
     document.title='Vantage — prepared for '+(c.name||'you');
     renderLanding(); wireNav();
+    track('open');
     setTimeout(function(){ if(landMap) landMap.invalidateSize(); },80);
   }
 
@@ -473,6 +484,7 @@
   function openBuilding(id){
     show('detail');
     VV.openDossier(id);
+    track('view', id);
     document.getElementById('viewDetail').scrollTop=0;
     setTimeout(function(){ VV.invalidateMap(); },90);
   }

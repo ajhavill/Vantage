@@ -32,6 +32,10 @@
     <button data-v="competition" onclick="showCompetition()">Competition</button>
     <button data-v="commute" onclick="showCommute()">Commute</button>
   </div>
+  <button class="act-btn" id="actBtn" onclick="openActivity()" title="See who has opened your client packages">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-6"/></svg>
+    Activity
+  </button>
   <button class="share-btn" id="shareBtn" onclick="openShare()" title="Create a scoped, co-branded link for a client">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
     Client package
@@ -247,6 +251,16 @@
 
 <!-- commute preflight / running / error modal -->
 <div class="cm-modal" id="cmModal"><div class="cm-card" id="cmModalCard"></div></div>
+
+<!-- engagement / activity dashboard modal -->
+<div class="sh-modal" id="actModal">
+  <div class="sh-card act-card-wrap">
+    <button class="sh-x" id="actX" aria-label="Close">×</button>
+    <h3>Client engagement</h3>
+    <p class="sh-lead">Who has opened the packages you sent, and which buildings they keep coming back to. Only packages you created on this computer appear here.</p>
+    <div id="actBody"></div>
+  </div>
+</div>
 
 <!-- create client package modal -->
 <div class="sh-modal" id="shModal">
@@ -1486,7 +1500,7 @@
     var btn=document.getElementById('shCreate'); btn.disabled=true; btn.textContent='Creating…'; err.textContent='';
     fetch('/.netlify/functions/create-package',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
       .then(function(r){ return r.text().then(function(t){ var d=null; try{d=JSON.parse(t);}catch(e){} if(!r.ok) throw new Error((d&&d.error)||('Error '+r.status)); return d; }); })
-      .then(function(d){ shShowResult(d.url, pass, ids.length); })
+      .then(function(d){ shSavePackage({slug:d.slug, url:d.url, clientName:payload.clientName, passcode:pass, buildingIds:ids, createdAt:new Date().toISOString()}); shShowResult(d.url, pass, ids.length); })
       .catch(function(e){ err.textContent=/failed to fetch|networkerror|load failed/i.test(e.message)?'Can’t reach the server. Deploy to Netlify (with BROKER_SECRET set) to create real links.':e.message; })
       .then(function(){ btn.disabled=false; btn.textContent='Create link'; });
   }
@@ -1516,6 +1530,62 @@
     });
     document.getElementById('shGen').addEventListener('click',function(){ document.getElementById('shPass').value=shSuggestPass(); });
     document.getElementById('shCreate').addEventListener('click',shCreate);
+  })();
+
+  // ============ ENGAGEMENT / ACTIVITY DASHBOARD ============
+  // The broker's own browser remembers the packages it created; the dashboard
+  // pulls stats for exactly those (broker-gated). No "list all packages" exists.
+  var PKG_KEY='vantage_packages';
+  function shLoadPackages(){ try{ return JSON.parse(localStorage.getItem(PKG_KEY)||'[]'); }catch(e){ return []; } }
+  function shSavePackage(rec){ var a=shLoadPackages().filter(function(p){return p.slug!==rec.slug;}); a.unshift(rec); localStorage.setItem(PKG_KEY, JSON.stringify(a.slice(0,200))); }
+  function shForgetPackage(slug){ localStorage.setItem(PKG_KEY, JSON.stringify(shLoadPackages().filter(function(p){return p.slug!==slug;}))); }
+  function bldName(id){ var b=BUILDINGS.filter(function(x){return x.id===id;})[0]; return b?b.name:id; }
+  function timeAgo(iso){ if(!iso) return '—'; var d=(Date.now()-new Date(iso).getTime())/1000;
+    if(d<60) return 'just now'; if(d<3600) return Math.floor(d/60)+'m ago'; if(d<86400) return Math.floor(d/3600)+'h ago'; return Math.floor(d/86400)+'d ago'; }
+
+  window.openActivity=function(){
+    document.getElementById('actModal').classList.add('show');
+    renderActivity(null);
+    var pkgs=shLoadPackages();
+    if(!pkgs.length){ renderActivity({}); return; }
+    var secret=localStorage.getItem('vantage_broker_secret')||'';
+    if(!secret){ renderActivity({}, 'Create a package once (so your broker secret is saved) to load engagement.'); return; }
+    fetch('/.netlify/functions/get-stats',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brokerSecret:secret, slugs:pkgs.map(function(p){return p.slug;})})})
+      .then(function(r){ return r.text().then(function(t){ var d=null; try{d=JSON.parse(t);}catch(e){} if(!r.ok) throw new Error((d&&d.error)||('Error '+r.status)); return d; }); })
+      .then(function(d){ renderActivity(d.stats||{}); })
+      .catch(function(e){ renderActivity({}, /failed to fetch|networkerror|load failed/i.test(e.message)?'Engagement loads on the deployed site (needs the secure function).':e.message); });
+  };
+  function actClose(){ document.getElementById('actModal').classList.remove('show'); }
+  function renderActivity(stats, msg){
+    var el=document.getElementById('actBody'), pkgs=shLoadPackages();
+    if(stats===null){ el.innerHTML='<div class="act-empty">Loading engagement…</div>'; return; }
+    if(!pkgs.length){ el.innerHTML='<div class="act-empty">No client packages yet. Create one and it’ll appear here with open &amp; view activity.</div>'; return; }
+    var html = msg ? '<div class="act-msg">'+cmEsc(msg)+'</div>' : '';
+    html += pkgs.map(function(p){
+      var s=stats[p.slug], opens=s?(s.opens||0):0, last=s?timeAgo(s.lastSeen):'—', hot=opens>0;
+      var bldRows='';
+      if(s && s.buildings && Object.keys(s.buildings).length){
+        bldRows=Object.keys(s.buildings).sort(function(a,b){return s.buildings[b]-s.buildings[a];}).map(function(id){
+          return '<div class="act-bld"><span>'+cmEsc(bldName(id))+'</span><span class="ct">'+s.buildings[id]+' view'+(s.buildings[id]>1?'s':'')+'</span></div>';
+        }).join('');
+      }
+      return '<div class="act-card'+(hot?' hot':'')+'">'+
+        '<div class="act-top"><div style="min-width:0"><div class="act-nm">'+cmEsc(p.clientName||'Client')+(hot?'<span class="act-badge">opened</span>':'<span class="act-badge cold">not opened yet</span>')+'</div>'+
+          '<div class="act-meta">'+(p.buildingIds?p.buildingIds.length:0)+' building'+((p.buildingIds&&p.buildingIds.length===1)?'':'s')+' · created '+timeAgo(p.createdAt)+'</div></div>'+
+          '<div class="act-stat"><div class="v">'+opens+'</div><div class="l">opens</div></div></div>'+
+        '<div class="act-sub">Last activity: <b>'+last+'</b></div>'+
+        (bldRows?'<div class="act-blds">'+bldRows+'</div>':'')+
+        '<div class="act-actions"><button class="act-link" data-url="'+cmEsc(p.url)+'">Copy link</button>'+
+          '<span class="act-pass">passcode <b>'+cmEsc(p.passcode||'—')+'</b></span>'+
+          '<button class="act-forget" data-slug="'+cmEsc(p.slug)+'">Remove</button></div></div>';
+    }).join('');
+    el.innerHTML=html;
+    Array.prototype.forEach.call(el.querySelectorAll('.act-link'),function(b){ b.onclick=function(){ if(navigator.clipboard) navigator.clipboard.writeText(b.getAttribute('data-url')); b.textContent='Copied'; }; });
+    Array.prototype.forEach.call(el.querySelectorAll('.act-forget'),function(b){ b.onclick=function(){ if(confirm('Remove this from your activity list? The link keeps working; this just forgets it here.')){ shForgetPackage(b.getAttribute('data-slug')); window.openActivity(); } }; });
+  }
+  (function actWire(){ var m=document.getElementById('actModal'); if(!m)return;
+    document.getElementById('actX').addEventListener('click',actClose);
+    m.addEventListener('click',function(e){ if(e.target===m) actClose(); });
   })();
 
   loadData();
