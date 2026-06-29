@@ -92,6 +92,26 @@
   .delx{font:500 11.5px Inter;color:var(--ink-faint);background:none;border:0;cursor:pointer}
   .delx:hover{color:var(--dining)}
   .loading{font:500 13px Inter;color:var(--ink-faint);text-align:center;padding:40px}
+
+  /* side-by-side compare */
+  .cmpwrap{overflow-x:auto;border:1px solid var(--line);border-radius:13px;background:var(--paper-2)}
+  .cmp{border-collapse:collapse;width:100%;min-width:520px;font-size:12.5px}
+  .cmp th,.cmp td{border-bottom:1px solid var(--line);padding:10px 14px;text-align:left;vertical-align:top}
+  .cmp tr:last-child td{border-bottom:0}
+  .cmp .rl{font:600 10.5px Inter;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);white-space:nowrap;background:var(--paper);position:sticky;left:0;z-index:1}
+  .cmp thead th{background:var(--paper);position:sticky;top:0;z-index:2}
+  .cmp .colh{font:700 13.5px 'Bricolage Grotesque';color:var(--ink);min-width:172px}
+  .cmp .colh .ad{font:500 11px Inter;color:var(--ink-soft);margin-top:1px}
+  .cmp .colh select{margin-top:8px;font:500 11.5px Inter;padding:5px 7px;border:1px solid var(--line-2);border-radius:7px;background:var(--paper-2);color:var(--ink);width:100%}
+  .cmp .num{font-family:'JetBrains Mono';white-space:nowrap}
+  .cmp .sub2{font:400 10px Inter;color:var(--ink-faint);margin-top:2px}
+  .cmp tr.ne td{background:rgba(45,110,126,.06)}
+  .cmp tr.ne .rl{background:rgba(45,110,126,.11);color:var(--accent)}
+  .cmp .ne-val{font:800 16px 'Bricolage Grotesque';color:var(--ink)}
+  .cmp td.best .ne-val{color:var(--accent)}
+  .cmp .bestbadge{display:inline-block;font:700 9px Inter;text-transform:uppercase;letter-spacing:.06em;color:#fff;background:var(--accent);border-radius:5px;padding:2px 6px;margin-left:6px;vertical-align:2px}
+  .cmpnote{font:400 11.5px Inter;color:var(--ink-faint);line-height:1.55;margin-top:14px}
+  .cmpnote b{color:var(--ink-soft)}
 </style>
 </head>
 <body>
@@ -180,13 +200,31 @@ window.DF = (function(){
   function psf(v){ return v==null?'—':('$'+Number(v).toFixed(2)); }
   function basisLabel(code,custom){ if(code==='OTHER'&&custom) return custom; var f=RENT_BASES.filter(function(b){return b[0]===code;})[0]; return f?f[0]:(code||'—'); }
 
-  // gross-equivalent STARTING rate: net structures add opex on top of base (a quick indicator;
-  // the full side-by-side net-effective engine comes in the compare view).
+  // gross-equivalent STARTING rate: base + opex (opex = pass-through paid on top of base;
+  // blank for full-service). Same basis used by the compare engine below.
   function grossEquiv(r){
     if(r.base_rent_psf==null) return null;
-    var g=Number(r.base_rent_psf);
-    if(NET_BASES[r.rent_basis] && r.opex_psf!=null) g+=Number(r.opex_psf);
-    return g;
+    return Number(r.base_rent_psf) + (num(r.opex_psf)||0);
+  }
+
+  // NET EFFECTIVE RENT — normalizes any structure (FSG / MG / NNN …) to one $/SF/yr.
+  // Method: gross-equiv start = base + opex. Base escalates annually by esc%, opex flat.
+  // Free rent abates BASE only (opex still paid during abatement). TI = up-front per-SF
+  // credit. Total spread over the term. Returns null if base or term is missing.
+  function effectiveRent(r){
+    var base=num(r.base_rent_psf), T=num(r.term_months);
+    if(base==null || !T || T<=0) return null;
+    var opex=num(r.opex_psf)||0, e=(num(r.annual_escalation_pct)||0)/100,
+        free=num(r.free_rent_months)||0, ti=num(r.ti_psf)||0;
+    var totalBase=0;
+    for(var m=1;m<=T;m++){
+      var yr=Math.floor((m-1)/12);                 // 0-based lease year
+      var monthly=(base/12)*Math.pow(1+e,yr);      // escalated monthly base, this year
+      if(m>free) totalBase+=monthly;               // free rent abates base for first `free` months
+    }
+    var years=T/12;
+    var costPerSF = totalBase + opex*years - ti;   // opex flat all months; TI credited once
+    return { netEff: costPerSF/years, costPerSF: costPerSF, grossStart: base+opex, years: years };
   }
 
   async function q(promise){ var r=await promise; if(r.error){ throw r.error; } return r.data; }
@@ -298,7 +336,8 @@ window.DF = (function(){
         + '</div>';
     }).join('') : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No proposals yet.</div>';
 
-    var addProposalBtn = '<button class="miniadd" onclick="DF.newProposal(\''+d.id+'\')">+ Add proposal</button>';
+    var cmpBtn = proposals.length ? '<button class="miniadd" onclick="DF.openCompare(\''+d.id+'\')">⇄ Compare proposals</button>' : '';
+    var addProposalBtn = '<div style="display:flex;gap:16px;align-items:center">'+cmpBtn+'<button class="miniadd" onclick="DF.newProposal(\''+d.id+'\')">+ Add proposal</button></div>';
 
     $('dealView').innerHTML =
       '<button class="dsr-back" style="margin-bottom:14px" onclick="DF.showPipeline()">‹ All deals</button>'
@@ -453,13 +492,103 @@ window.DF = (function(){
     }catch(e){ alert('Could not update stage: '+e.message); }
   }
 
+  /* ---------- side-by-side compare ---------- */
+  var _cmp=null;
+  async function openCompare(dealId){
+    var d=deals.filter(function(x){return x.id===dealId;})[0]; if(!d) return;
+    $('pipelineView').style.display='none';
+    var v=$('dealView'); v.style.display='block';
+    $('crumb').innerHTML='Deal flow <b>›</b> '+esc(d.client_name||'Deal')+' <b>›</b> Compare';
+    v.innerHTML='<div class="loading">Building comparison…</div>';
+    try{
+      var props=await q(sb.from('deal_properties').select('id,name').eq('deal_id',dealId));
+      var proposals=await q(sb.from('proposals').select('*').eq('deal_id',dealId).order('created_at'));
+      var rounds=await q(sb.from('proposal_rounds').select('*').eq('deal_id',dealId).order('round_no'));
+      var propById={}; props.forEach(function(p){ propById[p.id]=p; });
+      var byProp={}; rounds.forEach(function(r){ (byProp[r.proposal_id]=byProp[r.proposal_id]||[]).push(r); });
+      var cols=proposals.filter(function(pr){ return (byProp[pr.id]||[]).length; }).map(function(pr){
+        var rs=byProp[pr.id];
+        return { proposal:pr, building:(pr.property_id&&propById[pr.property_id])?propById[pr.property_id].name:null,
+                 rounds:rs, selId:rs[rs.length-1].id };
+      });
+      _cmp={dealId:dealId, deal:d, cols:cols};
+      renderCompare();
+    }catch(e){ v.innerHTML='<div class="loading">Could not build comparison: '+esc(e.message)+'</div>'; }
+  }
+
+  function cmpRound(i, roundId){ if(_cmp&&_cmp.cols[i]){ _cmp.cols[i].selId=roundId; renderCompare(); } }
+
+  function renderCompare(){
+    var c=_cmp; if(!c) return;
+    var v=$('dealView');
+    var back='<button class="dsr-back" style="margin-bottom:14px" onclick="DF.openDeal(\''+c.dealId+'\')">‹ Back to deal</button>';
+    if(!c.cols.length){
+      v.innerHTML=back+'<div class="dealhead"><div><h1>'+esc(c.deal.client_name||'Deal')+' — compare</h1></div></div>'
+        +'<div class="loading">No proposals with rounds yet. Add proposal terms first, then compare.</div>';
+      return;
+    }
+    var sel=c.cols.map(function(col){ return col.rounds.filter(function(r){return r.id===col.selId;})[0]||col.rounds[col.rounds.length-1]; });
+    var eff=sel.map(effectiveRent);
+    var bestIdx=-1, bestVal=Infinity;
+    eff.forEach(function(x,i){ if(x&&x.netEff<bestVal){ bestVal=x.netEff; bestIdx=i; } });
+
+    function row(label,cells,cls){
+      return '<tr'+(cls?' class="'+cls+'"':'')+'><td class="rl">'+label+'</td>'+cells.map(function(x){return '<td>'+x+'</td>';}).join('')+'</tr>';
+    }
+    function fmtTerm(r){ return r.term_months==null?'—':(r.term_months+' mo · '+(r.term_months/12).toFixed(1)+' yr'); }
+
+    var headCells=c.cols.map(function(col,i){
+      var opts=col.rounds.map(function(r){
+        return '<option value="'+r.id+'"'+(r.id===col.selId?' selected':'')+'>Round '+r.round_no+(r.from_party==='landlord'?' · LL':' · us')+(r.status==='draft'?' (draft)':'')+'</option>';
+      }).join('');
+      return '<th class="colh">'+esc(col.proposal.title||'Proposal')
+        +(col.building?'<div class="ad">'+esc(col.building)+'</div>':'')
+        +'<select onchange="DF.cmpRound('+i+',this.value)">'+opts+'</select></th>';
+    }).join('');
+
+    var neCells=sel.map(function(r,i){
+      if(!eff[i]) return '<td class="num">—<div class="sub2">needs base + term</div></td>';
+      return '<td'+(i===bestIdx?' class="best"':'')+'><span class="ne-val">'+psf(eff[i].netEff)+'</span>'
+        +(i===bestIdx?'<span class="bestbadge">Best</span>':'')+'<div class="sub2">$/SF/yr gross-equiv</div></td>';
+    }).join('');
+    var neRow='<tr class="ne"><td class="rl">Net effective rent</td>'+neCells+'</tr>';
+
+    var body=''
+      + row('Building', sel.map(function(r,i){ return esc(c.cols[i].building||'—'); }))
+      + row('Rent structure', sel.map(function(r){ return esc(basisLabel(r.rent_basis,r.rent_basis_label)); }))
+      + row('Size', sel.map(function(r){ return '<span class="num">'+(r.size_sf==null?'—':Number(r.size_sf).toLocaleString()+' SF')+'</span>'; }))
+      + row('Term', sel.map(function(r){ return '<span class="num">'+fmtTerm(r)+'</span>'; }))
+      + row('Starting base', sel.map(function(r){ return '<span class="num">'+psf(r.base_rent_psf)+'</span>'; }))
+      + row('Opex / NNN load', sel.map(function(r){ return '<span class="num">'+(r.opex_psf==null?'—':psf(r.opex_psf))+'</span>'; }))
+      + row('Gross-equiv start', sel.map(function(r,i){ return '<span class="num">'+(eff[i]?psf(eff[i].grossStart):'—')+'</span>'; }))
+      + row('Annual escalation', sel.map(function(r){ return '<span class="num">'+(r.annual_escalation_pct==null?'—':Number(r.annual_escalation_pct).toFixed(1)+'%')+'</span>'; }))
+      + row('Free rent', sel.map(function(r){ return '<span class="num">'+(r.free_rent_months==null?'—':r.free_rent_months+' mo')+'</span>'; }))
+      + row('TI allowance', sel.map(function(r){ return '<span class="num">'+(r.ti_psf==null?'—':psf(r.ti_psf))+'</span>'; }))
+      + neRow
+      + row('Total cost / term', sel.map(function(r,i){
+          if(!eff[i]||r.size_sf==null) return '<span class="num">—</span>';
+          return '<span class="num">$'+Math.round(eff[i].costPerSF*Number(r.size_sf)).toLocaleString()+'</span>';
+        }));
+
+    v.innerHTML = back
+      + '<div class="dealhead"><div><h1>'+esc(c.deal.client_name||'Deal')+' — compare</h1>'
+      +   '<div class="meta">Side-by-side economics, normalized to a gross-equivalent net effective rent.</div></div></div>'
+      + '<div class="cmpwrap"><table class="cmp"><thead><tr><th class="rl"></th>'+headCells+'</tr></thead><tbody>'+body+'</tbody></table></div>'
+      + '<div class="cmpnote"><b>How net effective rent is figured:</b> gross-equivalent start = base + opex '
+      +   '(opex = the pass-through paid on top of base — leave blank for full-service). Base rent escalates annually by the '
+      +   'escalation %, opex is held flat. Free rent abates base rent only. The TI allowance is credited up front. The total is '
+      +   'spread over the term to one $/SF/yr — the number that compares full-service, modified-gross, and NNN deals fairly. '
+      +   'Lowest wins. Switch any column\'s round to compare at a given point in the negotiation.</div>';
+  }
+
   /* ---------- boot ---------- */
   document.addEventListener('DOMContentLoaded',bindAuth);
 
   return {
-    showPipeline:renderPipeline, openDeal:openDeal,
+    showPipeline:renderPipeline, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound,
     newDeal:newDeal, newProperty:newProperty, newProposal:newProposal, newRound:newRound,
-    setStage:setStage, basisChange:basisChange, close:closeSheet
+    setStage:setStage, basisChange:basisChange, close:closeSheet,
+    effectiveRent:effectiveRent, grossEquiv:grossEquiv
   };
 })();
 </script>
