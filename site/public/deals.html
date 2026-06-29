@@ -31,6 +31,10 @@
   .dcard .mt{font:500 11.5px Inter;color:var(--ink-faint);margin-top:5px;display:flex;gap:10px;flex-wrap:wrap}
   .dcard .mt b{color:var(--ink-soft);font-weight:600;font-family:'JetBrains Mono'}
   .pcol .empty{font:400 11.5px Inter;color:var(--ink-faint);text-align:center;padding:14px 4px}
+  .closedsec{margin-top:20px}
+  .closedtog{font:600 12px Inter;color:var(--ink-faint);background:none;border:0;cursor:pointer;padding:6px 0}
+  .closedtog:hover{color:var(--ink-soft)}
+  .closedlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:8px}
 
   /* detail */
   .dealhead{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:6px}
@@ -219,6 +223,7 @@
       </button>
     </div>
     <div id="pipe" class="pipe"></div>
+    <div id="closed"></div>
   </section>
 
   <!-- DETAIL -->
@@ -251,7 +256,7 @@ window.DF = (function(){
   var NET_BASES = {NNN:1,NN:1,N:1,ABS:1};
   var PROP_STATUS = [['considering','Considering'],['touring','Touring'],['shortlisted','Shortlisted'],['proposing','Proposing'],['passed','Passed']];
 
-  var sb=null, me=null, deals=[], _rec=null, _aiTmpls=[];
+  var sb=null, me=null, deals=[], _rec=null, _aiTmpls=[], _showClosed=false;
 
   /* ---------- tiny helpers ---------- */
   function $(id){ return document.getElementById(id); }
@@ -349,7 +354,13 @@ window.DF = (function(){
     }).join('');
     $('pipe').style.gridTemplateColumns='repeat('+STAGES.length+',minmax(176px,1fr))';
     $('pipe').innerHTML=html;
+    var dead=deals.filter(function(d){ return d.stage==='dead'; });
+    $('closed').innerHTML = dead.length
+      ? '<div class="closedsec"><button class="closedtog" onclick="DF.toggleClosed()">'+(_showClosed?'▾':'▸')+' Closed / dead ('+dead.length+')</button>'
+        + (_showClosed?'<div class="closedlist">'+dead.map(dealCard).join('')+'</div>':'')+'</div>'
+      : '';
   }
+  function toggleClosed(){ _showClosed=!_showClosed; renderPipeline(); }
   function dealCard(d){
     return '<div class="dcard" onclick="DF.openDeal(\''+d.id+'\')">'
       + '<div class="nm">'+esc(d.client_name||'Untitled client')+'</div>'
@@ -1060,7 +1071,7 @@ window.DF = (function(){
   document.addEventListener('DOMContentLoaded',bindAuth);
 
   return {
-    showPipeline:renderPipeline, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound,
+    showPipeline:renderPipeline, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, toggleClosed:toggleClosed,
     newDeal:newDeal, newProperty:newProperty, newProposal:newProposal, newRound:newRound,
     setStage:setStage, basisChange:basisChange, close:closeSheet,
     shareDeal:shareDeal, toggleProposalVisible:toggleProposalVisible,
