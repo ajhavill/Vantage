@@ -18,6 +18,15 @@ exports.handler = async (event) => {
     hasSupabaseServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY
   };
 
+  // dump profiles (id/email/role) so we can see if broker emails are populated
+  if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    try {
+      const k = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      const pr = await fetch(process.env.SUPABASE_URL + "/rest/v1/profiles?select=id,email,role,full_name", { headers: { apikey: k, Authorization: "Bearer " + k } });
+      out.profiles = JSON.parse((await pr.text()) || "null");
+    } catch (e) { out.profilesError = String(e && e.message ? e.message : e); }
+  }
+
   if (process.env.RESEND_API_KEY && body.to) {
     try {
       const r = await fetch("https://api.resend.com/emails", {
