@@ -93,6 +93,37 @@
   .cv-cm-row .big .k{font:500 10px Inter;color:var(--ink-faint)}
   .cv-cm-empty{padding:40px 24px;text-align:center;color:var(--ink-faint);font:500 13px Inter}
   .cv-cm-baked{font:600 10.5px Inter;color:var(--accent);background:rgba(45,110,126,.1);border-radius:20px;padding:2px 9px}
+  .cv-land-titlerow{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .cv-pdf-btn{display:inline-flex;align-items:center;gap:6px;font:600 12px Inter;color:var(--ink-soft);
+    background:var(--paper-2);border:1px solid var(--line-2);border-radius:9px;padding:7px 12px;cursor:pointer;white-space:nowrap}
+  .cv-pdf-btn:hover{border-color:var(--accent);color:var(--accent)}
+
+  /* print document — hidden on screen, the only thing shown when printing */
+  #printDoc{display:none}
+  @media print{
+    @page{margin:14mm}
+    body{background:#fff}
+    .cv-topbar,#viewBuildings,#viewDetail,#viewCommute,#viewCompare,.cv-gate{display:none !important}
+    #printDoc{display:block !important}
+    .pd-cover{display:flex;align-items:flex-start;justify-content:space-between;border-bottom:2px solid #1A2230;padding-bottom:12px;margin-bottom:18px}
+    .pd-cover .logo{font:800 22px 'Bricolage Grotesque',sans-serif;color:#1A2230}
+    .pd-cover .logo .dot{color:#2D6E7E}
+    .pd-cover .by{font:500 11px Inter;color:#55606F;margin-top:2px}
+    .pd-cover .for{text-align:right;font:600 13px Inter;color:#1A2230}
+    .pd-cover .for .lbl{font:600 9px Inter;letter-spacing:.08em;text-transform:uppercase;color:#8A93A0}
+    .pd-cover .clogo{max-height:40px;max-width:150px;margin-bottom:4px;display:block;margin-left:auto}
+    .pd-bld{page-break-inside:avoid;border:1px solid #D2CCBF;border-radius:8px;padding:14px 16px;margin-bottom:14px}
+    .pd-bld h2{font:700 16px 'Bricolage Grotesque',sans-serif;color:#1A2230;margin:0}
+    .pd-bld .loc{font:500 11.5px Inter;color:#55606F;margin:1px 0 10px}
+    .pd-stats{display:flex;flex-wrap:wrap;gap:6px 18px;margin-bottom:10px}
+    .pd-stats div{font:500 11px Inter;color:#1A2230}
+    .pd-stats div span{color:#8A93A0;display:block;font-size:9px;text-transform:uppercase;letter-spacing:.04em}
+    .pd-scores{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px}
+    .pd-scores .sc{font:600 10.5px 'JetBrains Mono',monospace;color:#1A2230;border:1px solid #E2DDD2;border-radius:6px;padding:2px 7px}
+    .pd-read{font:400 11px/1.5 Inter;color:#55606F;margin:0}
+    .pd-foot{margin-top:8px;font:400 9px Inter;color:#8A93A0;border-top:1px solid #E2DDD2;padding-top:8px}
+  }
+
   /* compare (side-by-side grid) */
   .cv-cmp{padding:26px 26px 50px;max-width:100%}
   .cv-cmp-head h1{font:700 26px 'Bricolage Grotesque',sans-serif;color:var(--ink);margin:0 0 6px;letter-spacing:-.01em}
@@ -151,7 +182,13 @@
   <section id="viewBuildings">
     <div class="cv-land">
       <div class="cv-land-list">
-        <h1 id="landTitle">Your shortlist</h1>
+        <div class="cv-land-titlerow">
+          <h1 id="landTitle">Your shortlist</h1>
+          <button class="cv-pdf-btn" id="dlPdf" title="Download a PDF leave-behind">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            PDF
+          </button>
+        </div>
         <div class="sub" id="landSub"></div>
         <div id="landCards"></div>
         <div class="cv-disc"><b>What's real:</b> every amenity, rating, and walk distance is pulled from live Google Places. <b>Illustrative:</b> available suites and asking rents are sample figures for discussion — your broker will confirm current terms.</div>
@@ -274,6 +311,9 @@
       <div class="cv-cmp-scroll"><table class="cv-cmp-tbl" id="cmpTable"></table></div>
     </div>
   </section>
+
+  <!-- PRINT DOC (built on demand for "Download PDF"; only visible when printing) -->
+  <div id="printDoc"></div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -399,9 +439,36 @@
   }
   function sfNum(s){ var m=String(s||'').replace(/[^0-9]/g,''); return m?parseInt(m,10):null; }
   function rentNum(s){ var m=String(s||'').match(/[\d.]+/); return m?parseFloat(m[0]):null; }
+
+  // ---- PDF leave-behind (build a print-only doc, then browser "Save as PDF") ----
+  function downloadPDF(){ buildPrintDoc(); window.print(); }
+  function buildPrintDoc(){
+    var c=PKG.client||{}, bs=VV.buildings.slice().sort(function(a,b){return VV.matchScore(b)-VV.matchScore(a);});
+    var cats=VV.weightedCats();
+    var dateStr=''; try{ dateStr=new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}); }catch(e){}
+    var cover='<div class="pd-cover"><div><div class="logo">Vantage<span class="dot">.</span></div>'+
+      '<div class="by">Office shortlist · prepared by Havill &amp; Co.'+(dateStr?' · '+dateStr:'')+'</div></div>'+
+      '<div class="for">'+(c.logoUrl?'<img class="clogo" src="'+esc(c.logoUrl)+'" onerror="this.remove()">':'')+
+        '<div class="lbl">Prepared for</div>'+esc(c.name||'you')+'</div></div>';
+    var blocks=bs.map(function(b){
+      var stats=[];
+      function st(l,v){ if(v) stats.push('<div><span>'+l+'</span>'+esc(v)+'</div>'); }
+      st('Submarket',b.submarket); st('Available',b.avail?b.avail+' SF':''); st('Asking rent',b.rent);
+      st('Class',b['class']); st('Built',b.yearBuilt); st('Parking',b.parking);
+      var scores=cats.map(function(cat){ var s=(b.cscore&&b.cscore[cat.key]!=null)?b.cscore[cat.key].toFixed(1):null;
+        return s?'<span class="sc">'+esc(cat.label)+' '+s+'</span>':''; }).join('');
+      return '<div class="pd-bld"><h2>'+esc(b.name)+'</h2><div class="loc">'+esc(b.addr||b.submarket||'')+'</div>'+
+        '<div class="pd-stats">'+stats.join('')+'</div>'+
+        (scores?'<div class="pd-scores">'+scores+'</div>':'')+
+        (b.read?'<p class="pd-read">'+esc(b.read)+'</p>':'')+'</div>';
+    }).join('');
+    var foot='<div class="pd-foot">Amenity scores reflect live Google Places data near each building. Available suites and asking rents are illustrative — Havill &amp; Co. will confirm current terms.</div>';
+    document.getElementById('printDoc').innerHTML=cover+blocks+foot;
+  }
   function wireNav(){
     document.getElementById('cvNav').addEventListener('click',function(e){ var b=e.target.closest('button'); if(b) show(b.dataset.v); });
     document.getElementById('dsrBack').addEventListener('click',function(){ show('buildings'); });
+    var pdf=document.getElementById('dlPdf'); if(pdf) pdf.addEventListener('click',downloadPDF);
   }
   function openBuilding(id){
     show('detail');
