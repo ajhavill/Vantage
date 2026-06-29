@@ -48,6 +48,10 @@
     <button data-v="competition" onclick="showCompetition()">Competition</button>
     <button data-v="commute" onclick="showCommute()">Commute</button>
   </div>
+  <button class="act-btn" id="qBtn" onclick="openQuestionnaire()" title="Send a questionnaire and auto-match buildings">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+    Questionnaire
+  </button>
   <button class="act-btn" id="actBtn" onclick="openActivity()" title="See who has opened your client packages">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-6"/></svg>
     Activity
@@ -279,6 +283,25 @@
     <h3>Client engagement</h3>
     <p class="sh-lead">Who has opened the packages you sent, and which buildings they keep coming back to. Only packages you created on this computer appear here.</p>
     <div id="actBody"></div>
+  </div>
+</div>
+
+<!-- client questionnaire modal -->
+<div class="sh-modal" id="qModal">
+  <div class="sh-card act-card-wrap">
+    <button class="sh-x" id="qX" aria-label="Close">×</button>
+    <div id="qMain">
+      <h3>Client questionnaires</h3>
+      <p class="sh-lead">Send a prospect a link to tell you what they need — then Vantage ranks your best-fit buildings from their answers.</p>
+      <div class="q-create">
+        <input id="qCompany" type="text" placeholder="Prospect company name">
+        <button id="qCreateBtn">Create link</button>
+      </div>
+      <div class="q-newlink" id="qNewLink" style="display:none"></div>
+      <div class="q-listhead">Your questionnaires</div>
+      <div id="qList"></div>
+    </div>
+    <div id="qDetail" style="display:none"></div>
   </div>
 </div>
 
@@ -1607,6 +1630,120 @@
     document.getElementById('actX').addEventListener('click',actClose);
     m.addEventListener('click',function(e){ if(e.target===m) actClose(); });
   })();
+
+  // ============ CLIENT QUESTIONNAIRE (intake → auto-matched shortlist) ============
+  async function qToken(){ if(!window.vantageSB) return null; var s=await window.vantageSB.auth.getSession(); return (s&&s.data&&s.data.session)?s.data.session.access_token:null; }
+  window.openQuestionnaire=function(){
+    document.getElementById('qModal').classList.add('show');
+    document.getElementById('qMain').style.display=''; document.getElementById('qDetail').style.display='none';
+    document.getElementById('qNewLink').style.display='none'; document.getElementById('qCompany').value='';
+    qLoadList();
+  };
+  function qClose(){ document.getElementById('qModal').classList.remove('show'); }
+  async function qCreate(){
+    var company=document.getElementById('qCompany').value.trim(); if(!company) return;
+    var btn=document.getElementById('qCreateBtn'); btn.disabled=true; btn.textContent='Creating…';
+    try{
+      var token=await qToken();
+      var res=await fetch('/.netlify/functions/create-intake',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token, company:company})});
+      var d=await res.json(); if(!res.ok) throw new Error(d.error||'Error');
+      var nl=document.getElementById('qNewLink'); nl.style.display='block';
+      nl.innerHTML='<div class="q-nl-row"><input readonly id="qNlUrl" value="'+cmEsc(d.url)+'"><button id="qNlCopy">Copy</button></div><div class="q-nl-note">Send this to '+cmEsc(company)+'. Their answers appear below once submitted.</div>';
+      document.getElementById('qNlCopy').onclick=function(){ var i=document.getElementById('qNlUrl'); i.select(); if(navigator.clipboard)navigator.clipboard.writeText(i.value); this.textContent='Copied'; };
+      document.getElementById('qCompany').value=''; qLoadList();
+    }catch(e){ var nl=document.getElementById('qNewLink'); nl.style.display='block'; nl.innerHTML='<div class="q-err">'+cmEsc(/failed to fetch|load failed/i.test(e.message)?'Questionnaires run on the deployed site (they need the secure functions).':e.message)+'</div>'; }
+    btn.disabled=false; btn.textContent='Create link';
+  }
+  var qIntakes=[];
+  async function qLoadList(){
+    var el=document.getElementById('qList'); el.innerHTML='<div class="q-empty">Loading…</div>';
+    try{
+      var token=await qToken();
+      var res=await fetch('/.netlify/functions/list-intakes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token})});
+      var d=await res.json(); if(!res.ok) throw new Error(d.error||'Error');
+      qIntakes=d.intakes||[];
+      if(!qIntakes.length){ el.innerHTML='<div class="q-empty">No questionnaires yet. Create one above and send it to a prospect.</div>'; return; }
+      el.innerHTML=qIntakes.map(function(it,i){
+        var done=it.status==='completed';
+        return '<div class="q-row'+(done?' done':'')+'" data-i="'+i+'"><div style="min-width:0"><div class="q-co">'+cmEsc(it.company_name||'Client')+'</div>'+
+          '<div class="q-meta">'+(done?'Completed '+timeAgo(it.completed_at):'Sent · awaiting response')+'</div></div>'+
+          '<span class="q-badge'+(done?'':' pend')+'">'+(done?'✓ View results':'Pending')+'</span></div>';
+      }).join('');
+      Array.prototype.forEach.call(el.querySelectorAll('.q-row.done'),function(r){ r.onclick=function(){ qShowDetail(qIntakes[+r.getAttribute('data-i')]); }; });
+    }catch(e){ el.innerHTML='<div class="q-empty">'+cmEsc(/failed to fetch|load failed/i.test(e.message)?'Questionnaires run on the deployed site.':e.message)+'</div>'; }
+  }
+  // ---- auto-match: rank buildings from the prospect's answers ----
+  function iqSF(s){ var m=String(s||'').replace(/[^0-9]/g,''); return m?parseInt(m,10):null; }
+  function iqNeed(r){ var sf=iqSF(r.sf); if(sf) return sf; var hc=parseInt(r.headcount,10); return hc?hc*200:null; }
+  function iqBudgetMax(r){ var b=r.budget||''; if(/under\s*\$?3/i.test(b)) return 3; if(/\+/.test(b)) return 999; var n=(b.match(/[\d.]+/g)||[]).map(parseFloat); return n.length?Math.max.apply(null,n):null; }
+  function iqLowRent(b){ var m=String(b.rent||'').match(/[\d.]+/); return m?parseFloat(m[0]):null; }
+  function matchFromIntake(r){
+    var w={}, anyW=false;
+    weightedCats().forEach(function(c){ var v=(r.amenities&&r.amenities[c.key]); if(v!=null){ w[c.key]=v; if(v>0) anyW=true; } });
+    var need=iqNeed(r), bmax=iqBudgetMax(r);
+    return BUILDINGS.map(function(b){
+      var score;
+      if(anyW){ var sum=0,acc=0; weightedCats().forEach(function(c){ var ww=w[c.key]||0; sum+=ww; acc+=(b.cscore[c.key]||0)*ww; }); score=sum?Math.round(acc/sum*10):matchScore(b); }
+      else score=matchScore(b);
+      var reasons=[], flags=[], availSF=iqSF(b.avail);
+      if(need){ if(availSF&&availSF>=need*0.8) reasons.push('Fits ~'+need.toLocaleString()+' SF'); else flags.push('Tight on size'); }
+      if(bmax){ var lr=iqLowRent(b); if(lr!=null&&lr<=bmax+0.25) reasons.push('Within budget'); else if(lr!=null) flags.push('Above budget'); }
+      if(anyW){ var strong=weightedCats().filter(function(c){return (w[c.key]||0)>=2 && (b.cscore[c.key]||0)>=6;}).map(function(c){return c.label.toLowerCase();}); if(strong.length) reasons.push('Strong '+strong.slice(0,2).join(' & ')); }
+      return {b:b, score:score, reasons:reasons, flags:flags};
+    }).sort(function(x,y){return y.score-x.score;});
+  }
+  function qRespSummary(r){
+    var bits=[];
+    function add(l,v){ if(v && (!Array.isArray(v)||v.length)) bits.push('<span class="q-fact"><b>'+l+':</b> '+cmEsc(Array.isArray(v)?v.join(', '):v)+'</span>'); }
+    add('Contact',(r.contactName?r.contactName+' · ':'')+(r.contactEmail||''));
+    add('Industry',r.industry);
+    add('Team',r.headcount?(r.headcount+(r.headcountFuture?' → '+r.headcountFuture:'')+' people'):'');
+    add('SF',r.sf?r.sf+' SF':(r.headcount?'~'+(parseInt(r.headcount,10)*200).toLocaleString()+' SF (est.)':''));
+    add('Budget',r.budget); add('Move-in',r.timeline); add('Lease',r.term);
+    add('Layout',r.layout); add('Build-out',r.buildout); add('Must-haves',r.musthaves); add('Submarkets',r.areas);
+    if(r.amenities){ var pr=weightedCats().filter(function(c){return (r.amenities[c.key]||0)>=2;}).map(function(c){return c.label;}); add('Priorities',pr); }
+    if(r.rosterFileName) add('Roster',r.rosterFileName+' (uploaded)');
+    if(r.notes) add('Notes',r.notes);
+    return bits.join('');
+  }
+  function qShowDetail(it){
+    document.getElementById('qMain').style.display='none';
+    var el=document.getElementById('qDetail'); el.style.display='';
+    var r=it.responses||{}, matches=matchFromIntake(r).slice(0,8);
+    el.innerHTML='<button class="q-back" id="qBack">← All questionnaires</button>'+
+      '<h3>'+cmEsc(it.company_name||'Client')+'</h3>'+
+      '<div class="q-facts">'+qRespSummary(r)+'</div>'+
+      '<div class="q-matchhead">Best-fit buildings <span>ranked from their answers</span></div>'+
+      '<div class="q-matches">'+matches.map(function(m,i){
+        return '<div class="q-match"><div class="q-mrank">'+(i+1)+'</div><div style="flex:1;min-width:0"><div class="q-mnm">'+cmEsc(m.b.name)+'</div>'+
+          '<div class="q-mloc">'+cmEsc(m.b.submarket)+'</div><div class="q-tags">'+
+          m.reasons.map(function(x){return '<span class="q-tag ok">'+cmEsc(x)+'</span>';}).join('')+
+          m.flags.map(function(x){return '<span class="q-tag warn">'+cmEsc(x)+'</span>';}).join('')+'</div></div>'+
+          '<div class="q-mscore"><div class="v">'+m.score+'</div><div class="l">fit</div></div></div>';
+      }).join('')+'</div>'+
+      '<div class="q-detail-actions"><button class="q-open-pf" id="qOpenPkg">Build a package from the top matches →</button></div>';
+    document.getElementById('qBack').onclick=function(){ el.style.display='none'; document.getElementById('qMain').style.display=''; };
+    document.getElementById('qOpenPkg').onclick=function(){ qClose(); if(window.openShareWith) window.openShareWith(matches.slice(0,6).map(function(m){return m.b.id;}), it.company_name); };
+  }
+  (function qWire(){ var m=document.getElementById('qModal'); if(!m) return;
+    document.getElementById('qX').addEventListener('click',qClose);
+    m.addEventListener('click',function(e){ if(e.target===m) qClose(); });
+    document.getElementById('qCreateBtn').addEventListener('click',qCreate);
+    document.getElementById('qCompany').addEventListener('keydown',function(e){ if(e.key==='Enter') qCreate(); });
+  })();
+
+  // open the package builder pre-filled from questionnaire matches
+  window.openShareWith=function(ids, clientName){
+    shSel={}; (ids||[]).slice(0,SH_CAP).forEach(function(id){ shSel[id]=true; });
+    shRenderPick();
+    document.getElementById('shForm').style.display=''; document.getElementById('shResult').style.display='none';
+    document.getElementById('shErr').textContent='';
+    document.getElementById('shClient').value=clientName||'';
+    document.getElementById('shLogo').value='';
+    document.getElementById('shPass').value=shSuggestPass();
+    document.getElementById('shSecret').value=localStorage.getItem('vantage_broker_secret')||'';
+    document.getElementById('shModal').classList.add('show');
+  };
 
   loadData();
 })();

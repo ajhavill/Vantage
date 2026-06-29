@@ -228,6 +228,29 @@
   function qs(k){ return new URLSearchParams(location.search).get(k); }
   var slug=qs('i')||'';
 
+  // validate the link + personalize the header
+  (function loadIntake(){
+    if(!slug){ return; } // allow a bare preview with no slug
+    fetch('/.netlify/functions/get-intake',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slug:slug})})
+      .then(function(r){ return r.text().then(function(t){ var d=null; try{d=JSON.parse(t);}catch(e){} if(!r.ok) throw new Error((d&&d.error)||('Error '+r.status)); return d; }); })
+      .then(function(d){
+        if(d.company){
+          document.getElementById('iqFor').textContent='Prepared for '+d.company;
+          var c=document.getElementById('q_company'); if(c && !c.value) c.value=d.company;
+        }
+        if(d.status==='completed'){
+          document.getElementById('iqThanksMsg').textContent='This questionnaire has already been submitted. If you need to make changes, just reply to your broker at Havill & Co.';
+          document.getElementById('iqForm').style.display='none';
+          document.getElementById('iqThanks').style.display='block';
+        }
+      })
+      .catch(function(e){
+        // invalid / unknown link -> friendly message instead of a dead form
+        document.getElementById('iqForm').innerHTML='<div class="iq-hero"><h1>This link isn’t active</h1>'+
+          '<p>'+esc(/failed to fetch|networkerror|load failed/i.test(e.message)?'We couldn’t reach the server. Please check your connection and reopen the link.':'This questionnaire link isn’t valid or has expired. Please ask your broker at Havill & Co. for a fresh link.')+'</p></div>';
+      });
+  })();
+
   // build amenity importance rows
   document.getElementById('iqAmen').innerHTML=AMENITIES.map(function(a){
     return '<div class="iq-amrow"><span class="nm">'+a[1]+'</span>'+
@@ -274,17 +297,33 @@
     };
   }
 
-  document.getElementById('iqSubmit').addEventListener('click',function(){
-    var err=document.getElementById('iqErr');
+  function fileToBase64(file){ return new Promise(function(res){
+    if(!file) return res(null);
+    var r=new FileReader();
+    r.onload=function(){ res(String(r.result).split(',')[1]||null); };
+    r.onerror=function(){ res(null); };
+    r.readAsDataURL(file);
+  }); }
+
+  document.getElementById('iqSubmit').addEventListener('click',async function(){
+    var err=document.getElementById('iqErr'), btn=document.getElementById('iqSubmit');
     var data=collect();
     if(!data.company){ err.textContent='Please add your company name.'; window.scrollTo({top:0,behavior:'smooth'}); return; }
     if(!data.contactEmail){ err.textContent='Please add your email so your broker can follow up.'; return; }
-    err.textContent='';
-    // BACKEND COMES NEXT: this will POST {slug, responses:data} to submit-intake.
-    console.log('Intake responses (slug='+slug+'):', data);
-    document.getElementById('iqForm').style.display='none';
-    document.getElementById('iqThanks').style.display='block';
-    window.scrollTo({top:0,behavior:'smooth'});
+    err.textContent=''; btn.disabled=true; btn.textContent='Submitting…';
+    try{
+      var rosterData=await fileToBase64(rosterFile);
+      var res=await fetch('/.netlify/functions/submit-intake',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({slug:slug, responses:data, rosterFileName:rosterFile?rosterFile.name:'', rosterData:rosterData})});
+      var txt=await res.text(); var d=null; try{d=JSON.parse(txt);}catch(e){}
+      if(!res.ok) throw new Error((d&&d.error)||('Error '+res.status));
+      document.getElementById('iqForm').style.display='none';
+      document.getElementById('iqThanks').style.display='block';
+      window.scrollTo({top:0,behavior:'smooth'});
+    }catch(e){
+      btn.disabled=false; btn.textContent='Submit & get matched';
+      err.textContent=/failed to fetch|networkerror|load failed/i.test(e.message)?'Couldn’t reach the server — please try again in a moment.':e.message;
+    }
   });
 })();
 </script>
