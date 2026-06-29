@@ -99,6 +99,10 @@
   .vis:hover{border-color:var(--ink-faint)}
   .vis.on{background:rgba(63,143,107,.12);border-color:rgba(63,143,107,.4);color:var(--fitness)}
   .linkbox input{width:100%;font:500 12.5px 'JetBrains Mono';padding:9px 11px;border:1px solid var(--line-2);border-radius:9px;background:var(--paper);color:var(--ink)}
+  .docs{margin-top:10px;display:flex;flex-direction:column;gap:4px}
+  .docrow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper)}
+  .docname{display:inline-flex;align-items:center;gap:7px;font:600 12.5px Inter;color:var(--accent);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .docname:hover{text-decoration:underline}
 
   /* side-by-side compare */
   .cmpwrap{overflow-x:auto;border:1px solid var(--line);border-radius:13px;background:var(--paper-2)}
@@ -313,11 +317,12 @@ window.DF = (function(){
       var props=await q(sb.from('deal_properties').select('*').eq('deal_id',id).order('sort_order'));
       var proposals=await q(sb.from('proposals').select('*').eq('deal_id',id).order('created_at'));
       var rounds=await q(sb.from('proposal_rounds').select('*').eq('deal_id',id).order('round_no'));
-      renderDeal(d,props,proposals,rounds);
+      var docs=await q(sb.from('documents').select('*').eq('deal_id',id).order('created_at'));
+      renderDeal(d,props,proposals,rounds,docs);
     }catch(e){ v.innerHTML='<div class="loading">Could not load deal: '+esc(e.message)+'</div>'; }
   }
 
-  function renderDeal(d,props,proposals,rounds){
+  function renderDeal(d,props,proposals,rounds,docs){
     var stageOpts=Object.keys(STAGE_LABEL).map(function(k){
       return '<option value="'+k+'"'+(d.stage===k?' selected':'')+'>'+STAGE_LABEL[k]+'</option>';
     }).join('');
@@ -332,8 +337,9 @@ window.DF = (function(){
 
     var propsHtml2 = propsHtml + '<button class="miniadd" onclick="DF.newProperty(\''+d.id+'\')">+ Add building</button>';
 
-    // group rounds by proposal
+    // group rounds + documents by proposal
     var roundsByProp={}; rounds.forEach(function(r){ (roundsByProp[r.proposal_id]=roundsByProp[r.proposal_id]||[]).push(r); });
+    var docsByProp={}; (docs||[]).forEach(function(dc){ if(dc.proposal_id){ (docsByProp[dc.proposal_id]=docsByProp[dc.proposal_id]||[]).push(dc); } });
 
     var propsHtmlList = proposals.length ? proposals.map(function(pr){
       var rs=(roundsByProp[pr.id]||[]);
@@ -350,6 +356,7 @@ window.DF = (function(){
         +   '<th>Rd</th><th>From</th><th>Structure</th><th class="num">Base $/SF</th><th class="num">Opex</th>'
         +   '<th class="num">≈ Gross</th><th class="num">Size SF</th><th class="num">Term</th><th>Notes</th>'
         + '</tr></thead><tbody>'+rowsHtml+'</tbody></table></div>'
+        + docsBlock(pr.id, d.id, docsByProp[pr.id]||[])
         + '<button class="miniadd" onclick="DF.newRound(\''+d.id+'\',\''+pr.id+'\')">+ Add round</button>'
         + '</div>';
     }).join('') : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No proposals yet.</div>';
@@ -387,6 +394,16 @@ window.DF = (function(){
       + '<td class="num">'+(r.term_months==null?'—':(r.term_months+'mo'))+'</td>'
       + '<td>'+esc(r.summary||'')+'</td>'
       + '</tr>';
+  }
+
+  function docsBlock(proposalId, dealId, docs){
+    var list=docs.map(function(dc){
+      return '<div class="docrow"><span class="docname" onclick="DF.downloadDoc(\''+esc(dc.storage_path)+'\')" title="Open file">'
+        + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg> '
+        + esc(dc.filename)+'</span>'
+        + '<button class="delx" onclick="DF.deleteDoc(\''+dc.id+'\',\''+esc(dc.storage_path)+'\',\''+dealId+'\')">remove</button></div>';
+    }).join('');
+    return '<div class="docs">'+list+'<button class="miniadd" onclick="DF.attachDoc(\''+proposalId+'\',\''+dealId+'\')">📎 Attach proposal file</button></div>';
   }
 
   /* ---------- modal plumbing ---------- */
@@ -638,6 +655,41 @@ window.DF = (function(){
     }catch(e){ alert('Could not update visibility: '+e.message); }
   }
 
+  /* ---------- documents (Supabase Storage bucket "deal-files") ---------- */
+  function attachDoc(proposalId, dealId){
+    var inp=document.createElement('input');
+    inp.type='file'; inp.accept='.pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg';
+    inp.onchange=async function(){
+      var file=inp.files&&inp.files[0]; if(!file) return;
+      if(file.size>15*1024*1024){ alert('File too large — 15MB max.'); return; }
+      var safe=file.name.replace(/[^A-Za-z0-9._-]/g,'_');
+      var path=dealId+'/'+randSlug(8)+'_'+safe;       // first folder = deal_id → storage RLS scopes by it
+      try{
+        var up=await sb.storage.from('deal-files').upload(path, file, {upsert:false, contentType:file.type||undefined});
+        if(up.error) throw up.error;
+        await q(sb.from('documents').insert({deal_id:dealId, proposal_id:proposalId, kind:'proposal',
+          filename:file.name, storage_path:path, mime:file.type||null, size_bytes:file.size, uploaded_by:me.id}).select().single());
+        openDeal(dealId);
+      }catch(e){ alert('Upload failed: '+(e.message||e)); }
+    };
+    inp.click();
+  }
+  async function downloadDoc(path){
+    try{
+      var r=await sb.storage.from('deal-files').createSignedUrl(path, 120);
+      if(r.error) throw r.error;
+      window.open(r.data.signedUrl,'_blank','noopener');
+    }catch(e){ alert('Could not open file: '+(e.message||e)); }
+  }
+  async function deleteDoc(docId, path, dealId){
+    if(!confirm('Remove this file? This cannot be undone.')) return;
+    try{
+      await sb.storage.from('deal-files').remove([path]);     // ignore storage error (row is source of truth)
+      await q(sb.from('documents').delete().eq('id',docId));
+      openDeal(dealId);
+    }catch(e){ alert('Could not remove: '+(e.message||e)); }
+  }
+
   /* ---------- boot ---------- */
   document.addEventListener('DOMContentLoaded',bindAuth);
 
@@ -646,6 +698,7 @@ window.DF = (function(){
     newDeal:newDeal, newProperty:newProperty, newProposal:newProposal, newRound:newRound,
     setStage:setStage, basisChange:basisChange, close:closeSheet,
     shareDeal:shareDeal, toggleProposalVisible:toggleProposalVisible,
+    attachDoc:attachDoc, downloadDoc:downloadDoc, deleteDoc:deleteDoc,
     effectiveRent:effectiveRent, grossEquiv:grossEquiv
   };
 })();
