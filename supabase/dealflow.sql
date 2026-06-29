@@ -26,8 +26,8 @@ create table if not exists public.deals (
   package_id uuid references public.packages(id) on delete set null,  -- the won package, if any
   client_name text,
   client_logo_url text,
-  stage text not null default 'touring'
-    check (stage in ('touring','proposals','negotiation','executed','dead')),
+  stage text not null default 'needs'
+    check (stage in ('needs','touring','evaluating','proposals','negotiation','executed','dead')),
   -- client-viewer access (set when you share; null until then)
   slug text unique,
   passcode_hash text,
@@ -37,6 +37,12 @@ create table if not exists public.deals (
 );
 create index if not exists deals_owner_idx on public.deals(owner_id);
 create index if not exists deals_org_idx   on public.deals(org_id);
+
+-- Stage set expanded (2026-06-29): + 'needs' (needs assessment / market research) and
+-- 'evaluating' (evaluating top options). Migrate an already-deployed deals table:
+alter table public.deals drop constraint if exists deals_stage_check;
+alter table public.deals add constraint deals_stage_check
+  check (stage in ('needs','touring','evaluating','proposals','negotiation','executed','dead'));
 
 -- 2) Deal properties — the buildings in play for this deal (the tour list + proposal anchors).
 --    Self-contained: keeps name/address denormalized so it survives catalog changes, and

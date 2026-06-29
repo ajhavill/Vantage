@@ -20,7 +20,7 @@
   .vhead .sub{font-size:12.5px;color:var(--ink-faint);margin-top:3px}
 
   /* pipeline board */
-  .pipe{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+  .pipe{display:grid;gap:14px;overflow-x:auto;padding-bottom:6px}
   .pcol{background:var(--paper-2);border:1px solid var(--line);border-radius:14px;padding:12px;min-height:160px}
   .pcol .ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
   .pcol .ph .t{font:600 11px Inter;text-transform:uppercase;letter-spacing:.11em;color:var(--ink-faint)}
@@ -113,6 +113,13 @@
   .draftbox{font:400 13px Inter;color:var(--ink);background:var(--paper);border:1px solid var(--line-2);border-radius:9px;padding:12px 14px;max-height:300px;overflow-y:auto;line-height:1.55}
   .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;font:600 13px Inter;padding:12px 18px;border-radius:10px;box-shadow:var(--shadow);opacity:0;transition:all .3s;z-index:4000;max-width:90vw;text-align:center}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* tour stops */
+  .tcard{border:1px solid var(--line);border-radius:11px;background:var(--paper-2);padding:12px 14px;margin-bottom:10px}
+  .tcard .tw{font:600 11.5px Inter;color:var(--accent)}
+  .tcard .tn{font:700 14px 'Bricolage Grotesque';color:var(--ink);margin-top:2px}
+  .tcard .tnotes{font:400 12px Inter;color:var(--ink-soft);margin-top:4px}
+  .tcard .trow{display:flex;gap:9px;align-items:center;margin-top:9px;flex-wrap:wrap}
 
   /* side-by-side compare */
   .cmpwrap{overflow-x:auto;border:1px solid var(--line);border-radius:13px;background:var(--paper-2)}
@@ -211,8 +218,9 @@ window.DF = (function(){
   var SUPA_URL  = "https://siaoqjvvxuckyxpxftwt.supabase.co";
   var SUPA_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNpYW9xanZ2eHVja3l4cHhmdHd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2OTU5MTMsImV4cCI6MjA5ODI3MTkxM30.HgWjVlB9e0rYgX-MCTee16UV5tZ6m-pCXXjwY1cu3b0";
 
-  var STAGES = [['touring','Touring'],['proposals','Proposals'],['negotiation','Negotiation'],['executed','Executed']];
-  var STAGE_LABEL = {touring:'Touring',proposals:'Proposals',negotiation:'Negotiation',executed:'Executed',dead:'Closed / dead'};
+  var STAGES = [['needs','Needs & Research'],['touring','Touring'],['evaluating','Evaluating Options'],['proposals','Proposals'],['negotiation','Negotiation'],['executed','Executed']];
+  var STAGE_LABEL = {needs:'Needs assessment & market research',touring:'Touring',evaluating:'Evaluating top options',proposals:'Proposals',negotiation:'Negotiation',executed:'Executed',dead:'Closed / dead'};
+  var TOUR_STATUS = [['proposed','Proposed'],['confirmed','Confirmed'],['toured','Toured'],['cancelled','Cancelled']];
   var RENT_BASES = [
     ['FSG','Full Service Gross'],['MG','Modified Gross'],['IG','Industrial Gross'],
     ['NNN','Triple Net (NNN)'],['NN','Double Net (NN)'],['N','Single Net (N)'],
@@ -318,6 +326,7 @@ window.DF = (function(){
       var cards=inStage.length? inStage.map(dealCard).join('') : '<div class="empty">No deals</div>';
       return '<div class="pcol"><div class="ph"><span class="t">'+s[1]+'</span><span class="c">'+inStage.length+'</span></div>'+cards+'</div>';
     }).join('');
+    $('pipe').style.gridTemplateColumns='repeat('+STAGES.length+',minmax(176px,1fr))';
     $('pipe').innerHTML=html;
   }
   function dealCard(d){
@@ -339,16 +348,21 @@ window.DF = (function(){
       var proposals=await q(sb.from('proposals').select('*').eq('deal_id',id).order('created_at'));
       var rounds=await q(sb.from('proposal_rounds').select('*').eq('deal_id',id).order('round_no'));
       var docs=await q(sb.from('documents').select('*').eq('deal_id',id).order('created_at'));
-      renderDeal(d,props,proposals,rounds,docs);
+      var tours=await q(sb.from('tour_stops').select('*').eq('deal_id',id).order('scheduled_at',{ascending:true,nullsFirst:false}));
+      renderDeal(d,props,proposals,rounds,docs,tours);
     }catch(e){ v.innerHTML='<div class="loading">Could not load deal: '+esc(e.message)+'</div>'; }
   }
 
-  function renderDeal(d,props,proposals,rounds,docs){
+  function renderDeal(d,props,proposals,rounds,docs,tours){
     var stageOpts=Object.keys(STAGE_LABEL).map(function(k){
       return '<option value="'+k+'"'+(d.stage===k?' selected':'')+'>'+STAGE_LABEL[k]+'</option>';
     }).join('');
 
     var propById={}; props.forEach(function(p){ propById[p.id]=p; });
+
+    var toursHtml = (tours&&tours.length) ? tours.map(function(s){ return tourCard(s, propById, d.id); }).join('')
+      : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No tour stops scheduled yet.</div>';
+    var toursSection = toursHtml + '<button class="miniadd" onclick="DF.newTourStop(\''+d.id+'\')">+ Add tour stop</button>';
 
     var propsHtml = props.length ? props.map(function(p){
       return '<div class="pcard"><div class="top"><div><div class="nm">'+esc(p.name||'Untitled building')+'</div>'
@@ -401,7 +415,20 @@ window.DF = (function(){
       +   '</div>'
       + '</div>'
       + '<div class="sec"><div class="sec-h"><h2>Buildings</h2><span class="hint">The properties in play for this client</span></div>'+propsHtml2+'</div>'
+      + '<div class="sec"><div class="sec-h"><h2>Tour schedule</h2><span class="hint">Building visits for this client</span></div>'+toursSection+'</div>'
       + '<div class="sec"><div class="sec-h"><h2>Proposals &amp; rounds</h2>'+addProposalBtn+'</div>'+propsHtmlList+'</div>';
+  }
+
+  function tourCard(s, propById, dealId){
+    var when = s.scheduled_at ? new Date(s.scheduled_at).toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : 'Time TBD';
+    var name = (s.property_id && propById[s.property_id]) ? propById[s.property_id].name : (s.label||'Tour stop');
+    var stLabel = (TOUR_STATUS.filter(function(x){return x[0]===s.status;})[0]||['','—'])[1];
+    var visBtn='<button class="vis '+(s.client_visible?'on':'')+'" onclick="DF.toggleTourVisible(\''+s.id+'\','+(s.client_visible?'false':'true')+',\''+dealId+'\')" title="Toggle whether the client sees this stop">'+(s.client_visible?'● Client':'○ Hidden')+'</button>';
+    return '<div class="tcard"><div class="tw">'+esc(when)+'</div>'
+      + '<div class="tn">'+esc(name)+'</div>'
+      + (s.notes?'<div class="tnotes">'+esc(s.notes)+'</div>':'')
+      + '<div class="trow"><span class="tag'+(s.status==='toured'?' b':'')+'">'+esc(stLabel)+'</span>'+visBtn
+      + '<button class="rev" onclick="DF.editTourStop(\''+s.id+'\',\''+dealId+'\')">edit</button></div></div>';
   }
 
   function roundRow(r){
@@ -454,7 +481,7 @@ window.DF = (function(){
       if(!name){ $('f_err').textContent='Enter a client name.'; return; }
       this.disabled=true; this.textContent='Creating…';
       try{
-        var row=await q(sb.from('deals').insert({owner_id:me.id, client_name:name, stage:'touring'}).select().single());
+        var row=await q(sb.from('deals').insert({owner_id:me.id, client_name:name, stage:'needs'}).select().single());
         deals.unshift(row); closeSheet(); openDeal(row.id);
       }catch(e){ $('f_err').textContent=e.message; this.disabled=false; this.textContent='Create deal'; }
     });
@@ -593,6 +620,67 @@ window.DF = (function(){
       try{ await q(sb.from('proposal_rounds').delete().eq('id',roundId)); closeSheet(); openDeal(dealId); }
       catch(e){ $('f_err').textContent=e.message; }
     });
+  }
+
+  /* ---------- tour stops ---------- */
+  function toLocalInput(iso){ if(!iso) return ''; var d=new Date(iso); var local=new Date(d.getTime()-d.getTimezoneOffset()*60000); return local.toISOString().slice(0,16); }
+  function tourFields(props, v){
+    v=v||{};
+    var propOpts='<option value="">— other / no building —</option>'+props.map(function(p){ return '<option value="'+p.id+'"'+(v.property_id===p.id?' selected':'')+'>'+esc(p.name)+'</option>'; }).join('');
+    return fld('Building','<select id="t_prop" onchange="DF.tourPropChange()">'+propOpts+'</select>')
+      + '<div class="fld" id="t_lblwrap" style="display:'+(v.property_id?'none':'flex')+'"><label>Or a custom label</label><input id="t_label" value="'+esc(v.label||'')+'" placeholder="e.g. 1230 Montana — lobby walk-through"></div>'
+      + fld('Date &amp; time','<input id="t_when" type="datetime-local" value="'+toLocalInput(v.scheduled_at)+'">')
+      + fld('Status','<select id="t_status">'+selOpts(TOUR_STATUS, v.status||'proposed')+'</select>')
+      + fld('Notes','<textarea id="t_notes" placeholder="meeting point, contact, what to look for...">'+esc(v.notes||'')+'</textarea>');
+  }
+  function readTourForm(){
+    var pid=$('t_prop').value||null, when=$('t_when').value;
+    return {
+      property_id:pid, label: pid ? null : (($('t_label').value||'').trim()||null),
+      scheduled_at: when ? new Date(when).toISOString() : null,
+      status:$('t_status').value, notes:($('t_notes').value||'').trim()||null
+    };
+  }
+  function tourPropChange(){ var w=$('t_lblwrap'); if(w) w.style.display = $('t_prop').value ? 'none':'flex'; }
+
+  async function newTourStop(dealId){
+    var props=[]; try{ props=await q(sb.from('deal_properties').select('id,name').eq('deal_id',dealId).order('sort_order')); }catch(e){}
+    openSheet('<h3>Add tour stop</h3><div class="ssub">Schedule a building visit for this client.</div>'
+      + tourFields(props, {})
+      + '<div class="formerr" id="f_err"></div>'
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button><button class="btn pri" id="f_save">Add stop</button></div>');
+    $('f_save').addEventListener('click',function(){
+      var btn=this; btn.disabled=true; btn.textContent='Saving…';
+      var row=Object.assign(readTourForm(), {deal_id:dealId, client_visible:true});
+      q(sb.from('tour_stops').insert(row).select().single())
+        .then(function(){ closeSheet(); openDeal(dealId); })
+        .catch(function(e){ $('f_err').textContent=e.message; btn.disabled=false; btn.textContent='Add stop'; });
+    });
+  }
+  async function editTourStop(stopId, dealId){
+    var s, props=[];
+    try{ s=(await q(sb.from('tour_stops').select('*').eq('id',stopId).limit(1)))[0]; props=await q(sb.from('deal_properties').select('id,name').eq('deal_id',dealId).order('sort_order')); }
+    catch(e){ alert('Could not load the tour stop.'); return; }
+    if(!s) return;
+    openSheet('<h3>Edit tour stop</h3>'
+      + tourFields(props, s)
+      + '<div class="formerr" id="f_err"></div>'
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button><button class="btn" id="f_del">Delete</button><button class="btn pri" id="f_save">Save</button></div>');
+    $('f_save').addEventListener('click',function(){
+      var btn=this; btn.disabled=true; btn.textContent='Saving…';
+      q(sb.from('tour_stops').update(readTourForm()).eq('id',stopId).select().single())
+        .then(function(){ closeSheet(); openDeal(dealId); })
+        .catch(function(e){ $('f_err').textContent=e.message; btn.disabled=false; btn.textContent='Save'; });
+    });
+    $('f_del').addEventListener('click',async function(){
+      if(!confirm('Delete this tour stop?')) return;
+      try{ await q(sb.from('tour_stops').delete().eq('id',stopId)); closeSheet(); openDeal(dealId); }
+      catch(e){ $('f_err').textContent=e.message; }
+    });
+  }
+  async function toggleTourVisible(stopId, makeVisible, dealId){
+    try{ await q(sb.from('tour_stops').update({client_visible:makeVisible}).eq('id',stopId).select().single()); openDeal(dealId); }
+    catch(e){ alert('Could not update visibility: '+(e.message||e)); }
   }
 
   /* ---------- stage change ---------- */
@@ -843,6 +931,7 @@ window.DF = (function(){
     shareDeal:shareDeal, toggleProposalVisible:toggleProposalVisible,
     attachDoc:attachDoc, downloadDoc:downloadDoc, deleteDoc:deleteDoc, toggleDocVisible:toggleDocVisible,
     aiDraft:aiDraft, aiPickTmpl:aiPickTmpl, aiDocx:aiDocx, toggleVoice:toggleVoice, editRound:editRound,
+    newTourStop:newTourStop, editTourStop:editTourStop, toggleTourVisible:toggleTourVisible, tourPropChange:tourPropChange,
     effectiveRent:effectiveRent, grossEquiv:grossEquiv
   };
 })();

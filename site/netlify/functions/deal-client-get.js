@@ -70,6 +70,8 @@ exports.handler = async (event) => {
     "&select=id,name,address,status,sort_order&order=sort_order")).data || [];
   const proposals = (await sb.rest("proposals?deal_id=eq." + id + "&client_visible=eq.true" +
     "&select=id,title,property_id,status&order=created_at")).data || [];
+  const tours = (await sb.rest("tour_stops?deal_id=eq." + id + "&client_visible=eq.true" +
+    "&select=id,property_id,label,scheduled_at,status,notes&order=scheduled_at.asc.nullslast")).data || [];
 
   // final rounds + client-visible documents for those visible proposals only
   let rounds = [], documents = [];
@@ -95,6 +97,7 @@ exports.handler = async (event) => {
     properties: props,
     proposals: proposals,
     rounds: rounds,
-    documents: documents
+    documents: documents,
+    tours: tours
   });
 };

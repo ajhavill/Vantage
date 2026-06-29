@@ -52,6 +52,13 @@
   .docitem .dn{font:600 13px Inter;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .docitem .dp{margin-left:auto;font:500 11.5px Inter;color:var(--ink-faint);white-space:nowrap}
 
+  .tourlist{display:flex;flex-direction:column;gap:8px}
+  .touritem{position:relative;border:1px solid var(--line);border-radius:11px;background:var(--paper-2);padding:11px 14px}
+  .touritem .tw{font:600 11.5px Inter;color:var(--accent)}
+  .touritem .tn{font:700 14px 'Bricolage Grotesque';color:var(--ink);margin-top:2px}
+  .touritem .tnote{font:400 12px Inter;color:var(--ink-soft);margin-top:3px}
+  .tbadge{position:absolute;top:11px;right:14px;font:600 10px Inter;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);border:1px solid var(--line-2);border-radius:999px;padding:2px 8px;background:var(--paper)}
+
   .cv-empty{font:500 13px Inter;color:var(--ink-faint);padding:34px 0;text-align:center}
   .cv-disc{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font:400 11px Inter;color:var(--ink-faint);line-height:1.5}
 
@@ -138,7 +145,7 @@
     var logo=data.client_logo_url?'<img class="cv-logo" src="'+esc(data.client_logo_url)+'" alt=""> ':'';
     $('cvFor').innerHTML=logo+(data.client_name?'Prepared for <b>'+esc(data.client_name)+'</b>':'');
 
-    var props=data.properties||[], proposals=data.proposals||[], rounds=data.rounds||[], documents=data.documents||[];
+    var props=data.properties||[], proposals=data.proposals||[], rounds=data.rounds||[], documents=data.documents||[], tours=data.tours||[];
     // latest FINAL round per proposal
     var latestByProp={};
     rounds.forEach(function(r){ var cur=latestByProp[r.proposal_id]; if(!cur||r.round_no>cur.round_no) latestByProp[r.proposal_id]=r; });
@@ -150,6 +157,20 @@
 
     var html='<div class="cv-h">'+(data.client_name?esc(data.client_name)+' — ':'')+'your options</div>'
       +'<div class="cv-sub">A live, read-only view of the buildings and proposals we’re working on for you. It updates as the deal progresses.</div>';
+
+    // tour schedule
+    if(tours.length){
+      var tstat={proposed:'Proposed',confirmed:'Confirmed',toured:'Toured',cancelled:'Cancelled'};
+      html+='<div class="cv-sec"><div class="cv-sec-h">Tour schedule</div><div class="tourlist">'
+        + tours.map(function(s){
+            var when = s.scheduled_at ? new Date(s.scheduled_at).toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : 'Time to be confirmed';
+            var name = (s.property_id&&propName[s.property_id])?propName[s.property_id]:(s.label||'Tour stop');
+            return '<div class="touritem"><div class="tw">'+esc(when)+'</div><div class="tn">'+esc(name)+'</div>'
+              + (s.notes?'<div class="tnote">'+esc(s.notes)+'</div>':'')
+              + '<span class="tbadge">'+esc(tstat[s.status]||s.status||'')+'</span></div>';
+          }).join('')
+        + '</div></div>';
+    }
 
     // compare
     if(cols.length){
@@ -182,7 +203,7 @@
           }).join('')
         + '</div></div>';
     }
-    if(!cols.length && !props.length && !documents.length){
+    if(!cols.length && !props.length && !documents.length && !tours.length){
       html+='<div class="cv-empty">Your broker hasn’t shared any buildings or proposals yet. Check back soon.</div>';
     }
 
