@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vantage — Deal flow</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/vantage.css"/>
+<style>
+  /* ---- Deal-flow specific (reuses vantage.css tokens + topbar/auth/buttons) ---- */
+  .crumb b{color:var(--ink-soft)}
+  .navlink{font:600 12.5px Inter;color:var(--ink-soft);text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+  .navlink:hover{color:var(--accent)}
+
+  .wrap{max-width:1120px;margin:0 auto;padding:22px}
+  .vhead{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:18px;flex-wrap:wrap}
+  .vhead h1{font-size:22px}
+  .vhead .sub{font-size:12.5px;color:var(--ink-faint);margin-top:3px}
+
+  /* pipeline board */
+  .pipe{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+  .pcol{background:var(--paper-2);border:1px solid var(--line);border-radius:14px;padding:12px;min-height:160px}
+  .pcol .ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .pcol .ph .t{font:600 11px Inter;text-transform:uppercase;letter-spacing:.11em;color:var(--ink-faint)}
+  .pcol .ph .c{font:600 11px 'JetBrains Mono';color:var(--ink-faint);background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:1px 8px}
+  .dcard{background:var(--paper-2);border:1px solid var(--line-2);border-radius:11px;padding:12px;margin-bottom:10px;cursor:pointer;transition:border-color .14s,box-shadow .14s,transform .14s}
+  .dcard:hover{border-color:var(--accent);box-shadow:var(--shadow);transform:translateY(-1px)}
+  .dcard .nm{font:700 14.5px 'Bricolage Grotesque';color:var(--ink);line-height:1.15}
+  .dcard .mt{font:500 11.5px Inter;color:var(--ink-faint);margin-top:5px;display:flex;gap:10px;flex-wrap:wrap}
+  .dcard .mt b{color:var(--ink-soft);font-weight:600;font-family:'JetBrains Mono'}
+  .pcol .empty{font:400 11.5px Inter;color:var(--ink-faint);text-align:center;padding:14px 4px}
+
+  /* detail */
+  .dealhead{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+  .dealhead h1{font-size:24px}
+  .dealhead .meta{font:500 12.5px Inter;color:var(--ink-faint);margin-top:4px}
+  .stagepick{display:flex;align-items:center;gap:8px}
+  .stagepick label{font:600 10.5px Inter;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-faint)}
+
+  .sec{margin-top:26px}
+  .sec-h{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  .sec-h h2{font:700 15px 'Bricolage Grotesque';color:var(--ink)}
+  .sec-h .hint{font:400 11.5px Inter;color:var(--ink-faint)}
+
+  .pcard{border:1px solid var(--line);border-radius:13px;background:var(--paper-2);padding:14px 16px;margin-bottom:12px}
+  .pcard .top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+  .pcard .top .nm{font:700 15px 'Bricolage Grotesque';color:var(--ink)}
+  .pcard .top .ad{font:500 12px Inter;color:var(--ink-soft);margin-top:2px}
+  .tag{font:600 10px Inter;text-transform:uppercase;letter-spacing:.08em;padding:3px 9px;border-radius:999px;border:1px solid var(--line-2);color:var(--ink-soft);background:var(--paper);white-space:nowrap}
+  .tag.b{background:var(--building);color:#fff;border-color:var(--building)}
+
+  /* rounds table */
+  .rounds{margin-top:12px;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .rtable{width:100%;border-collapse:collapse;font-size:12.5px}
+  .rtable th{font:600 10px Inter;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-faint);text-align:left;padding:8px 10px;background:var(--paper);border-bottom:1px solid var(--line)}
+  .rtable td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  .rtable tr:last-child td{border-bottom:0}
+  .rtable .num{font-family:'JetBrains Mono';text-align:right;white-space:nowrap}
+  .party{font:600 10px Inter;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:6px}
+  .party.tenant{background:rgba(45,110,126,.12);color:var(--accent)}
+  .party.landlord{background:rgba(201,84,63,.13);color:var(--dining)}
+  .draftpill{font:600 9.5px Inter;text-transform:uppercase;letter-spacing:.06em;color:#9a6a00;background:#fbeecb;border-radius:5px;padding:2px 6px;margin-left:6px}
+  .ge{font:500 11.5px Inter;color:var(--ink-faint);margin-top:8px}
+  .ge b{color:var(--ink-soft);font-family:'JetBrains Mono'}
+
+  .miniadd{font:600 11.5px Inter;color:var(--accent);background:none;border:0;cursor:pointer;padding:6px 0;display:inline-flex;align-items:center;gap:5px}
+  .miniadd:hover{text-decoration:underline}
+
+  /* modal */
+  .ov{position:fixed;inset:0;z-index:2500;display:none;align-items:flex-start;justify-content:center;background:rgba(20,26,38,.46);backdrop-filter:blur(2px);padding:42px 16px;overflow-y:auto}
+  .ov.show{display:flex}
+  .sheet{width:min(560px,100%);background:var(--paper-2);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:22px 24px}
+  .sheet h3{font:700 17px 'Bricolage Grotesque';color:var(--ink);margin-bottom:3px}
+  .sheet .ssub{font:400 12px Inter;color:var(--ink-faint);margin-bottom:16px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px 14px}
+  .fld{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
+  .fld.full{grid-column:1/-1}
+  .fld label{font:600 10.5px Inter;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint)}
+  .fld input,.fld select,.fld textarea{font:500 14px Inter;padding:10px 12px;border:1px solid var(--line-2);border-radius:9px;background:var(--paper);color:var(--ink);width:100%}
+  .fld input:focus,.fld select:focus,.fld textarea:focus{outline:none;border-color:var(--accent)}
+  .fld textarea{resize:vertical;min-height:62px}
+  .fld .u{font:500 11px Inter;color:var(--ink-faint)}
+  .srow{display:flex;gap:10px;justify-content:flex-end;margin-top:8px}
+  .btn{font:600 13px Inter;border-radius:9px;padding:10px 16px;cursor:pointer;border:1px solid var(--line-2);background:var(--paper);color:var(--ink-soft)}
+  .btn:hover{border-color:var(--ink-faint)}
+  .btn.pri{background:var(--building);color:#fff;border-color:var(--building)}
+  .btn.pri:hover{filter:brightness(1.07)}
+  .btn:disabled{opacity:.6;cursor:default}
+  .formerr{font:500 12px Inter;color:#C2453F;min-height:15px;margin-top:4px}
+  .delx{font:500 11.5px Inter;color:var(--ink-faint);background:none;border:0;cursor:pointer}
+  .delx:hover{color:var(--dining)}
+  .loading{font:500 13px Inter;color:var(--ink-faint);text-align:center;padding:40px}
+</style>
+</head>
+<body>
+
+<!-- LOGIN GATE (shares vantage.css styles) -->
+<div id="authGate">
+  <div class="ag-card">
+    <div class="ag-logo">Vantage<span class="dot">.</span></div>
+    <div class="ag-by">Deal flow · Havill &amp; Co.</div>
+    <h1>Sign in</h1>
+    <label for="agEmail">Email</label>
+    <input id="agEmail" type="email" autocomplete="username" placeholder="you@havillco.com">
+    <label for="agPass">Password</label>
+    <input id="agPass" type="password" autocomplete="current-password" placeholder="••••••••">
+    <button id="agBtn">Sign in</button>
+    <div class="ag-err" id="agErr"></div>
+    <div class="ag-note">Access is invite-only. Need an account? Ask your administrator.</div>
+  </div>
+</div>
+
+<div class="topbar">
+  <div class="brand" onclick="DF.showPipeline()">
+    <span class="logo">Vantage<span class="dot">.</span></span>
+    <span class="by">by Havill &amp; Co.</span>
+  </div>
+  <span class="crumb" id="crumb">Deal flow</span>
+  <a class="navlink" href="index.html" style="margin-left:auto" title="Back to the market cockpit">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5"/><path d="M5 9.5V21h14V9.5"/></svg>
+    Cockpit
+  </a>
+  <span class="userchip" id="userChip" style="display:none">
+    <span class="uemail" id="userEmail"></span>
+    <button id="signOutBtn" title="Sign out">Sign out</button>
+  </span>
+  <span class="pill">Deal flow</span>
+</div>
+
+<main>
+  <!-- PIPELINE -->
+  <section id="pipelineView" class="wrap">
+    <div class="vhead">
+      <div>
+        <h1>Deal pipeline</h1>
+        <div class="sub">Your active client engagements, by stage.</div>
+      </div>
+      <button class="share-btn" onclick="DF.newDeal()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        New deal
+      </button>
+    </div>
+    <div id="pipe" class="pipe"></div>
+  </section>
+
+  <!-- DETAIL -->
+  <section id="dealView" class="wrap" style="display:none"></section>
+</main>
+
+<!-- generic modal -->
+<div class="ov" id="ov"><div class="sheet" id="sheet"></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+window.DF = (function(){
+  "use strict";
+  var SUPA_URL  = "https://siaoqjvvxuckyxpxftwt.supabase.co";
+  var SUPA_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNpYW9xanZ2eHVja3l4cHhmdHd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2OTU5MTMsImV4cCI6MjA5ODI3MTkxM30.HgWjVlB9e0rYgX-MCTee16UV5tZ6m-pCXXjwY1cu3b0";
+
+  var STAGES = [['touring','Touring'],['proposals','Proposals'],['negotiation','Negotiation'],['executed','Executed']];
+  var STAGE_LABEL = {touring:'Touring',proposals:'Proposals',negotiation:'Negotiation',executed:'Executed',dead:'Closed / dead'};
+  var RENT_BASES = [
+    ['FSG','Full Service Gross'],['MG','Modified Gross'],['IG','Industrial Gross'],
+    ['NNN','Triple Net (NNN)'],['NN','Double Net (NN)'],['N','Single Net (N)'],
+    ['GROSS','Flat Gross'],['ABS','Absolute Net'],['OTHER','Other']
+  ];
+  // structures where the tenant pays opex ON TOP of base rent (so gross-equiv = base + opex)
+  var NET_BASES = {NNN:1,NN:1,N:1,ABS:1};
+  var PROP_STATUS = [['considering','Considering'],['touring','Touring'],['shortlisted','Shortlisted'],['proposing','Proposing'],['passed','Passed']];
+
+  var sb=null, me=null, deals=[];
+
+  /* ---------- tiny helpers ---------- */
+  function $(id){ return document.getElementById(id); }
+  function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function num(v){ if(v==null||v==='') return null; var n=Number(v); return isFinite(n)?n:null; }
+  function money(v){ if(v==null) return '—'; return '$'+Number(v).toLocaleString(undefined,{maximumFractionDigits:2}); }
+  function psf(v){ return v==null?'—':('$'+Number(v).toFixed(2)); }
+  function basisLabel(code,custom){ if(code==='OTHER'&&custom) return custom; var f=RENT_BASES.filter(function(b){return b[0]===code;})[0]; return f?f[0]:(code||'—'); }
+
+  // gross-equivalent STARTING rate: net structures add opex on top of base (a quick indicator;
+  // the full side-by-side net-effective engine comes in the compare view).
+  function grossEquiv(r){
+    if(r.base_rent_psf==null) return null;
+    var g=Number(r.base_rent_psf);
+    if(NET_BASES[r.rent_basis] && r.opex_psf!=null) g+=Number(r.opex_psf);
+    return g;
+  }
+
+  async function q(promise){ var r=await promise; if(r.error){ throw r.error; } return r.data; }
+
+  /* ---------- auth gate ---------- */
+  function showApp(session){
+    $('authGate').style.display='none';
+    me=session.user;
+    var chip=$('userChip'); if(chip){ chip.style.display='inline-flex'; $('userEmail').textContent=me.email||''; }
+    loadDeals();
+  }
+  function showLogin(){ $('authGate').style.display='flex'; var c=$('userChip'); if(c) c.style.display='none'; }
+
+  function bindAuth(){
+    if(!window.supabase){ $('agErr').textContent='Could not reach the login service. Check your connection and refresh.'; return; }
+    sb=window.supabase.createClient(SUPA_URL, SUPA_ANON);
+    window.vantageSB=sb;
+    async function login(){
+      var btn=$('agBtn'), err=$('agErr');
+      var email=($('agEmail').value||'').trim(), pass=$('agPass').value||'';
+      if(!email||!pass){ err.textContent='Enter your email and password.'; return; }
+      btn.disabled=true; btn.textContent='Signing in…'; err.textContent='';
+      var res=await sb.auth.signInWithPassword({email:email,password:pass});
+      btn.disabled=false; btn.textContent='Sign in';
+      if(res.error){ err.textContent=res.error.message||'Sign-in failed.'; }
+    }
+    $('agBtn').addEventListener('click',login);
+    $('agPass').addEventListener('keydown',function(e){ if(e.key==='Enter') login(); });
+    $('signOutBtn').addEventListener('click',async function(){ await sb.auth.signOut(); location.reload(); });
+    sb.auth.onAuthStateChange(function(_e,session){ if(session) showApp(session); else showLogin(); });
+    sb.auth.getSession().then(function(r){ if(r&&r.data&&r.data.session) showApp(r.data.session); else showLogin(); });
+  }
+
+  /* ---------- data ---------- */
+  async function loadDeals(){
+    try{
+      deals=await q(sb.from('deals').select('*').order('created_at',{ascending:false}));
+      renderPipeline();
+    }catch(e){ $('pipe').innerHTML='<div class="loading">Could not load deals: '+esc(e.message)+'</div>'; }
+  }
+
+  /* ---------- pipeline view ---------- */
+  function renderPipeline(){
+    $('dealView').style.display='none';
+    $('pipelineView').style.display='block';
+    $('crumb').innerHTML='Deal flow';
+    var live=deals.filter(function(d){ return d.stage!=='dead'; });
+    var html=STAGES.map(function(s){
+      var inStage=live.filter(function(d){ return d.stage===s[0]; });
+      var cards=inStage.length? inStage.map(dealCard).join('') : '<div class="empty">No deals</div>';
+      return '<div class="pcol"><div class="ph"><span class="t">'+s[1]+'</span><span class="c">'+inStage.length+'</span></div>'+cards+'</div>';
+    }).join('');
+    $('pipe').innerHTML=html;
+  }
+  function dealCard(d){
+    return '<div class="dcard" onclick="DF.openDeal(\''+d.id+'\')">'
+      + '<div class="nm">'+esc(d.client_name||'Untitled client')+'</div>'
+      + '<div class="mt"><span>Created '+new Date(d.created_at).toLocaleDateString()+'</span></div>'
+      + '</div>';
+  }
+
+  /* ---------- deal detail view ---------- */
+  async function openDeal(id){
+    var d=deals.filter(function(x){return x.id===id;})[0]; if(!d) return;
+    $('pipelineView').style.display='none';
+    var v=$('dealView'); v.style.display='block';
+    $('crumb').innerHTML='Deal flow <b>›</b> '+esc(d.client_name||'Deal');
+    v.innerHTML='<div class="loading">Loading deal…</div>';
+    try{
+      var props=await q(sb.from('deal_properties').select('*').eq('deal_id',id).order('sort_order'));
+      var proposals=await q(sb.from('proposals').select('*').eq('deal_id',id).order('created_at'));
+      var rounds=await q(sb.from('proposal_rounds').select('*').eq('deal_id',id).order('round_no'));
+      renderDeal(d,props,proposals,rounds);
+    }catch(e){ v.innerHTML='<div class="loading">Could not load deal: '+esc(e.message)+'</div>'; }
+  }
+
+  function renderDeal(d,props,proposals,rounds){
+    var stageOpts=Object.keys(STAGE_LABEL).map(function(k){
+      return '<option value="'+k+'"'+(d.stage===k?' selected':'')+'>'+STAGE_LABEL[k]+'</option>';
+    }).join('');
+
+    var propById={}; props.forEach(function(p){ propById[p.id]=p; });
+
+    var propsHtml = props.length ? props.map(function(p){
+      return '<div class="pcard"><div class="top"><div><div class="nm">'+esc(p.name||'Untitled building')+'</div>'
+        + (p.address?'<div class="ad">'+esc(p.address)+'</div>':'')
+        + '</div><span class="tag">'+esc((PROP_STATUS.filter(function(s){return s[0]===p.status;})[0]||['','—'])[1])+'</span></div></div>';
+    }).join('') : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No buildings yet.</div>';
+
+    var propsHtml2 = propsHtml + '<button class="miniadd" onclick="DF.newProperty(\''+d.id+'\')">+ Add building</button>';
+
+    // group rounds by proposal
+    var roundsByProp={}; rounds.forEach(function(r){ (roundsByProp[r.proposal_id]=roundsByProp[r.proposal_id]||[]).push(r); });
+
+    var propsHtmlList = proposals.length ? proposals.map(function(pr){
+      var rs=(roundsByProp[pr.id]||[]);
+      var bldg = pr.property_id && propById[pr.property_id] ? propById[pr.property_id].name : null;
+      var rowsHtml = rs.length ? rs.map(roundRow).join('') :
+        '<tr><td colspan="9" style="color:var(--ink-faint)">No rounds yet — add the first proposal terms.</td></tr>';
+      return '<div class="pcard">'
+        + '<div class="top"><div><div class="nm">'+esc(pr.title||'Proposal')+'</div>'
+        +   (bldg?'<div class="ad">'+esc(bldg)+'</div>':'')+'</div>'
+        +   '<span class="tag">'+esc(pr.status)+'</span></div>'
+        + '<div class="rounds"><table class="rtable"><thead><tr>'
+        +   '<th>Rd</th><th>From</th><th>Structure</th><th class="num">Base $/SF</th><th class="num">Opex</th>'
+        +   '<th class="num">≈ Gross</th><th class="num">Size SF</th><th class="num">Term</th><th>Notes</th>'
+        + '</tr></thead><tbody>'+rowsHtml+'</tbody></table></div>'
+        + '<button class="miniadd" onclick="DF.newRound(\''+d.id+'\',\''+pr.id+'\')">+ Add round</button>'
+        + '</div>';
+    }).join('') : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No proposals yet.</div>';
+
+    var addProposalBtn = '<button class="miniadd" onclick="DF.newProposal(\''+d.id+'\')">+ Add proposal</button>';
+
+    $('dealView').innerHTML =
+      '<button class="dsr-back" style="margin-bottom:14px" onclick="DF.showPipeline()">‹ All deals</button>'
+      + '<div class="dealhead"><div><h1>'+esc(d.client_name||'Untitled client')+'</h1>'
+      +   '<div class="meta">Created '+new Date(d.created_at).toLocaleDateString()+'</div></div>'
+      +   '<div class="stagepick"><label>Stage</label>'
+      +   '<select class="fld" style="width:auto" onchange="DF.setStage(\''+d.id+'\',this.value)">'+stageOpts+'</select></div>'
+      + '</div>'
+      + '<div class="sec"><div class="sec-h"><h2>Buildings</h2><span class="hint">The properties in play for this client</span></div>'+propsHtml2+'</div>'
+      + '<div class="sec"><div class="sec-h"><h2>Proposals &amp; rounds</h2>'+addProposalBtn+'</div>'+propsHtmlList+'</div>';
+  }
+
+  function roundRow(r){
+    var ge=grossEquiv(r);
+    var draft = r.status==='draft' ? '<span class="draftpill">draft</span>' : '';
+    return '<tr>'
+      + '<td><b class="mono">'+esc(r.round_no)+'</b>'+draft+'</td>'
+      + '<td><span class="party '+(r.from_party==='landlord'?'landlord':'tenant')+'">'+(r.from_party==='landlord'?'Landlord':'Tenant')+'</span></td>'
+      + '<td>'+esc(basisLabel(r.rent_basis,r.rent_basis_label))+'</td>'
+      + '<td class="num">'+psf(r.base_rent_psf)+'</td>'
+      + '<td class="num">'+(r.opex_psf==null?'—':psf(r.opex_psf))+'</td>'
+      + '<td class="num">'+(ge==null?'—':psf(ge))+'</td>'
+      + '<td class="num">'+(r.size_sf==null?'—':Number(r.size_sf).toLocaleString())+'</td>'
+      + '<td class="num">'+(r.term_months==null?'—':(r.term_months+'mo'))+'</td>'
+      + '<td>'+esc(r.summary||'')+'</td>'
+      + '</tr>';
+  }
+
+  /* ---------- modal plumbing ---------- */
+  function openSheet(html){ $('sheet').innerHTML=html; $('ov').classList.add('show'); }
+  function closeSheet(){ $('ov').classList.remove('show'); }
+  $('ov')&&document.getElementById('ov').addEventListener('mousedown',function(e){ if(e.target===this) closeSheet(); });
+
+  function fld(label,inner,unit){
+    return '<div class="fld"><label>'+label+(unit?' <span class="u">'+unit+'</span>':'')+'</label>'+inner+'</div>';
+  }
+  function selOpts(arr,sel){ return arr.map(function(o){ return '<option value="'+o[0]+'"'+(o[0]===sel?' selected':'')+'>'+o[1]+'</option>'; }).join(''); }
+
+  /* ---------- create: deal ---------- */
+  function newDeal(){
+    openSheet('<h3>New deal</h3><div class="ssub">Start tracking a client from tour through executed lease.</div>'
+      + fld('Client / company name','<input id="f_name" placeholder="e.g. Pico Robertson Partners" autofocus>')
+      + '<div class="formerr" id="f_err"></div>'
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button><button class="btn pri" id="f_save">Create deal</button></div>');
+    $('f_save').addEventListener('click',async function(){
+      var name=($('f_name').value||'').trim();
+      if(!name){ $('f_err').textContent='Enter a client name.'; return; }
+      this.disabled=true; this.textContent='Creating…';
+      try{
+        var row=await q(sb.from('deals').insert({owner_id:me.id, client_name:name, stage:'touring'}).select().single());
+        deals.unshift(row); closeSheet(); openDeal(row.id);
+      }catch(e){ $('f_err').textContent=e.message; this.disabled=false; this.textContent='Create deal'; }
+    });
+  }
+
+  /* ---------- create: property ---------- */
+  function newProperty(dealId){
+    openSheet('<h3>Add building</h3><div class="ssub">A property in play for this client.</div>'
+      + fld('Building name','<input id="f_name" placeholder="e.g. The Water Garden" autofocus>')
+      + fld('Address','<input id="f_addr" placeholder="2425 Olympic Blvd, Santa Monica">')
+      + fld('Status','<select id="f_status">'+selOpts(PROP_STATUS,'considering')+'</select>')
+      + '<div class="formerr" id="f_err"></div>'
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button><button class="btn pri" id="f_save">Add building</button></div>');
+    $('f_save').addEventListener('click',async function(){
+      var name=($('f_name').value||'').trim();
+      if(!name){ $('f_err').textContent='Enter a building name.'; return; }
+      this.disabled=true; this.textContent='Saving…';
+      try{
+        await q(sb.from('deal_properties').insert({deal_id:dealId, name:name, address:($('f_addr').value||'').trim()||null, status:$('f_status').value}).select().single());
+        closeSheet(); openDeal(dealId);
+      }catch(e){ $('f_err').textContent=e.message; this.disabled=false; this.textContent='Add building'; }
+    });
+  }
+
+  /* ---------- create: proposal ---------- */
+  async function newProposal(dealId){
+    var props=[];
+    try{ props=await q(sb.from('deal_properties').select('id,name').eq('deal_id',dealId).order('sort_order')); }catch(e){}
+    var propSel = props.length
+      ? '<select id="f_prop"><option value="">— none —</option>'+props.map(function(p){return '<option value="'+p.id+'">'+esc(p.name)+'</option>';}).join('')+'</select>'
+      : '<select id="f_prop" disabled><option>Add a building first (optional)</option></select>';
+    openSheet('<h3>Add proposal</h3><div class="ssub">A negotiation thread, usually for one building.</div>'
+      + fld('Title','<input id="f_title" placeholder="e.g. Water Garden — Suite 300" autofocus>')
+      + fld('Building (optional)',propSel)
+      + '<div class="formerr" id="f_err"></div>'
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button><button class="btn pri" id="f_save">Add proposal</button></div>');
+    $('f_save').addEventListener('click',async function(){
+      var title=($('f_title').value||'').trim();
+      if(!title){ $('f_err').textContent='Enter a title.'; return; }
+      this.disabled=true; this.textContent='Saving…';
+      var propEl=$('f_prop'); var pid=(propEl&&!propEl.disabled&&propEl.value)?propEl.value:null;
+      try{
+        await q(sb.from('proposals').insert({deal_id:dealId, title:title, property_id:pid, status:'active'}).select().single());
+        closeSheet(); openDeal(dealId);
+      }catch(e){ $('f_err').textContent=e.message; this.disabled=false; this.textContent='Add proposal'; }
+    });
+  }
+
+  /* ---------- create: round ---------- */
+  async function newRound(dealId, proposalId){
+    // default next round number + carry forward the prior round's structure
+    var prior=[];
+    try{ prior=await q(sb.from('proposal_rounds').select('*').eq('proposal_id',proposalId).order('round_no',{ascending:false})); }catch(e){}
+    var last=prior[0]; var nextNo=last?(last.round_no+1):1;
+    var defBasis=last?last.rent_basis:'FSG';
+    openSheet('<h3>Round '+nextNo+'</h3><div class="ssub">Log a set of proposal terms — yours or the landlord\'s response.</div>'
+      + '<div class="grid2">'
+      + fld('From','<select id="f_party"><option value="tenant">Our side (tenant)</option><option value="landlord">Landlord response</option></select>')
+      + fld('Rent structure','<select id="f_basis" onchange="DF.basisChange()">'+selOpts(RENT_BASES,defBasis)+'</select>')
+      + '<div class="fld" id="f_otherwrap" style="display:'+(defBasis==='OTHER'?'flex':'none')+'"><label>Custom structure label</label><input id="f_otherlbl" placeholder="describe it"></div>'
+      + fld('Base rent','<input id="f_base" type="number" step="0.01" inputmode="decimal" placeholder="0.00">','$/SF/yr')
+      + fld('Opex / NNN load','<input id="f_opex" type="number" step="0.01" inputmode="decimal" placeholder="0.00">','$/SF/yr')
+      + fld('Size','<input id="f_size" type="number" step="1" inputmode="numeric" placeholder="0">','SF')
+      + fld('Term','<input id="f_term" type="number" step="1" inputmode="numeric" placeholder="0">','months')
+      + fld('Annual escalation','<input id="f_esc" type="number" step="0.1" inputmode="decimal" placeholder="0">','%')
+      + fld('Free rent','<input id="f_free" type="number" step="0.5" inputmode="decimal" placeholder="0">','months')
+      + fld('TI allowance','<input id="f_ti" type="number" step="0.01" inputmode="decimal" placeholder="0.00">','$/SF')
+      + '</div>'
+      + fld('Notes','<textarea id="f_sum" placeholder="e.g. LL held on TI, countered to $46"></textarea>')
+      + '<div class="formerr" id="f_err"></div>'
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button>'
+      +   '<button class="btn" id="f_draft">Save as draft</button>'
+      +   '<button class="btn pri" id="f_final">Save round</button></div>');
+
+    function save(status){
+      var basis=$('f_basis').value;
+      var row={
+        deal_id:dealId, proposal_id:proposalId, round_no:nextNo,
+        from_party:$('f_party').value, rent_basis:basis,
+        rent_basis_label: basis==='OTHER' ? (($('f_otherlbl').value||'').trim()||null) : null,
+        base_rent_psf:num($('f_base').value), opex_psf:num($('f_opex').value),
+        size_sf:num($('f_size').value), term_months:num($('f_term').value),
+        annual_escalation_pct:num($('f_esc').value), free_rent_months:num($('f_free').value),
+        ti_psf:num($('f_ti').value), summary:($('f_sum').value||'').trim()||null,
+        status:status, source:'manual', created_by:me.id
+      };
+      var btn=$(status==='final'?'f_final':'f_draft'); btn.disabled=true; btn.textContent='Saving…';
+      q(sb.from('proposal_rounds').insert(row).select().single())
+        .then(function(){ closeSheet(); openDeal(dealId); })
+        .catch(function(e){ $('f_err').textContent=e.message; btn.disabled=false; btn.textContent=(status==='final'?'Save round':'Save as draft'); });
+    }
+    $('f_final').addEventListener('click',function(){ save('final'); });
+    $('f_draft').addEventListener('click',function(){ save('draft'); });
+  }
+  function basisChange(){ var w=$('f_otherwrap'); if(w) w.style.display = $('f_basis').value==='OTHER' ? 'flex':'none'; }
+
+  /* ---------- stage change ---------- */
+  async function setStage(dealId, stage){
+    try{
+      await q(sb.from('deals').update({stage:stage, updated_at:new Date().toISOString()}).eq('id',dealId).select().single());
+      var d=deals.filter(function(x){return x.id===dealId;})[0]; if(d) d.stage=stage;
+    }catch(e){ alert('Could not update stage: '+e.message); }
+  }
+
+  /* ---------- boot ---------- */
+  document.addEventListener('DOMContentLoaded',bindAuth);
+
+  return {
+    showPipeline:renderPipeline, openDeal:openDeal,
+    newDeal:newDeal, newProperty:newProperty, newProposal:newProposal, newRound:newRound,
+    setStage:setStage, basisChange:basisChange, close:closeSheet
+  };
+})();
+</script>
+</body>
+</html>
