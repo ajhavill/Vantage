@@ -1644,6 +1644,16 @@
     qLoadList();
   };
   function qClose(){ document.getElementById('qModal').classList.remove('show'); }
+  // deep link from the email notification: open straight to a response's results
+  window.openIntakeFromLink=async function(slug){
+    if(!slug || !/^[A-Za-z0-9]{6,40}$/.test(slug)) return;
+    document.getElementById('qModal').classList.add('show');
+    document.getElementById('qMain').style.display=''; document.getElementById('qDetail').style.display='none';
+    document.getElementById('qNewLink').style.display='none'; document.getElementById('qCompany').value='';
+    await qLoadList();
+    var it=qIntakes.filter(function(x){return x.slug===slug;})[0];
+    if(it && it.status==='completed') qShowDetail(it);
+  };
   async function qCreate(){
     var company=document.getElementById('qCompany').value.trim(); if(!company) return;
     var btn=document.getElementById('qCreateBtn'); btn.disabled=true; btn.textContent='Creating…';
@@ -1764,6 +1774,11 @@
     gate.style.display='none';
     var chip=document.getElementById('userChip'), em=document.getElementById('userEmail');
     if(chip){ chip.style.display='inline-flex'; em.textContent=(session&&session.user&&session.user.email)||''; }
+    // email-notification deep link: ?intake=<slug> opens straight to that response
+    if(!showApp._linked){
+      var iq=new URLSearchParams(location.search).get('intake');
+      if(iq){ showApp._linked=true; setTimeout(function(){ if(window.openIntakeFromLink) window.openIntakeFromLink(iq); try{history.replaceState({},'',location.pathname);}catch(e){} }, 400); }
+    }
   }
   function showLogin(){
     gate.style.display='flex';
