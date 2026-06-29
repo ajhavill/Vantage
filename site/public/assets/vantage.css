@@ -109,7 +109,7 @@
   .dsr-suites{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}
   .dsr-nbhd{display:grid;grid-template-columns:minmax(0,360px) minmax(0,1fr);gap:18px;align-items:stretch}
   .dsr-nbhd-left{display:flex;flex-direction:column;min-width:0}
-  .dsr-map{position:relative;min-height:480px;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .dsr-map{position:relative;min-height:540px;border:1px solid var(--line);border-radius:14px;overflow:hidden}
   #detailMap{position:absolute;inset:0}
   .dsr-amlist{margin-top:4px;max-height:360px;overflow-y:auto;border:1px solid var(--line);border-radius:11px;background:var(--paper-2);padding:5px}
   .dsr-amlist::-webkit-scrollbar{width:9px}.dsr-amlist::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:9px;border:2px solid var(--paper-2)}
