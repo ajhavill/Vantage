@@ -51,11 +51,32 @@
   </div>
 </div>
 
-<div class="topbar">
-  <div class="brand" onclick="showPortfolio()">
+<div class="app-shell">
+<nav class="vnav" id="vnav">
+  <div class="vnav-logo" onclick="showModule('home')">
     <span class="logo">Vantage<span class="dot">.</span></span>
     <span class="by">by Havill &amp; Co.</span>
   </div>
+  <button class="vnav-item on" data-m="home" onclick="showModule('home')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v10h14V10"/></svg><span>Home</span></button>
+  <button class="vnav-item" data-m="market" onclick="showModule('market')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M9 8h2M13 8h2M9 12h2M13 12h2M9 16h2M13 16h2"/></svg><span>Market</span></button>
+  <button class="vnav-item" data-m="clients" onclick="showModule('clients')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 6.6a3 3 0 0 1 0 5.8M20.5 20a5 5 0 0 0-4-4.9"/></svg><span>Clients</span></button>
+  <a class="vnav-item" data-m="deals" href="deals.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg><span>Deals</span></a>
+  <button class="vnav-item" data-m="settings" onclick="showModule('settings')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 0 1-4 0v-.2A1.7 1.7 0 0 0 7 19.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H3a2 2 0 0 1 0-4h.1A1.7 1.7 0 0 0 4.6 7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 4.6V4a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg><span>Settings</span></button>
+  <div class="vnav-spacer"></div>
+  <span class="userchip" id="userChip" style="display:none">
+    <span class="uemail" id="userEmail"></span>
+    <button id="signOutBtn" title="Sign out">Sign out</button>
+  </span>
+  <span class="pill">Concept prototype</span>
+</nav>
+<div class="app-main">
+
+<!-- HOME / dashboard (filled by renderHome) -->
+<section id="homeView"></section>
+
+<!-- MARKET module: building explorer -->
+<div id="marketModule" style="display:none">
+<div class="topbar">
   <span class="crumb" id="crumb">Santa Monica</span>
   <div class="vsearch">
     <div class="vsearch-in">
@@ -70,27 +91,6 @@
     <button data-v="competition" onclick="showCompetition()">Competition</button>
     <button data-v="commute" onclick="showCommute()">Commute</button>
   </div>
-  <a class="act-btn" href="deals.html" style="text-decoration:none" title="Open the deal-flow tracker — tours, proposals, negotiations">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
-    Deal flow
-  </a>
-  <button class="act-btn" id="qBtn" onclick="openQuestionnaire()" title="Send a questionnaire and auto-match buildings">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-    Questionnaire
-  </button>
-  <button class="act-btn" id="actBtn" onclick="openActivity()" title="See who has opened your client packages">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-6"/></svg>
-    Activity
-  </button>
-  <button class="share-btn" id="shareBtn" onclick="openShare()" title="Create a scoped, co-branded link for a client">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
-    Client package
-  </button>
-  <span class="userchip" id="userChip" style="display:none">
-    <span class="uemail" id="userEmail"></span>
-    <button id="signOutBtn" title="Sign out">Sign out</button>
-  </span>
-  <span class="pill">Concept prototype</span>
 </div>
 
 <div class="priobar" id="priobar">
@@ -298,6 +298,16 @@
     </div>
   </div>
 </section>
+</div><!-- /marketModule -->
+
+<!-- CLIENTS module (filled by renderClients) -->
+<section id="clientsView" style="display:none"></section>
+
+<!-- SETTINGS module (filled by renderSettings) -->
+<section id="settingsView" style="display:none"></section>
+
+</div><!-- /app-main -->
+</div><!-- /app-shell -->
 
 <!-- commute preflight / running / error modal -->
 <div class="cm-modal" id="cmModal"><div class="cm-card" id="cmModalCard"></div></div>
@@ -1496,7 +1506,77 @@
     document.getElementById('crumb').innerHTML='Santa Monica · <b>'+BUILDINGS.length+' buildings</b>';
     if(window.L){ initOverview(); }
     else{ document.getElementById('overviewMap').innerHTML='<div style="padding:20px;font:13px Inter;color:#8A93A0">Map library could not load. Serve this over http (Netlify or a local server) with internet access.</div>'; renderCards(); }
+    if(window.showModule) showModule('home');
   }
+  // ============ PORTAL NAVIGATION (sidebar modules) ============
+  window.showModule=function(m){
+    var map={home:'homeView',market:'marketModule',clients:'clientsView',settings:'settingsView'};
+    Object.keys(map).forEach(function(k){ var el=document.getElementById(map[k]); if(el) el.style.display=(k===m)?'':'none'; });
+    document.querySelectorAll('#vnav .vnav-item').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-m')===m); });
+    if(m==='home') renderHome();
+    else if(m==='clients') renderClients();
+    else if(m==='settings') renderSettings();
+    else if(m==='market'){ setTimeout(function(){ try{ if(overviewMap) overviewMap.invalidateSize(); if(detailMap) detailMap.invalidateSize(); }catch(e){} },60); }
+    if(m!=='market'){ var d=document.getElementById('detailView'); if(d) d.classList.remove('show'); }
+  };
+  var MAIL_IC='<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>';
+  function renderHome(){
+    var el=document.getElementById('homeView'); if(!el) return;
+    var email=(document.getElementById('userEmail')||{}).textContent||'';
+    var name=email?email.split('@')[0]:'';
+    var pkgs=(typeof shLoadPackages==='function')?shLoadPackages():[];
+    el.innerHTML='<div class="home-wrap">'+
+      '<h1 class="home-h">Welcome back'+(name?', '+cmEsc(name):'')+'</h1>'+
+      '<div class="home-sub">'+cmEsc(email||'Havill & Co.')+'</div>'+
+      '<div class="home-qa">'+
+        '<button class="primary" onclick="openQuestionnaire()">+ New questionnaire</button>'+
+        '<button onclick="openShare()">+ Client package</button>'+
+        '<button onclick="showModule(\'market\')">Explore market</button></div>'+
+      '<div class="home-card"><h3>Needs your attention</h3><div id="homeAtt"><div class="home-att"><span class="empty">Loading…</span></div></div></div>'+
+      '<div class="home-cards">'+
+        '<div class="home-mc" onclick="showModule(\'market\')"><div class="l">Buildings in market</div><div class="n">'+BUILDINGS.length+'</div></div>'+
+        '<div class="home-mc" onclick="showModule(\'clients\')"><div class="l">Client packages</div><div class="n">'+pkgs.length+'</div></div>'+
+        '<div class="home-mc" onclick="showModule(\'clients\')"><div class="l">Questionnaire responses</div><div class="n" id="homeRespCount">—</div></div>'+
+        '<a class="home-mc" href="deals.html" style="text-decoration:none;display:block"><div class="l">Deals</div><div class="n">→</div></a>'+
+      '</div></div>';
+    loadHomeAttention();
+  }
+  async function loadHomeAttention(){
+    var att=document.getElementById('homeAtt');
+    try{
+      var token=await qToken();
+      var res=await fetch('/.netlify/functions/list-intakes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token})});
+      var d=await res.json(); var done=(d.intakes||[]).filter(function(x){return x.status==='completed';});
+      var rc=document.getElementById('homeRespCount'); if(rc) rc.textContent=done.length;
+      if(!att) return;
+      if(!done.length){ att.innerHTML='<div class="home-att"><span class="empty">You’re all caught up — no new questionnaire responses.</span></div>'; return; }
+      att.innerHTML=done.slice(0,5).map(function(it){
+        return '<div class="home-att" onclick="openIntakeFromLink(\''+cmEsc(it.slug)+'\')"><div class="ic">'+MAIL_IC+'</div>'+
+          '<div class="t">'+cmEsc(it.company_name||'Client')+' completed their questionnaire<span>'+(it.completed_at?timeAgo(it.completed_at):'')+' · view answers &amp; matches</span></div></div>';
+      }).join('');
+    }catch(e){ if(att) att.innerHTML='<div class="home-att"><span class="empty">New responses appear here once you’re signed in on the live site.</span></div>'; }
+  }
+  function renderClients(){
+    var el=document.getElementById('clientsView'); if(!el) return;
+    el.innerHTML='<div class="mod-wrap"><h1 class="mod-h">Clients</h1>'+
+      '<div class="mod-sub">Send questionnaires, build co-branded packages, and see who’s engaging.</div>'+
+      '<div class="mod-cards">'+
+        '<button class="mod-tool" onclick="openQuestionnaire()"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div><h4>Questionnaires</h4><p>Send a prospect a link — their answers auto-rank your buildings.</p></button>'+
+        '<button class="mod-tool" onclick="openShare()"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></div><h4>Client packages</h4><p>Bundle chosen buildings into a private, co-branded link.</p></button>'+
+        '<button class="mod-tool" onclick="openActivity()"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-6"/></svg></div><h4>Engagement</h4><p>See who opened a package and which buildings they revisit.</p></button>'+
+      '</div></div>';
+  }
+  function renderSettings(){
+    var el=document.getElementById('settingsView'); if(!el) return;
+    var email=(document.getElementById('userEmail')||{}).textContent||'—';
+    el.innerHTML='<div class="mod-wrap"><h1 class="mod-h">Settings</h1><div class="mod-sub">Your account.</div>'+
+      '<div class="home-card" style="max-width:440px"><h3>Account</h3>'+
+      '<div style="font:500 12.5px Inter;color:var(--ink-faint);margin-bottom:3px">Signed in as</div>'+
+      '<div style="font:600 14px Inter;color:var(--ink);margin-bottom:14px">'+cmEsc(email)+'</div>'+
+      '<button onclick="var b=document.getElementById(\'signOutBtn\'); if(b)b.click();" style="font:600 13px Inter;color:#fff;background:var(--building);border:0;border-radius:9px;padding:9px 16px;cursor:pointer">Sign out</button></div>'+
+      '<div class="mod-sub" style="margin-top:18px">Team management &amp; firm branding are coming soon.</div></div>';
+  }
+
   function loadData(){
     fetch('vantage-data.json',{cache:'no-store'})
       .then(function(r){ if(!r.ok) throw new Error('no file'); return r.json(); })
@@ -1821,6 +1901,8 @@
     gate.style.display='none';
     var chip=document.getElementById('userChip'), em=document.getElementById('userEmail');
     if(chip){ chip.style.display='inline-flex'; em.textContent=(session&&session.user&&session.user.email)||''; }
+    // land on Home with the signed-in session (refreshes greeting + attention)
+    if(window.showModule) showModule('home');
     // email-notification deep link: ?intake=<slug> opens straight to that response
     if(!showApp._linked){
       var iq=new URLSearchParams(location.search).get('intake');
