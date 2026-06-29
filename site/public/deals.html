@@ -481,7 +481,9 @@ window.DF = (function(){
       if(!name){ $('f_err').textContent='Enter a client name.'; return; }
       this.disabled=true; this.textContent='Creating…';
       try{
-        var row=await q(sb.from('deals').insert({owner_id:me.id, client_name:name, stage:'needs'}).select().single());
+        var row;
+        try{ row=await q(sb.from('deals').insert({owner_id:me.id, client_name:name, stage:'needs'}).select().single()); }
+        catch(stageErr){ row=await q(sb.from('deals').insert({owner_id:me.id, client_name:name, stage:'touring'}).select().single()); }  // pre-migration fallback if the new stage values aren't enabled in the DB yet
         deals.unshift(row); closeSheet(); openDeal(row.id);
       }catch(e){ $('f_err').textContent=e.message; this.disabled=false; this.textContent='Create deal'; }
     });
@@ -688,7 +690,11 @@ window.DF = (function(){
     try{
       await q(sb.from('deals').update({stage:stage, updated_at:new Date().toISOString()}).eq('id',dealId).select().single());
       var d=deals.filter(function(x){return x.id===dealId;})[0]; if(d) d.stage=stage;
-    }catch(e){ alert('Could not update stage: '+e.message); }
+    }catch(e){
+      var msg=(e.message||'')+'';
+      if(/stage_check|violates check/i.test(msg)) alert('The “Needs & Research” and “Evaluating Options” stages aren\'t enabled in the database yet. Run the stage-update SQL in Supabase, then try again.');
+      else alert('Could not update stage: '+msg);
+    }
   }
 
   /* ---------- side-by-side compare ---------- */
