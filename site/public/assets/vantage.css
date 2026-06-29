@@ -478,7 +478,7 @@
   .share-btn{display:inline-flex;align-items:center;gap:6px;font:600 12.5px Inter;color:#fff;
     background:var(--accent);border:0;border-radius:9px;padding:7px 12px;cursor:pointer;margin-left:4px}
   .share-btn:hover{filter:brightness(1.06)}
-  .sh-modal{position:fixed;inset:0;z-index:300;display:none;align-items:center;justify-content:center;
+  .sh-modal{position:fixed;inset:0;z-index:2000;display:none;align-items:center;justify-content:center;
     background:rgba(15,22,38,.55);backdrop-filter:blur(3px);padding:22px}
   .sh-modal.show{display:flex}
   .sh-card{position:relative;width:min(640px,100%);max-height:90vh;overflow:auto;background:var(--paper-2);
@@ -544,7 +544,7 @@
   .act-forget:hover{color:#C2453F}
 
   /* ---- Broker login gate (Cockpit) ---- */
-  #authGate{position:fixed;inset:0;z-index:500;display:flex;align-items:center;justify-content:center;
+  #authGate{position:fixed;inset:0;z-index:3000;display:flex;align-items:center;justify-content:center;
     background:radial-gradient(120% 120% at 50% 0%,#1b2a4a 0%,#0f1626 60%,#0a0f1a 100%);padding:24px}
   .ag-card{width:min(400px,100%);background:var(--paper-2);border:1px solid var(--line);border-radius:18px;
     padding:30px 30px 24px;box-shadow:0 30px 80px rgba(0,0,0,.5)}
