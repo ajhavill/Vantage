@@ -135,6 +135,13 @@
   .kdrow .kd-x{font-size:17px;line-height:1;background:none;border:0;color:var(--ink-faint);cursor:pointer;padding:4px 8px}
   .kdrow .kd-x:hover{color:var(--dining)}
 
+  @media (max-width:560px){
+    .wrap{padding:16px}
+    .grid2{grid-template-columns:1fr}
+    .dealhead{flex-direction:column;align-items:flex-start;gap:10px}
+    .dhactions{width:100%;flex-wrap:wrap}
+  }
+
   /* side-by-side compare */
   .cmpwrap{overflow-x:auto;border:1px solid var(--line);border-radius:13px;background:var(--paper-2)}
   .cmp{border-collapse:collapse;width:100%;min-width:520px;font-size:12.5px}
@@ -740,8 +747,27 @@ window.DF = (function(){
   }
   async function editAbstract(dealId){
     var a=null; try{ a=(await q(sb.from('lease_abstracts').select('*').eq('deal_id',dealId).order('created_at').limit(1)))[0]; }catch(e){}
-    var v=a||{}; var kds=(v.key_dates&&v.key_dates.length)?v.key_dates:[];
-    openSheet('<h3>'+(a?'Edit':'Create')+' lease abstract</h3><div class="ssub">The critical terms of the executed lease — your client\'s permanent reference.</div>'
+    var v=a||{}, prefilled=false;
+    if(!a){
+      // smart pre-fill from the accepted (or latest finalized) proposal round
+      try{
+        var d0=deals.filter(function(x){return x.id===dealId;})[0];
+        var pr0=await q(sb.from('proposals').select('id,title,property_id,status').eq('deal_id',dealId));
+        var fr=await q(sb.from('proposal_rounds').select('*').eq('deal_id',dealId).eq('status','final').order('round_no',{ascending:false}));
+        var acc=pr0.filter(function(p){return p.status==='accepted';}).map(function(p){return p.id;});
+        var pick=(acc.length? fr.filter(function(r){return acc.indexOf(r.proposal_id)>=0;})[0]:null) || fr[0] || null;
+        if(pick){
+          var pp=pr0.filter(function(p){return p.id===pick.proposal_id;})[0], bldg='';
+          if(pp&&pp.property_id){ try{ var bp=(await q(sb.from('deal_properties').select('name').eq('id',pp.property_id).limit(1)))[0]; bldg=bp?bp.name:''; }catch(e){} }
+          v={ tenant_name:(d0?d0.client_name:'')||'', premises: bldg||(pp?pp.title:'')||'',
+              size_sf:pick.size_sf, base_rent_psf:pick.base_rent_psf,
+              escalations: pick.annual_escalation_pct!=null ? (Number(pick.annual_escalation_pct)+'% annually') : '' };
+          prefilled=true;
+        } else if(d0){ v={ tenant_name:d0.client_name||'' }; }
+      }catch(e){ /* no prefill */ }
+    }
+    var kds=(v.key_dates&&v.key_dates.length)?v.key_dates:[];
+    openSheet('<h3>'+(a?'Edit':'Create')+' lease abstract</h3><div class="ssub">'+(prefilled?'Pre-filled from your finalized proposal — adjust as needed.':'The critical terms of the executed lease — your client\'s permanent reference.')+'</div>'
       + '<div class="grid2">'
       + fld('Tenant','<input id="la_tenant" value="'+esc(v.tenant_name||'')+'">')
       + fld('Landlord','<input id="la_landlord" value="'+esc(v.landlord_name||'')+'">')

@@ -72,6 +72,30 @@
   .cv-empty{font:500 13px Inter;color:var(--ink-faint);padding:34px 0;text-align:center}
   .cv-disc{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font:400 11px Inter;color:var(--ink-faint);line-height:1.5}
 
+  .cv-toolbar{display:flex;justify-content:flex-end;margin-bottom:8px}
+  .cv-pdf{display:inline-flex;align-items:center;gap:6px;font:600 12px Inter;color:var(--ink-soft);background:var(--paper-2);border:1px solid var(--line-2);border-radius:9px;padding:7px 13px;cursor:pointer}
+  .cv-pdf:hover{border-color:var(--accent);color:var(--accent)}
+
+  @media print {
+    body{background:#fff}
+    .cv-toolbar,.cv-pdf{display:none !important}
+    #gate{display:none !important}
+    .cv-top{position:static;border-bottom:1px solid var(--line)}
+    .cv-wrap{max-width:none;padding:18px 0}
+    .cv-sec,.la-card,.touritem,.docitem,.bcard2,.cmp tr{break-inside:avoid}
+    .cmpwrap{overflow:visible}
+    a{color:var(--ink) !important;text-decoration:none}
+  }
+
+  @media (max-width:600px){
+    .cv-top{padding:12px 16px;flex-wrap:wrap;gap:6px 12px}
+    .cv-for{margin-left:0;width:100%;text-align:left;font-size:12px}
+    .cv-wrap{padding:18px 16px 50px}
+    .cv-h{font-size:20px}
+    .la-card{padding:14px 15px}
+    .la-grid{grid-template-columns:1fr 1fr;gap:11px 14px}
+  }
+
   /* passcode gate */
   #gate{position:fixed;inset:0;z-index:3000;display:flex;align-items:center;justify-content:center;background:var(--paper);padding:20px}
   .gate-card{width:min(390px,100%);background:var(--paper-2);border:1px solid var(--line);border-radius:18px;padding:30px 28px;box-shadow:var(--shadow);text-align:left}
@@ -165,7 +189,8 @@
       return { proposal:pr, building:(pr.property_id&&propName[pr.property_id])?propName[pr.property_id]:null, round:latestByProp[pr.id] };
     });
 
-    var html='<div class="cv-h">'+(data.client_name?esc(data.client_name)+' — ':'')+'your options</div>'
+    var html='<div class="cv-toolbar"><button class="cv-pdf" onclick="window.print()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg> Download PDF</button></div>'
+      +'<div class="cv-h">'+(data.client_name?esc(data.client_name)+' — ':'')+'your options</div>'
       +'<div class="cv-sub">A live, read-only view of the buildings and proposals we’re working on for you. It updates as the deal progresses.</div>';
 
     // lease abstract — the permanent record of the executed lease
