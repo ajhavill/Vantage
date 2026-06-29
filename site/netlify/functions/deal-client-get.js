@@ -22,6 +22,22 @@ function safeEq(a, b) {
   return crypto.timingSafeEqual(ab, bb);
 }
 
+// Mint a short-lived signed download URL for a private deal-files object (service_role).
+async function signUrl(storagePath, expiresIn) {
+  const base = process.env.SUPABASE_URL, key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const encoded = String(storagePath).split("/").map(encodeURIComponent).join("/");
+  try {
+    const res = await fetch(base + "/storage/v1/object/sign/deal-files/" + encoded, {
+      method: "POST",
+      headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" },
+      body: JSON.stringify({ expiresIn: expiresIn || 600 })
+    });
+    if (!res.ok) return null;
+    const d = await res.json().catch(() => null);
+    return (d && d.signedURL) ? base + "/storage/v1" + d.signedURL : null;
+  } catch (e) { return null; }
+}
+
 const ROUND_COLS = "id,proposal_id,round_no,from_party,rent_basis,rent_basis_label," +
   "base_rent_psf,opex_psf,size_sf,term_months,annual_escalation_pct,free_rent_months,ti_psf,summary";
 
@@ -55,13 +71,21 @@ exports.handler = async (event) => {
   const proposals = (await sb.rest("proposals?deal_id=eq." + id + "&client_visible=eq.true" +
     "&select=id,title,property_id,status&order=created_at")).data || [];
 
-  // final rounds for those visible proposals only
-  let rounds = [];
+  // final rounds + client-visible documents for those visible proposals only
+  let rounds = [], documents = [];
   const ids = proposals.map((p) => p.id);
   if (ids.length) {
     const r = await sb.rest("proposal_rounds?proposal_id=in.(" + ids.join(",") + ")&status=eq.final" +
       "&select=" + ROUND_COLS + "&order=round_no");
     rounds = r.data || [];
+
+    const dr = await sb.rest("documents?proposal_id=in.(" + ids.join(",") + ")&client_visible=eq.true" +
+      "&select=id,proposal_id,filename,storage_path&order=created_at");
+    const docRows = dr.data || [];
+    for (const doc of docRows) {
+      const url = await signUrl(doc.storage_path, 600);   // 10-minute link
+      if (url) documents.push({ id: doc.id, proposal_id: doc.proposal_id, filename: doc.filename, url: url });
+    }
   }
 
   return json(200, {
@@ -70,6 +94,7 @@ exports.handler = async (event) => {
     stage: deal.stage,
     properties: props,
     proposals: proposals,
-    rounds: rounds
+    rounds: rounds,
+    documents: documents
   });
 };

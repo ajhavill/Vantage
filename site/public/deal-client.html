@@ -46,6 +46,12 @@
   .cmp .bestbadge{display:inline-block;font:700 9px Inter;text-transform:uppercase;letter-spacing:.06em;color:#fff;background:var(--accent);border-radius:5px;padding:2px 6px;margin-left:6px;vertical-align:2px}
   .cv-note{font:400 11.5px Inter;color:var(--ink-faint);line-height:1.55;margin-top:14px}
 
+  .doclist{display:flex;flex-direction:column;gap:8px}
+  .docitem{display:flex;align-items:center;gap:10px;padding:11px 14px;border:1px solid var(--line);border-radius:11px;background:var(--paper-2);text-decoration:none;color:var(--accent)}
+  .docitem:hover{border-color:var(--accent)}
+  .docitem .dn{font:600 13px Inter;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .docitem .dp{margin-left:auto;font:500 11.5px Inter;color:var(--ink-faint);white-space:nowrap}
+
   .cv-empty{font:500 13px Inter;color:var(--ink-faint);padding:34px 0;text-align:center}
   .cv-disc{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font:400 11px Inter;color:var(--ink-faint);line-height:1.5}
 
@@ -132,7 +138,7 @@
     var logo=data.client_logo_url?'<img class="cv-logo" src="'+esc(data.client_logo_url)+'" alt=""> ':'';
     $('cvFor').innerHTML=logo+(data.client_name?'Prepared for <b>'+esc(data.client_name)+'</b>':'');
 
-    var props=data.properties||[], proposals=data.proposals||[], rounds=data.rounds||[];
+    var props=data.properties||[], proposals=data.proposals||[], rounds=data.rounds||[], documents=data.documents||[];
     // latest FINAL round per proposal
     var latestByProp={};
     rounds.forEach(function(r){ var cur=latestByProp[r.proposal_id]; if(!cur||r.round_no>cur.round_no) latestByProp[r.proposal_id]=r; });
@@ -163,7 +169,20 @@
           }).join('')
         +'</div></div>';
     }
-    if(!cols.length && !props.length){
+    // documents
+    if(documents.length){
+      var propLabel={}; proposals.forEach(function(p){ propLabel[p.id]=(p.property_id&&propName[p.property_id])?propName[p.property_id]:(p.title||'Proposal'); });
+      html+='<div class="cv-sec"><div class="cv-sec-h">Documents</div><div class="doclist">'
+        + documents.map(function(dc){
+            return '<a class="docitem" href="'+esc(dc.url)+'" target="_blank" rel="noopener">'
+              + '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>'
+              + '<span class="dn">'+esc(dc.filename)+'</span>'
+              + (propLabel[dc.proposal_id]?'<span class="dp">'+esc(propLabel[dc.proposal_id])+'</span>':'')
+              + '</a>';
+          }).join('')
+        + '</div></div>';
+    }
+    if(!cols.length && !props.length && !documents.length){
       html+='<div class="cv-empty">Your broker hasn’t shared any buildings or proposals yet. Check back soon.</div>';
     }
 

@@ -398,10 +398,13 @@ window.DF = (function(){
 
   function docsBlock(proposalId, dealId, docs){
     var list=docs.map(function(dc){
+      var visBtn='<button class="vis '+(dc.client_visible?'on':'')+'" onclick="DF.toggleDocVisible(\''+dc.id+'\','+(dc.client_visible?'false':'true')+',\''+dealId+'\')" title="Toggle whether the client can download this file">'
+        +(dc.client_visible?'● Client':'○ Hidden')+'</button>';
       return '<div class="docrow"><span class="docname" onclick="DF.downloadDoc(\''+esc(dc.storage_path)+'\')" title="Open file">'
         + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg> '
         + esc(dc.filename)+'</span>'
-        + '<button class="delx" onclick="DF.deleteDoc(\''+dc.id+'\',\''+esc(dc.storage_path)+'\',\''+dealId+'\')">remove</button></div>';
+        + '<div style="display:flex;gap:9px;align-items:center;flex:none">'+visBtn
+        + '<button class="delx" onclick="DF.deleteDoc(\''+dc.id+'\',\''+esc(dc.storage_path)+'\',\''+dealId+'\')">remove</button></div></div>';
     }).join('');
     return '<div class="docs">'+list+'<button class="miniadd" onclick="DF.attachDoc(\''+proposalId+'\',\''+dealId+'\')">📎 Attach proposal file</button></div>';
   }
@@ -689,6 +692,12 @@ window.DF = (function(){
       openDeal(dealId);
     }catch(e){ alert('Could not remove: '+(e.message||e)); }
   }
+  async function toggleDocVisible(docId, makeVisible, dealId){
+    try{
+      await q(sb.from('documents').update({client_visible:makeVisible}).eq('id',docId).select().single());
+      openDeal(dealId);
+    }catch(e){ alert('Could not update file visibility: '+(e.message||e)); }
+  }
 
   /* ---------- boot ---------- */
   document.addEventListener('DOMContentLoaded',bindAuth);
@@ -698,7 +707,7 @@ window.DF = (function(){
     newDeal:newDeal, newProperty:newProperty, newProposal:newProposal, newRound:newRound,
     setStage:setStage, basisChange:basisChange, close:closeSheet,
     shareDeal:shareDeal, toggleProposalVisible:toggleProposalVisible,
-    attachDoc:attachDoc, downloadDoc:downloadDoc, deleteDoc:deleteDoc,
+    attachDoc:attachDoc, downloadDoc:downloadDoc, deleteDoc:deleteDoc, toggleDocVisible:toggleDocVisible,
     effectiveRent:effectiveRent, grossEquiv:grossEquiv
   };
 })();
