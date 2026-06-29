@@ -104,6 +104,16 @@
   .docname{display:inline-flex;align-items:center;gap:7px;font:600 12.5px Inter;color:var(--accent);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .docname:hover{text-decoration:underline}
 
+  /* AI drafting */
+  .miniadd.ai{color:#7a5af0}
+  .vbtn{font-size:13px;line-height:1;background:none;border:1px solid var(--line-2);border-radius:7px;padding:2px 7px;cursor:pointer;margin-left:6px}
+  .vbtn.rec{background:rgba(201,84,63,.15);border-color:var(--dining);animation:vpulse 1s infinite}
+  @keyframes vpulse{0%,100%{opacity:1}50%{opacity:.45}}
+  .rev{font:600 10.5px Inter;color:var(--accent);background:none;border:0;cursor:pointer;text-decoration:underline;margin-left:6px}
+  .draftbox{font:400 13px Inter;color:var(--ink);background:var(--paper);border:1px solid var(--line-2);border-radius:9px;padding:12px 14px;max-height:300px;overflow-y:auto;line-height:1.55}
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;font:600 13px Inter;padding:12px 18px;border-radius:10px;box-shadow:var(--shadow);opacity:0;transition:all .3s;z-index:4000;max-width:90vw;text-align:center}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
   /* side-by-side compare */
   .cmpwrap{overflow-x:auto;border:1px solid var(--line);border-radius:13px;background:var(--paper-2)}
   .cmp{border-collapse:collapse;width:100%;min-width:520px;font-size:12.5px}
@@ -184,6 +194,7 @@
 <div class="ov" id="ov"><div class="sheet" id="sheet"></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
 <script>
 window.DF = (function(){
   "use strict";
@@ -201,7 +212,7 @@ window.DF = (function(){
   var NET_BASES = {NNN:1,NN:1,N:1,ABS:1};
   var PROP_STATUS = [['considering','Considering'],['touring','Touring'],['shortlisted','Shortlisted'],['proposing','Proposing'],['passed','Passed']];
 
-  var sb=null, me=null, deals=[];
+  var sb=null, me=null, deals=[], _rec=null, _aiTmpls=[];
 
   /* ---------- tiny helpers ---------- */
   function $(id){ return document.getElementById(id); }
@@ -357,7 +368,10 @@ window.DF = (function(){
         +   '<th class="num">≈ Gross</th><th class="num">Size SF</th><th class="num">Term</th><th>Notes</th>'
         + '</tr></thead><tbody>'+rowsHtml+'</tbody></table></div>'
         + docsBlock(pr.id, d.id, docsByProp[pr.id]||[])
-        + '<button class="miniadd" onclick="DF.newRound(\''+d.id+'\',\''+pr.id+'\')">+ Add round</button>'
+        + '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">'
+        +   '<button class="miniadd" onclick="DF.newRound(\''+d.id+'\',\''+pr.id+'\')">+ Add round</button>'
+        +   '<button class="miniadd ai" onclick="DF.aiDraft(\''+d.id+'\',\''+pr.id+'\')">✨ Draft with AI</button>'
+        + '</div>'
         + '</div>';
     }).join('') : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No proposals yet.</div>';
 
@@ -392,7 +406,7 @@ window.DF = (function(){
       + '<td class="num">'+(ge==null?'—':psf(ge))+'</td>'
       + '<td class="num">'+(r.size_sf==null?'—':Number(r.size_sf).toLocaleString())+'</td>'
       + '<td class="num">'+(r.term_months==null?'—':(r.term_months+'mo'))+'</td>'
-      + '<td>'+esc(r.summary||'')+'</td>'
+      + '<td>'+esc(r.summary||'')+(r.status==='draft'?'<button class="rev" onclick="DF.reviewDraft(\''+r.id+'\',\''+r.deal_id+'\')">review</button>':'')+'</td>'
       + '</tr>';
   }
 
@@ -699,6 +713,106 @@ window.DF = (function(){
     }catch(e){ alert('Could not update file visibility: '+(e.message||e)); }
   }
 
+  /* ---------- AI proposal drafting ---------- */
+  function aiToast(msg){
+    var t=document.createElement('div'); t.className='toast'; t.textContent=msg; document.body.appendChild(t);
+    setTimeout(function(){ t.classList.add('show'); },10);
+    setTimeout(function(){ t.classList.remove('show'); setTimeout(function(){ t.remove(); },350); }, 9000);
+  }
+  function toggleVoice(btnId, targetId){
+    var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR){ alert('Voice input isn\'t supported in this browser — try Chrome, or type the deal points.'); return; }
+    if(_rec){ _rec.stop(); _rec=null; return; }
+    _rec=new SR(); _rec.continuous=true; _rec.interimResults=false; _rec.lang='en-US';
+    _rec.onresult=function(e){ var t=''; for(var i=e.resultIndex;i<e.results.length;i++){ t+=e.results[i][0].transcript; }
+      var el=$(targetId); if(el) el.value=(el.value?el.value.replace(/\s*$/,'')+' ':'')+t.trim(); };
+    _rec.onerror=function(){ var b=$(btnId); if(b) b.classList.remove('rec'); _rec=null; };
+    _rec.onend=function(){ var b=$(btnId); if(b) b.classList.remove('rec'); _rec=null; };
+    _rec.start(); var b=$(btnId); if(b) b.classList.add('rec');
+  }
+  function aiPickTmpl(){ var id=$('ai_tmpl').value; var t=_aiTmpls.filter(function(x){return x.id===id;})[0]; if(t) $('ai_tmplbody').value=t.body||''; }
+  function aiDocx(){
+    var f=$('ai_docx').files&&$('ai_docx').files[0]; if(!f) return;
+    if(!window.mammoth){ alert('The .docx reader is still loading — try again in a moment.'); return; }
+    f.arrayBuffer().then(function(ab){ return window.mammoth.extractRawText({arrayBuffer:ab}); })
+      .then(function(r){ $('ai_tmplbody').value=r.value||''; })
+      .catch(function(e){ alert('Could not read that .docx: '+(e.message||e)); });
+  }
+  async function aiDraft(dealId, proposalId){
+    try{ _aiTmpls=await q(sb.from('proposal_templates').select('id,name,body').order('created_at',{ascending:false})); }catch(e){ _aiTmpls=[]; }
+    var opts='<option value="">— paste or upload below —</option>'+_aiTmpls.map(function(t){return '<option value="'+t.id+'">'+esc(t.name)+'</option>';}).join('');
+    openSheet('<h3>Draft with AI</h3><div class="ssub">Pick a template, describe the deal in plain words (type or talk), and Claude drafts a proposal you can review, finalize, and share.</div>'
+      + fld('Template','<select id="ai_tmpl" onchange="DF.aiPickTmpl()">'+opts+'</select>')
+      + '<div class="fld"><label>Template text <span class="u">paste, or upload a Word .docx</span></label>'
+      +   '<textarea id="ai_tmplbody" placeholder="Paste your standard proposal template here, or upload a .docx →"></textarea>'
+      +   '<div style="display:flex;gap:14px;align-items:center;margin-top:7px;flex-wrap:wrap"><input type="file" id="ai_docx" accept=".docx" onchange="DF.aiDocx()">'
+      +   '<label style="display:flex;gap:6px;align-items:center;font:500 11.5px Inter;color:var(--ink-soft)"><input type="checkbox" id="ai_savetmpl"> save this template for reuse</label></div></div>'
+      + '<div class="fld"><label>Deal points <span class="u">type or talk</span><button class="vbtn" id="ai_mic" onclick="DF.toggleVoice(\'ai_mic\',\'ai_points\')" title="Dictate">🎙</button></label>'
+      +   '<textarea id="ai_points" placeholder="e.g. Water Garden suite 300, ~9,500 SF, 7-year term, asking $5.95 FSG — push for 4 months free and $60 TI, 3% annual bumps, one 5-yr option..."></textarea></div>'
+      + '<div class="formerr" id="ai_err"></div>'
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button><button class="btn pri" id="ai_go">✨ Generate draft</button></div>');
+    $('ai_go').addEventListener('click',function(){ aiGenerate(dealId, proposalId, this); });
+  }
+  async function aiGenerate(dealId, proposalId, btn){
+    var points=($('ai_points').value||'').trim();
+    if(!points){ $('ai_err').textContent='Tell me the deal points first (type or talk).'; return; }
+    var tmplBody=($('ai_tmplbody').value||'').trim();
+    btn.disabled=true; btn.textContent='Sending…'; $('ai_err').textContent='';
+    if(_rec){ try{ _rec.stop(); }catch(e){} _rec=null; }
+    try{
+      if($('ai_savetmpl').checked && tmplBody){
+        try{ await q(sb.from('proposal_templates').insert({owner_id:me.id, name:'Template '+new Date().toLocaleDateString(), body:tmplBody}).select().single()); }catch(e){}
+      }
+      var s=await sb.auth.getSession(); var token=(s&&s.data&&s.data.session)?s.data.session.access_token:null;
+      if(!token) throw new Error('Your session expired — please sign in again.');
+      var bldg='';
+      try{
+        var pr=(await q(sb.from('proposals').select('property_id').eq('id',proposalId).limit(1)))[0];
+        if(pr&&pr.property_id){ var p=(await q(sb.from('deal_properties').select('name').eq('id',pr.property_id).limit(1)))[0]; bldg=p?p.name:''; }
+      }catch(e){}
+      var d=deals.filter(function(x){return x.id===dealId;})[0];
+      var res=await fetch('/.netlify/functions/deal-ai-draft-background',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token:token, dealId:dealId, proposalId:proposalId, templateBody:tmplBody, dealPoints:points, clientName:d?d.client_name:'', buildingName:bldg})});
+      if(res.status!==202 && !res.ok) throw new Error('Could not start the draft (HTTP '+res.status+'). Is the AI key set up?');
+      closeSheet();
+      aiToast('✨ Claude is drafting your proposal — it\'ll appear as a draft round in ~30 seconds.');
+      setTimeout(function(){ openDeal(dealId); }, 32000);
+    }catch(e){ $('ai_err').textContent=e.message; btn.disabled=false; btn.textContent='✨ Generate draft'; }
+  }
+  async function reviewDraft(roundId, dealId){
+    var r; try{ r=(await q(sb.from('proposal_rounds').select('*').eq('id',roundId).limit(1)))[0]; }catch(e){ alert('Could not load the draft.'); return; }
+    if(!r) return;
+    function cell(l,v){ return '<tr><td>'+l+'</td><td class="num">'+v+'</td></tr>'; }
+    var econ='<div class="rounds"><table class="rtable"><tbody>'
+      + cell('Structure', esc(basisLabel(r.rent_basis,r.rent_basis_label)))
+      + cell('Base $/SF', psf(r.base_rent_psf))
+      + cell('Opex $/SF', r.opex_psf==null?'—':psf(r.opex_psf))
+      + cell('Size SF', r.size_sf==null?'—':Number(r.size_sf).toLocaleString())
+      + cell('Term', r.term_months==null?'—':r.term_months+' mo')
+      + cell('Escalation', r.annual_escalation_pct==null?'—':Number(r.annual_escalation_pct).toFixed(1)+'%')
+      + cell('Free rent', r.free_rent_months==null?'—':r.free_rent_months+' mo')
+      + cell('TI $/SF', r.ti_psf==null?'—':psf(r.ti_psf))
+      + '</tbody></table></div>';
+    openSheet('<h3>Review draft — round '+esc(r.round_no)+(r.source==='ai'?' <span class="draftpill">AI</span>':'')+'</h3>'
+      + '<div class="ssub">Read the draft, then finalize it (turns it into a real round you can compare and share) or delete it.</div>'
+      + '<div class="fld"><label>Proposal draft</label><div class="draftbox">'+(r.draft_text?esc(r.draft_text).replace(/\n/g,'<br>'):'<span style="color:var(--ink-faint)">No prose — economics only.</span>')+'</div></div>'
+      + '<div class="fld"><label>Economics</label>'+econ+'</div>'
+      + '<div class="formerr" id="rv_err"></div>'
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Close</button>'
+      +   '<button class="btn" id="rv_del">Delete draft</button>'
+      +   '<button class="btn pri" id="rv_fin">Mark as final</button></div>');
+    $('rv_fin').addEventListener('click',async function(){
+      this.disabled=true; this.textContent='Finalizing…';
+      try{ await q(sb.from('proposal_rounds').update({status:'final'}).eq('id',roundId).select().single()); closeSheet(); openDeal(dealId); }
+      catch(e){ $('rv_err').textContent=e.message; this.disabled=false; this.textContent='Mark as final'; }
+    });
+    $('rv_del').addEventListener('click',async function(){
+      if(!confirm('Delete this draft round?')) return;
+      try{ await q(sb.from('proposal_rounds').delete().eq('id',roundId)); closeSheet(); openDeal(dealId); }
+      catch(e){ $('rv_err').textContent=e.message; }
+    });
+  }
+
   /* ---------- boot ---------- */
   document.addEventListener('DOMContentLoaded',bindAuth);
 
@@ -708,6 +822,7 @@ window.DF = (function(){
     setStage:setStage, basisChange:basisChange, close:closeSheet,
     shareDeal:shareDeal, toggleProposalVisible:toggleProposalVisible,
     attachDoc:attachDoc, downloadDoc:downloadDoc, deleteDoc:deleteDoc, toggleDocVisible:toggleDocVisible,
+    aiDraft:aiDraft, aiPickTmpl:aiPickTmpl, aiDocx:aiDocx, toggleVoice:toggleVoice, reviewDraft:reviewDraft,
     effectiveRent:effectiveRent, grossEquiv:grossEquiv
   };
 })();
