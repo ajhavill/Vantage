@@ -260,10 +260,11 @@
       var propLabel={}; proposals.forEach(function(p){ propLabel[p.id]=(p.property_id&&propName[p.property_id])?propName[p.property_id]:(p.title||'Proposal'); });
       html+='<div class="cv-sec"><div class="cv-sec-h">Documents</div><div class="doclist">'
         + documents.map(function(dc){
+            var lbl = dc.proposal_id ? propLabel[dc.proposal_id] : 'Lease';
             return '<a class="docitem" href="'+esc(dc.url)+'" target="_blank" rel="noopener">'
               + '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>'
               + '<span class="dn">'+esc(dc.filename)+'</span>'
-              + (propLabel[dc.proposal_id]?'<span class="dp">'+esc(propLabel[dc.proposal_id])+'</span>':'')
+              + (lbl?'<span class="dp">'+esc(lbl)+'</span>':'')
               + '</a>';
           }).join('')
         + '</div></div>';

@@ -72,6 +72,7 @@ exports.handler = async (event) => {
     "&select=id,title,property_id,status&order=created_at")).data || [];
   const tours = (await sb.rest("tour_stops?deal_id=eq." + id + "&client_visible=eq.true" +
     "&select=id,property_id,label,scheduled_at,status,notes&order=scheduled_at.asc.nullslast")).data || [];
+
   const abstractRows = (await sb.rest("lease_abstracts?deal_id=eq." + id + "&client_visible=eq.true" +
     "&select=tenant_name,landlord_name,premises,size_sf,commencement_date,expiration_date,base_rent_psf,escalations,options,security_deposit,key_dates&order=created_at&limit=1")).data || [];
   const lease_abstract = abstractRows[0] || null;
@@ -91,6 +92,14 @@ exports.handler = async (event) => {
       const url = await signUrl(doc.storage_path, 600);   // 10-minute link
       if (url) documents.push({ id: doc.id, proposal_id: doc.proposal_id, filename: doc.filename, url: url });
     }
+  }
+
+  // client-visible deal-level / lease documents (not tied to a proposal — e.g. the signed lease)
+  const ldr = await sb.rest("documents?deal_id=eq." + id + "&proposal_id=is.null&client_visible=eq.true" +
+    "&select=id,proposal_id,filename,storage_path&order=created_at");
+  for (const doc of (ldr.data || [])) {
+    const url = await signUrl(doc.storage_path, 600);
+    if (url) documents.push({ id: doc.id, proposal_id: null, filename: doc.filename, url: url });
   }
 
   return json(200, {
