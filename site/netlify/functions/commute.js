@@ -16,6 +16,7 @@
 // Addresses are used transiently for geocoding and are never logged or stored.
 
 const { getStore, connectLambda } = require("@netlify/blobs");
+const { userFromToken } = require("./_sb");
 const crypto = require("crypto");
 
 const KEY = process.env.GOOGLE_ROUTES_KEY;
@@ -32,6 +33,8 @@ function hashPass(passcode, salt) { return crypto.pbkdf2Sync(String(passcode), s
 function safeEq(a, b) { const ab = Buffer.from(String(a)), bb = Buffer.from(String(b)); if (ab.length !== bb.length) return false; return crypto.timingSafeEqual(ab, bb); }
 async function authorize(body) {
   if (body.brokerSecret && process.env.BROKER_SECRET && safeEq(body.brokerSecret, process.env.BROKER_SECRET)) return true;
+  // a signed-in broker (Supabase session token) is authorized — same gate as the rest of the Cockpit
+  if (body.token) { try { const u = await userFromToken(body.token); if (u) return true; } catch (e) { /* fall through */ } }
   if (body.slug && body.passcode && /^[A-Za-z0-9]{6,40}$/.test(String(body.slug))) {
     try {
       const store = getStore("client-packages");

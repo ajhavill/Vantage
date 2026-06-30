@@ -255,7 +255,7 @@
   <div class="cmstage">
     <aside class="cmcol input">
       <h1 class="cm-h display">Team commute</h1>
-      <div class="cm-sub">See how your team's drive times stack up across all four buildings.</div>
+      <div class="cm-sub">See how your team's drive times stack up across the buildings on your shortlist.</div>
       <div class="cm-priv">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
         <span>Team names &amp; addresses stay in your browser for this pitch only — never saved, sent only to Google for the lookup, and gone when you refresh.</span>
@@ -275,6 +275,9 @@
       <div class="cm-count" id="cmCount">No team members yet.</div>
       <div class="cm-team" id="cmTeam"></div>
       <button class="cm-btn ghost" id="cmAddRow" style="margin-top:8px">+ Add one manually</button>
+
+      <div class="cm-label">Buildings to compare <span class="cm-dtools"><span class="cm-dcount" id="cmDCount"></span><button type="button" id="cmDAll">All</button><button type="button" id="cmDNone">Clear</button></span></div>
+      <div class="cm-destpick" id="cmDestPick"></div>
 
       <div class="cm-label">Morning departure</div>
       <span><input type="time" class="cm-time" id="cmTime" value="08:30"><span style="font-size:11px;color:var(--ink-faint);margin-left:8px">next weekday · your local time</span></span>
@@ -1144,6 +1147,7 @@
   var cmGeoCache={};      // rawLower -> {lat,lng} | {fail:true}
   var cmMatrixCache={};   // key -> durations[][]
   var commuteMap=null, cmLayer=null;
+  var cmDestSet=null;     // Set of building ids on the shortlist (null = not yet initialized)
   var CM_COST_ELEM=0.01, CM_COST_GEO=0.005; // rough per-lookup $ for the estimate
 
   function setPriobar(v){ var p=document.getElementById('priobar'); if(p) p.style.display=v?'':'none'; }
@@ -1151,7 +1155,19 @@
   function cmMedian(a){ if(!a.length)return null; var s=a.slice().sort(function(x,y){return x-y;}); var n=s.length; return n%2?s[(n-1)/2]:(s[n/2-1]+s[n/2])/2; }
   function cmFmt(m){ return (m==null)?'—':Math.round(m)+' min'; }
   function cmColor(min){ if(min==null||isNaN(min))return '#B8BEC8'; var t=Math.max(0,Math.min(1,(min-10)/35)); return 'hsl('+Math.round(140*(1-t))+',58%,45%)'; }
-  function cmDests(){ return BUILDINGS.map(function(b){return {id:b.id,name:b.name,submarket:b.submarket,lat:b.lat,lng:b.lng};}); }
+  function cmAllDests(){ return BUILDINGS.map(function(b){return {id:b.id,name:b.name,submarket:b.submarket,lat:b.lat,lng:b.lng};}); }
+  // destinations are scoped to the broker's shortlist so a run only prices the buildings being pitched
+  function cmDests(){ var all=cmAllDests(); if(cmDestSet===null) return all; return all.filter(function(d){return cmDestSet.has(d.id);}); }
+  function cmDefaultDests(){ return BUILDINGS.slice().sort(function(a,b){return matchScore(b)-matchScore(a);}).slice(0,5).map(function(b){return b.id;}); }
+  function cmUpdateDCount(){ var el=document.getElementById('cmDCount'); if(el) el.textContent=(cmDestSet?cmDestSet.size:0)+' selected'; }
+  function cmRenderDestPicker(){
+    var box=document.getElementById('cmDestPick'); if(!box) return;
+    box.innerHTML=cmAllDests().map(function(d){
+      var on=cmDestSet && cmDestSet.has(d.id);
+      return '<label class="cm-dchip'+(on?' on':'')+'"><input type="checkbox" data-id="'+cmEsc(d.id)+'"'+(on?' checked':'')+'><span>'+cmEsc(d.name)+'</span></label>';
+    }).join('');
+    cmUpdateDCount();
+  }
   function cmDestName(id){ var d=cmDests(); for(var i=0;i<d.length;i++) if(d[i].id===id) return d[i].name; return ''; }
   function cmDestIndex(id){ var d=cmDests(); for(var i=0;i<d.length;i++) if(d[i].id===id) return i; return 0; }
   function cmNote(msg){ var n=document.getElementById('cmNote'); if(!n)return; n.textContent=msg||''; if(msg) setTimeout(function(){ if(n.textContent===msg) n.textContent=''; },4000); }
@@ -1165,6 +1181,8 @@
     setNav('commute'); setPriobar(false);
     document.getElementById('crumb').innerHTML='Santa Monica · <b>Team commute</b>';
     if(window.L && !commuteMap) cmInitMap();
+    if(cmDestSet===null) cmDestSet=new Set(cmDefaultDests());
+    cmRenderDestPicker();
     cmRenderTeam(); cmRenderResults(); cmUpdateLegend();
     setTimeout(function(){ if(commuteMap) commuteMap.invalidateSize(); },60);
   };
@@ -1307,36 +1325,43 @@
   }
   function cmKey(origins,iso){ return iso+'|'+origins.map(function(p){return p.lat.toFixed(5)+','+p.lng.toFixed(5);}).join(';'); }
   function callCommute(payload){
-    return fetch('/.netlify/functions/commute',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
-      .then(function(res){ return res.text().then(function(txt){
-        var data=null; try{data=JSON.parse(txt);}catch(e){}
-        if(!res.ok) throw new Error((data&&data.error)||('Server error '+res.status));
-        return data;
-      });});
+    var tokP; try{ tokP=Promise.resolve(qToken()); }catch(e){ tokP=Promise.resolve(null); }
+    return tokP.catch(function(){return null;}).then(function(tok){
+      var body=Object.assign({}, payload);
+      if(tok) body.token=tok;                                  // signed-in broker
+      else { var sec=localStorage.getItem('vantage_broker_secret'); if(sec) body.brokerSecret=sec; } // legacy fallback
+      return fetch('/.netlify/functions/commute',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    }).then(function(res){ return res.text().then(function(txt){
+      var data=null; try{data=JSON.parse(txt);}catch(e){}
+      if(!res.ok) throw new Error((data&&data.error)||('Server error '+res.status));
+      return data;
+    });});
   }
   function cmRun(){
     cmApplyGeoCache();
     var valid=cmTeam.filter(function(t){return (t.raw||'').trim();});
     if(!valid.length){ cmNote('Add at least one home address first.'); return; }
     if(valid.length>200){ cmNote('Please keep it to 200 homes per run.'); return; }
+    var destCount=cmDests().length;
+    if(!destCount){ cmNote('Pick at least one building to compare (left, under “Buildings to compare”).'); return; }
     var newGeo=valid.filter(function(t){return t.lat==null;}).length;
-    var elements=valid.length*BUILDINGS.length;
+    var elements=valid.length*destCount;
     var cost=newGeo*CM_COST_GEO+elements*CM_COST_ELEM;
     var cached=false;
     if(newGeo===0){
       var origins=[]; cmTeam.forEach(function(t){ if((t.raw||'').trim()&&t.lat!=null) origins.push({lat:t.lat,lng:t.lng}); });
       if(cmMatrixCache[cmKey(origins,cmDepartureISO())]) cached=true;
     }
-    cmShowPreflight(valid.length,newGeo,elements,cost,cached);
+    cmShowPreflight(valid.length,newGeo,elements,cost,cached,destCount);
   }
-  function cmShowPreflight(homes,newGeo,elements,cost,cached){
+  function cmShowPreflight(homes,newGeo,elements,cost,cached,destCount){
     var card=document.getElementById('cmModalCard');
     if(cached){
       card.innerHTML='<h3>Ready to show</h3><p>These exact homes and departure time were already calculated — showing your saved results, no new API calls or charge.</p>'+
         '<div class="btns"><button class="cm-btn ghost" id="cmCancel">Cancel</button><button class="cm-btn primary" id="cmGo">Show results</button></div>';
     } else {
       card.innerHTML='<h3>Run commute analysis?</h3>'+
-        '<p>'+homes+' home'+(homes>1?'s':'')+' × '+BUILDINGS.length+' buildings = <b>'+elements+'</b> drive-time lookups'+(newGeo?(' + '+newGeo+' new address lookup'+(newGeo>1?'s':'')):'')+'.</p>'+
+        '<p>'+homes+' home'+(homes>1?'s':'')+' × '+destCount+' building'+(destCount>1?'s':'')+' = <b>'+elements+'</b> drive-time lookups'+(newGeo?(' + '+newGeo+' new address lookup'+(newGeo>1?'s':'')):'')+'.</p>'+
         '<div class="cm-est"><div class="cell"><div class="v">'+elements+'</div><div class="k">drive-time lookups</div></div><div class="cell"><div class="v">≈ $'+cost.toFixed(2)+'</div><div class="k">est. Google cost</div></div></div>'+
         '<p style="font-size:11.5px">Rough estimate — actual billing is set by your Google account. Re-running the same team &amp; time is free (cached).</p>'+
         '<div class="btns"><button class="cm-btn ghost" id="cmCancel">Cancel</button><button class="cm-btn primary" id="cmGo">Run it</button></div>';
@@ -1460,6 +1485,17 @@
       var rm=e.target.closest('.rm'); if(!rm)return;
       cmTeam.splice(+rm.getAttribute('data-i'),1); cmRenderTeam();
     });
+    var dpick=document.getElementById('cmDestPick');
+    if(dpick) dpick.addEventListener('change',function(e){
+      var cb=e.target.closest('input[type=checkbox]'); if(!cb) return;
+      if(!cmDestSet) cmDestSet=new Set();
+      var id=cb.getAttribute('data-id');
+      if(cb.checked) cmDestSet.add(id); else cmDestSet.delete(id);
+      var lab=cb.closest('.cm-dchip'); if(lab) lab.classList.toggle('on',cb.checked);
+      cmUpdateDCount();
+    });
+    var dAll=document.getElementById('cmDAll'); if(dAll) dAll.addEventListener('click',function(){ cmDestSet=new Set(cmAllDests().map(function(d){return d.id;})); cmRenderDestPicker(); });
+    var dNone=document.getElementById('cmDNone'); if(dNone) dNone.addEventListener('click',function(){ cmDestSet=new Set(); cmRenderDestPicker(); });
     document.getElementById('cmRun').addEventListener('click',cmRun);
     document.getElementById('cmClear').addEventListener('click',cmClear);
     document.getElementById('cmModal').addEventListener('click',function(e){ if(e.target===this) cmHideModal(); });
@@ -1962,12 +1998,14 @@
       (note?'<div class="qr-note">'+cmEsc(note)+'</div>':'')+
       (withHome?'<button class="qr-commute" id="qrCommute">Use these '+withHome+' home'+(withHome>1?'s':'')+' in the commute analysis →</button>':'');
     b.innerHTML=html;
-    var cb=document.getElementById('qrCommute'); if(cb) cb.onclick=function(){ qrToCommute(people); };
+    var cb=document.getElementById('qrCommute'); if(cb) cb.onclick=function(){ qrToCommute(people, it); };
   }
-  function qrToCommute(people){
+  function qrToCommute(people, it){
     var homes=people.filter(function(p){return (p.home||'').trim();});
     if(!homes.length) return;
     cmTeam=homes.map(function(p){ return {name:p.name||'', raw:(p.home||'').trim(), lat:null, lng:null, geo:'', times:null}; });
+    // scope the commute to this client's best-fit buildings (their shortlist), not the whole market
+    try{ var ids=matchFromIntake((it&&it.responses)||{}).slice(0,6).map(function(m){return m.b.id;}); if(ids.length) cmDestSet=new Set(ids); }catch(e){}
     qClose();
     if(window.showModule) window.showModule('market');
     if(window.showCommute) window.showCommute();

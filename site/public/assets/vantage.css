@@ -394,6 +394,17 @@
   .cm-priv{display:flex;gap:8px;align-items:flex-start;font-size:11px;line-height:1.5;color:var(--ink-soft);background:rgba(45,110,126,.06);border:1px solid rgba(45,110,126,.18);border-radius:9px;padding:9px 11px;margin-bottom:6px}
   .cm-priv svg{flex:none;margin-top:1px;opacity:.7}
   .cm-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-faint);font-weight:600;margin:16px 0 7px}
+  .cm-dtools{float:right;text-transform:none;letter-spacing:0;display:inline-flex;align-items:center;gap:9px}
+  .cm-dcount{font:600 10px Inter;color:var(--ink-soft)}
+  .cm-dtools button{font:700 9.5px Inter;color:var(--accent);background:none;border:0;cursor:pointer;padding:0;text-transform:uppercase;letter-spacing:.06em}
+  .cm-dtools button:hover{text-decoration:underline}
+  .cm-destpick{max-height:150px;overflow-y:auto;display:flex;flex-direction:column;gap:3px;border:1px solid var(--line);border-radius:10px;background:var(--paper);padding:6px}
+  .cm-destpick::-webkit-scrollbar{width:9px}.cm-destpick::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:9px;border:2px solid var(--paper)}
+  .cm-dchip{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:7px;font:500 12px Inter;color:var(--ink-soft);cursor:pointer}
+  .cm-dchip:hover{background:var(--paper-2)}
+  .cm-dchip.on{color:var(--ink);background:rgba(45,110,126,.06)}
+  .cm-dchip input{accent-color:var(--accent);width:14px;height:14px;flex:none;cursor:pointer;margin:0}
+  .cm-dchip span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .cm-drop{display:block;border:1.5px dashed var(--line-2);border-radius:11px;padding:16px;text-align:center;background:var(--paper);cursor:pointer;transition:all .14s}
   .cm-drop:hover,.cm-drop.drag{border-color:var(--accent);background:rgba(45,110,126,.04)}
   .cm-drop .big{font:600 13px Inter;color:var(--ink)}
