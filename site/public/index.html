@@ -279,6 +279,9 @@
       <div class="cm-label">Buildings to compare <span class="cm-dtools"><span class="cm-dcount" id="cmDCount"></span><button type="button" id="cmDAll">All</button><button type="button" id="cmDNone">Clear</button></span></div>
       <div class="cm-destpick" id="cmDestPick"></div>
 
+      <div class="cm-label">Their current office <span class="cm-opt">optional — adds a baseline</span></div>
+      <input type="text" class="cm-curr" id="cmCurr" placeholder="e.g. 1230 Montana Ave, Santa Monica">
+
       <div class="cm-label">Morning departure</div>
       <span><input type="time" class="cm-time" id="cmTime" value="08:30"><span style="font-size:11px;color:var(--ink-faint);margin-left:8px">next weekday · your local time</span></span>
 
@@ -1148,6 +1151,7 @@
   var cmMatrixCache={};   // key -> durations[][]
   var commuteMap=null, cmLayer=null;
   var cmDestSet=null;     // Set of building ids on the shortlist (null = not yet initialized)
+  var cmCurrent={raw:'',lat:null,lng:null}; // the client's current office (optional baseline)
   var CM_COST_ELEM=0.01, CM_COST_GEO=0.005; // rough per-lookup $ for the estimate
 
   function setPriobar(v){ var p=document.getElementById('priobar'); if(p) p.style.display=v?'':'none'; }
@@ -1323,7 +1327,20 @@
       }
     });
   }
-  function cmKey(origins,iso){ return iso+'|'+origins.map(function(p){return p.lat.toFixed(5)+','+p.lng.toFixed(5);}).join(';'); }
+  function cmKey(origins,iso,dests){ return iso+'|D'+(dests||[]).map(function(p){return p.lat.toFixed(4)+','+p.lng.toFixed(4);}).join(',')+'|O'+origins.map(function(p){return p.lat.toFixed(5)+','+p.lng.toFixed(5);}).join(';'); }
+  // geocode the client's current office (if entered) so it can be a baseline destination
+  function cmResolveCurrent(){
+    var inp=document.getElementById('cmCurr'); var raw=(inp?inp.value:'').trim();
+    cmCurrent.raw=raw;
+    if(!raw){ cmCurrent.lat=null; cmCurrent.lng=null; return Promise.resolve(); }
+    var ck=cmGeoCache['curr|'+raw.toLowerCase()];
+    if(ck){ if(ck.fail){cmCurrent.lat=null;cmCurrent.lng=null;}else{cmCurrent.lat=ck.lat;cmCurrent.lng=ck.lng;} return Promise.resolve(); }
+    return callCommute({action:'geocode',items:[raw]}).then(function(res){
+      var p=res.points&&res.points[0];
+      if(p&&p.ok){ cmCurrent.lat=p.lat; cmCurrent.lng=p.lng; cmGeoCache['curr|'+raw.toLowerCase()]={lat:p.lat,lng:p.lng}; }
+      else { cmCurrent.lat=null; cmCurrent.lng=null; cmGeoCache['curr|'+raw.toLowerCase()]={fail:true}; }
+    });
+  }
   function callCommute(payload){
     var tokP; try{ tokP=Promise.resolve(qToken()); }catch(e){ tokP=Promise.resolve(null); }
     return tokP.catch(function(){return null;}).then(function(tok){
@@ -1344,24 +1361,31 @@
     if(valid.length>200){ cmNote('Please keep it to 200 homes per run.'); return; }
     var destCount=cmDests().length;
     if(!destCount){ cmNote('Pick at least one building to compare (left, under “Buildings to compare”).'); return; }
-    var newGeo=valid.filter(function(t){return t.lat==null;}).length;
-    var elements=valid.length*destCount;
+    var curRaw=(document.getElementById('cmCurr')?document.getElementById('cmCurr').value:'').trim();
+    var curOn=curRaw?1:0;
+    var totalDest=destCount+curOn;
+    var curNeedsGeo=(curOn && !cmGeoCache['curr|'+curRaw.toLowerCase()])?1:0;
+    var newGeo=valid.filter(function(t){return t.lat==null;}).length+curNeedsGeo;
+    var elements=valid.length*totalDest;
     var cost=newGeo*CM_COST_GEO+elements*CM_COST_ELEM;
     var cached=false;
     if(newGeo===0){
       var origins=[]; cmTeam.forEach(function(t){ if((t.raw||'').trim()&&t.lat!=null) origins.push({lat:t.lat,lng:t.lng}); });
-      if(cmMatrixCache[cmKey(origins,cmDepartureISO())]) cached=true;
+      var mdests=cmDests().map(function(d){return {lat:d.lat,lng:d.lng};});
+      if(curOn && cmCurrent.lat!=null) mdests.push({lat:cmCurrent.lat,lng:cmCurrent.lng});
+      if(cmMatrixCache[cmKey(origins,cmDepartureISO(),mdests)]) cached=true;
     }
-    cmShowPreflight(valid.length,newGeo,elements,cost,cached,destCount);
+    cmShowPreflight(valid.length,newGeo,elements,cost,cached,destCount,curOn);
   }
-  function cmShowPreflight(homes,newGeo,elements,cost,cached,destCount){
+  function cmShowPreflight(homes,newGeo,elements,cost,cached,destCount,curOn){
     var card=document.getElementById('cmModalCard');
+    var destText=destCount+' building'+(destCount>1?'s':'')+(curOn?' + current office':'');
     if(cached){
       card.innerHTML='<h3>Ready to show</h3><p>These exact homes and departure time were already calculated — showing your saved results, no new API calls or charge.</p>'+
         '<div class="btns"><button class="cm-btn ghost" id="cmCancel">Cancel</button><button class="cm-btn primary" id="cmGo">Show results</button></div>';
     } else {
       card.innerHTML='<h3>Run commute analysis?</h3>'+
-        '<p>'+homes+' home'+(homes>1?'s':'')+' × '+destCount+' building'+(destCount>1?'s':'')+' = <b>'+elements+'</b> drive-time lookups'+(newGeo?(' + '+newGeo+' new address lookup'+(newGeo>1?'s':'')):'')+'.</p>'+
+        '<p>'+homes+' home'+(homes>1?'s':'')+' × '+destText+' = <b>'+elements+'</b> drive-time lookups'+(newGeo?(' + '+newGeo+' new address lookup'+(newGeo>1?'s':'')):'')+'.</p>'+
         '<div class="cm-est"><div class="cell"><div class="v">'+elements+'</div><div class="k">drive-time lookups</div></div><div class="cell"><div class="v">≈ $'+cost.toFixed(2)+'</div><div class="k">est. Google cost</div></div></div>'+
         '<p style="font-size:11.5px">Rough estimate — actual billing is set by your Google account. Re-running the same team &amp; time is free (cached).</p>'+
         '<div class="btns"><button class="cm-btn ghost" id="cmCancel">Cancel</button><button class="cm-btn primary" id="cmGo">Run it</button></div>';
@@ -1385,9 +1409,9 @@
 
   function cmExecute(){
     var iso=cmDepartureISO();
-    cmShowRunning('Looking up home locations…');
+    cmShowRunning('Looking up locations…');
     var needGeo=[]; cmTeam.forEach(function(t,i){ if((t.raw||'').trim() && t.lat==null) needGeo.push(i); });
-    var geoStep = needGeo.length
+    var teamGeo = needGeo.length
       ? callCommute({action:'geocode', items:needGeo.map(function(i){return cmTeam[i].raw.trim();})}).then(function(res){
           (res.points||[]).forEach(function(p,k){
             var i=needGeo[k], raw=cmTeam[i].raw.trim().toLowerCase();
@@ -1396,25 +1420,37 @@
           });
         })
       : Promise.resolve();
-    geoStep.then(function(){
+    cmResolveCurrent().then(function(){ return teamGeo; }).then(function(){
       var origins=[], idx=[];
       cmTeam.forEach(function(t,i){ if((t.raw||'').trim() && t.lat!=null){ origins.push({lat:t.lat,lng:t.lng}); idx.push(i); } });
       if(!origins.length) throw new Error('None of the addresses could be located. Check them and try again.');
       cmShowRunning('Calculating drive times…');
-      var key=cmKey(origins,iso);
-      if(cmMatrixCache[key]) return {durations:cmMatrixCache[key], idx:idx};
-      return callCommute({action:'matrix', origins:origins, destinations:cmDests().map(function(d){return {lat:d.lat,lng:d.lng};}), departureTime:iso})
-        .then(function(res){ cmMatrixCache[key]=res.durations; return {durations:res.durations, idx:idx}; });
+      var bdest=cmDests();
+      var mdests=bdest.map(function(d){return {lat:d.lat,lng:d.lng};});
+      var hasCurr=(cmCurrent.lat!=null);
+      if(hasCurr) mdests.push({lat:cmCurrent.lat,lng:cmCurrent.lng});
+      var key=cmKey(origins,iso,mdests);
+      var got=cmMatrixCache[key] ? Promise.resolve(cmMatrixCache[key])
+        : callCommute({action:'matrix', origins:origins, destinations:mdests, departureTime:iso}).then(function(res){ cmMatrixCache[key]=res.durations; return res.durations; });
+      return got.then(function(durations){ return {durations:durations, idx:idx, bdest:bdest, hasCurr:hasCurr}; });
     }).then(function(out){
+      var bn=out.bdest.length;
       cmTeam.forEach(function(t){ t.times=null; });
-      out.idx.forEach(function(ti,k){ cmTeam[ti].times=out.durations[k]; });
-      var dest=cmDests(), stats={};
+      out.idx.forEach(function(ti,k){ cmTeam[ti].times=out.durations[k]?out.durations[k].slice(0,bn):null; });
+      var dest=out.bdest, stats={};
       dest.forEach(function(b,j){
         var times=out.durations.map(function(r){return r[j];}).filter(function(v){return v!=null;}).map(function(s){return s/60;});
         stats[b.id]={ median:cmMedian(times), pct:times.length?(times.filter(function(m){return m<=30;}).length/times.length*100):0, n:times.length };
       });
+      var current=null;
+      if(out.hasCurr){
+        var cj=bn, cper=[];
+        out.idx.forEach(function(ti,k){ var r=out.durations[k]; var sec=(r&&r[cj]!=null)?r[cj]:null; cper.push({name:(cmTeam[ti].name||cmTeam[ti].raw||'').trim(), min:sec!=null?sec/60:null}); });
+        var ctimes=cper.map(function(p){return p.min;}).filter(function(v){return v!=null;});
+        current={ raw:cmCurrent.raw, median:cmMedian(ctimes), pct:ctimes.length?(ctimes.filter(function(m){return m<=30;}).length/ctimes.length*100):0, n:ctimes.length, perEmp:cper };
+      }
       var failed=cmTeam.filter(function(t){return (t.raw||'').trim() && t.lat==null;}).length;
-      cmRes={ dest:dest, stats:stats, iso:iso, located:out.idx.length, failed:failed };
+      cmRes={ dest:dest, stats:stats, iso:iso, located:out.idx.length, failed:failed, current:current };
       var best=null; dest.forEach(function(b){ var m=stats[b.id].median; if(m!=null && (best==null || m<stats[best].median)) best=b.id; });
       cmSel=best||dest[0].id;
       cmHideModal(); cmRenderTeam(); cmRenderResults(); cmUpdateLegend(); cmDrawMap();
@@ -1445,21 +1481,37 @@
         '<h3>No analysis yet</h3><p>Upload or paste your team’s home addresses on the left, pick a departure time, and run the analysis.</p></div>';
       return;
     }
-    var dest=cmRes.dest, stats=cmRes.stats;
+    var dest=cmRes.dest, stats=cmRes.stats, cur=cmRes.current;
     var ranked=dest.slice().filter(function(b){return stats[b.id].median!=null;}).sort(function(a,b){return stats[a.id].median-stats[b.id].median;});
     var html='';
     if(ranked.length){
+      var bestM=stats[ranked[0].id].median, worstM=stats[ranked[ranked.length-1].id].median;
+      var spread=(bestM!=null&&worstM!=null)?Math.round(worstM-bestM):0;
+      var beats=cur&&cur.median!=null?ranked.filter(function(b){return stats[b.id].median<cur.median;}).length:0;
+      html+='<div class="cm-summary"><b>'+cmRes.located+'</b> teammate'+(cmRes.located>1?'s':'')+' mapped · fastest median <b>'+cmFmt(bestM)+'</b> at '+cmEsc(ranked[0].name)+
+        (spread>0?(' · up to <b>'+spread+' min</b> faster each way than the slowest on your list'):'')+
+        (cur&&cur.median!=null?(' · <b>'+beats+' of '+ranked.length+'</b> beat their current office'):'')+'</div>';
       var w=ranked[0], ws=stats[w.id];
       html+='<div class="cm-winner"><div class="e">Shortest commute for your team</div><div class="nm">'+cmEsc(w.name)+'</div>'+
         '<div class="st">Median <b>'+cmFmt(ws.median)+'</b> · <b>'+Math.round(ws.pct)+'%</b> within 30 min · '+ws.n+' of '+cmRes.located+' located</div></div>';
+    }
+    if(cur && cur.median!=null){
+      html+='<div class="cm-curcard"><div class="r1"><span class="nm">Current office</span><span class="rk">baseline</span></div>'+
+        '<div class="loc">'+cmEsc(cur.raw)+'</div>'+
+        '<div class="stats"><div class="stat"><div class="v">'+cmFmt(cur.median)+'</div><div class="k">median drive</div></div>'+
+        '<div class="stat"><div class="v">'+Math.round(cur.pct)+'<small>%</small></div><div class="k">within 30 min</div></div></div></div>';
     }
     var destIdx={}; dest.forEach(function(b,j){ destIdx[b.id]=j; });
     var order=ranked.concat(dest.filter(function(b){return stats[b.id].median==null;}));
     order.forEach(function(b,i){
       var s=stats[b.id], sel=(b.id===cmSel);
+      var delta='';
+      if(cur && cur.median!=null && s.median!=null){ var dm=Math.round(cur.median-s.median);
+        delta=dm>0?'<span class="cm-delta good">'+dm+' min faster than current</span>':(dm<0?'<span class="cm-delta bad">'+(-dm)+' min slower than current</span>':'<span class="cm-delta">same as current</span>'); }
       html+='<div class="cmbcard'+(sel?' sel':'')+'" data-b="'+b.id+'">'+
         '<div class="r1"><span class="nm">'+cmEsc(b.name)+'</span><span class="rk">#'+(i+1)+'</span></div>'+
         '<div class="loc">'+cmEsc(b.submarket)+'</div>'+
+        (delta?'<div class="cm-deltarow">'+delta+'</div>':'')+
         '<div class="stats"><div class="stat"><div class="v">'+cmFmt(s.median)+'</div><div class="k">median drive</div></div>'+
         '<div class="stat"><div class="v">'+(s.median!=null?Math.round(s.pct):'—')+'<small>%</small></div><div class="k">within 30 min</div></div></div>'+
         (s.median!=null?'<div class="pctbar"><span class="fill" style="width:'+Math.round(s.pct)+'%"></span></div>':'')+
@@ -1472,6 +1524,8 @@
 
   function cmClear(){
     cmTeam=[]; cmRes=null; cmSel=null; cmGeoCache={}; cmMatrixCache={};
+    cmCurrent={raw:'',lat:null,lng:null};
+    var cur=document.getElementById('cmCurr'); if(cur) cur.value='';
     var pst=document.getElementById('cmPaste'); if(pst) pst.value='';
     var f=document.getElementById('cmFile'); if(f) f.value='';
     cmRenderTeam(); cmRenderResults(); cmUpdateLegend();
