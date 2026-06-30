@@ -671,6 +671,8 @@
   .qr-retry,.qr-commute{font:600 12px Inter;cursor:pointer}
   .qr-retry{margin-left:6px;color:var(--accent);background:none;border:0;text-decoration:underline}
   .qr-stat{font:600 11.5px Inter;color:var(--ink-soft);margin-bottom:9px}
+  .qr-reread{font:600 10.5px Inter;color:var(--accent);background:none;border:0;cursor:pointer;padding:0;margin-left:4px}
+  .qr-reread:hover{text-decoration:underline}
   .qr-list{display:flex;flex-direction:column;gap:6px}
   .qr-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 11px;border:1px solid var(--line);border-radius:9px;background:var(--paper)}
   .qr-row.key{border-color:var(--accent);background:rgba(45,110,126,.05)}
