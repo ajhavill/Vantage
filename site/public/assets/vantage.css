@@ -84,6 +84,7 @@
   .mkt-table tbody tr:hover{background:var(--paper)}
   .mkt-table tbody tr:hover .mkt-open{opacity:1}
   .mkt-msc{font:800 16px 'Bricolage Grotesque',sans-serif}
+  .mkt-msc.mkt-na{color:var(--ink-faint);font-weight:600}
   .mkt-bn{font:700 14px 'Bricolage Grotesque',sans-serif;color:var(--ink)}
   .mkt-bs{font:500 11.5px Inter;color:var(--ink-faint);margin-top:1px}
   .mkt-cl{display:inline-block;font:700 11px Inter;border-radius:5px;padding:2px 8px}

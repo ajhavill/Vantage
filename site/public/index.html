@@ -498,7 +498,9 @@
     var r=bRentHigh(b), base; if(r!=null){ base=r>=5.6?'A':r>=4.7?'B':r>=3.8?'C':'D'; } else base=['A','B','B','C'][bHash(b)%4];
     if(bHash(b)%6===0) base={A:'B',B:'C',C:'D',D:'D'}[base]; return base; }
   function bHeight(b){ if(b.height){ var s=String(b.height).toLowerCase(); return s.indexOf('high')>-1?'high':s.indexOf('mid')>-1?'mid':'low'; }
+    var f=parseInt(b.floors)||0; if(f) return f>=10?'high':f>=4?'mid':'low';
     return ['high','mid','low','mid'][bHash(b)%4]; }
+  function bEnriched(b){ return !!(b.amen && b.amen.length); } // has Google Places data -> real match score
   function bHeightLabel(x){ return x==='high'?'High-rise':x==='mid'?'Mid-rise':'Low-rise'; }
   function mktSubmarkets(){ var s={}; BUILDINGS.forEach(function(b){ if(b.submarket) s[b.submarket]=1; }); return Object.keys(s).sort(); }
   function fmtSF(n){ return n>=1000000?(n/1000000).toFixed(1)+'M':n>=1000?Math.round(n/1000)+'k':String(n); }
@@ -543,16 +545,16 @@
     var rents=list.map(bRentLow).filter(function(v){return v!=null;});
     var avgRent=rents.length?(rents.reduce(function(a,b){return a+b;},0)/rents.length):null;
     var sf=list.reduce(function(a,b){return a+bAvailSF(b);},0);
-    var ms=list.map(matchScore), avgM=ms.length?Math.round(ms.reduce(function(a,b){return a+b;},0)/ms.length):0;
+    var ms=list.filter(bEnriched).map(matchScore), avgM=ms.length?Math.round(ms.reduce(function(a,b){return a+b;},0)/ms.length):null;
     function card(l,v){ return '<div class="mkt-stat"><div class="l">'+l+'</div><div class="v">'+v+'</div></div>'; }
-    document.getElementById('mktStats').innerHTML=card('Buildings',list.length)+card('Avg rent',avgRent!=null?('$'+avgRent.toFixed(2)):'—')+card('Avail SF',fmtSF(sf))+card('Avg match',avgM);
+    document.getElementById('mktStats').innerHTML=card('Buildings',list.length)+card('Avg rent',avgRent!=null?('$'+avgRent.toFixed(2)):'—')+card('Avail SF',fmtSF(sf))+card('Avg match',avgM!=null?avgM:'—');
   }
   function renderMktTable(list){
     var t=document.getElementById('mktTable'); if(!t) return;
     if(!list.length){ t.innerHTML='<tbody><tr><td class="mkt-empty">No buildings match these filters. <button class="mkt-clearlink" id="mktClear2" type="button">Clear filters</button></td></tr></tbody>'; var c2=document.getElementById('mktClear2'); if(c2) c2.onclick=mktClearFilters; return; }
     var head='<thead><tr><th class="r">Match</th><th>Building</th><th>Class</th><th>Height</th><th class="r">Avail SF</th><th class="r">Rent FS</th><th></th></tr></thead>';
-    var rows=list.map(function(b){ var ms=matchScore(b);
-      return '<tr data-b="'+b.id+'"><td class="r"><span class="mkt-msc" style="color:'+mktTier(ms)+'">'+ms+'</span></td>'+
+    var rows=list.map(function(b){ var ms=matchScore(b), en=bEnriched(b);
+      return '<tr data-b="'+b.id+'"><td class="r">'+(en?'<span class="mkt-msc" style="color:'+mktTier(ms)+'">'+ms+'</span>':'<span class="mkt-msc mkt-na">—</span>')+'</td>'+
         '<td><div class="mkt-bn">'+cmEsc(b.name)+'</div><div class="mkt-bs">'+cmEsc(b.submarket)+'</div></td>'+
         '<td><span class="mkt-cl mkt-cl-'+bClass(b)+'">'+bClass(b)+'</span></td>'+
         '<td class="mkt-ht">'+bHeightLabel(bHeight(b))+'</td>'+
@@ -564,7 +566,7 @@
     Array.prototype.forEach.call(t.querySelectorAll('tbody tr[data-b]'),function(tr){ tr.onclick=function(){ openDetail(tr.getAttribute('data-b')); }; });
   }
   var mktCluster=null;
-  function mktMarkerIcon(b){ return L.divIcon({className:'',iconSize:[18,18],iconAnchor:[9,9],html:'<div style="width:16px;height:16px;border-radius:50%;background:'+mktTier(matchScore(b))+';border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)"></div>'}); }
+  function mktMarkerIcon(b){ var c=bEnriched(b)?mktTier(matchScore(b)):'#B8BEC8'; return L.divIcon({className:'',iconSize:[18,18],iconAnchor:[9,9],html:'<div style="width:16px;height:16px;border-radius:50%;background:'+c+';border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)"></div>'}); }
   function syncMarketMap(list, fit){
     if(!overviewMap) return;
     if(!mktCluster){ mktCluster=L.markerClusterGroup({iconCreateFunction:clusterIcon,maxClusterRadius:46,showCoverageOnHover:false,chunkedLoading:true}); overviewMap.addLayer(mktCluster); }
