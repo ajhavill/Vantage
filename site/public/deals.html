@@ -239,6 +239,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.js"></script>
 <script>
 window.DF = (function(){
   "use strict";
@@ -661,7 +662,7 @@ window.DF = (function(){
     if(!r) return;
     var isDraft=r.status==='draft', hasProse=r.draft_text!=null;
     var draftSec = hasProse ? fld('Proposal'+(r.source==='ai'?' <span class="draftpill">AI-drafted</span>':''),'<textarea id="f_draft_text" style="min-height:190px">'+esc(r.draft_text)+'</textarea>') : '';
-    var actionBar = hasProse ? '<div style="display:flex;gap:10px;margin:2px 0 14px;flex-wrap:wrap"><button class="btn" type="button" onclick="DF.proposalPdf()">📄 Download as PDF</button><button class="btn" type="button" onclick="DF.copyProposal()">Copy text</button></div>' : '';
+    var actionBar = hasProse ? '<div style="display:flex;gap:10px;margin:2px 0 14px;flex-wrap:wrap"><button class="btn pri" type="button" onclick="DF.proposalDocx()">⬇ Download as Word</button><button class="btn" type="button" onclick="DF.proposalPdf()">PDF</button><button class="btn" type="button" onclick="DF.copyProposal()">Copy text</button></div>' : '';
     openSheet('<h3>'+(hasProse?'Proposal — round ':'Edit round ')+esc(r.round_no)+(isDraft?' <span class="draftpill">draft</span>':'')+'</h3>'
       + '<div class="ssub">'+(hasProse?'Read it, tweak the wording or terms, then download or copy it to send — or mark it final.':('Adjust the terms'+(isDraft?', then save — or mark it final to make it a real round you can compare and share.':'.')))+'</div>'
       + draftSec + actionBar + roundFields(r)
@@ -708,6 +709,23 @@ window.DF = (function(){
     setTimeout(function(){ try{ w.focus(); w.print(); }catch(e){} }, 350);
   }
   function proposalPdf(){ var el=$('f_draft_text'); downloadProposalPdf(el?el.value:'', 'Proposal'); }
+  function downloadProposalDocx(text, filename){
+    if(!window.htmlDocx){ alert('The Word exporter is still loading — give it a second and try again.'); return; }
+    var inner = window.marked ? window.marked.parse(text||'') : '<pre>'+esc(text||'')+'</pre>';
+    var html = '<!doctype html><html><head><meta charset="utf-8"><style>'
+      + 'body{font-family:Georgia,"Times New Roman",serif;font-size:11pt;color:#1A2230;line-height:1.5}'
+      + 'h1,h2,h3{font-family:Arial,Helvetica,sans-serif;color:#1B2A4A}h1{font-size:16pt}h2{font-size:13pt}h3{font-size:11.5pt}'
+      + 'table{border-collapse:collapse}td,th{border:1px solid #999999;padding:4px 8px}th{background:#F4F1EA}'
+      + '</style></head><body>'+inner+'</body></html>';
+    try{
+      var blob = window.htmlDocx.asBlob(html);
+      var url=URL.createObjectURL(blob);
+      var a=document.createElement('a'); a.href=url; a.download=(filename||'Proposal')+'.docx';
+      document.body.appendChild(a); a.click();
+      setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+    }catch(e){ alert('Could not build the Word file: '+(e.message||e)); }
+  }
+  function proposalDocx(){ var el=$('f_draft_text'); downloadProposalDocx(el?el.value:'', 'Proposal'); }
   function copyProposal(){
     var el=$('f_draft_text'); var t=el?el.value:'';
     if(navigator.clipboard && navigator.clipboard.writeText){
@@ -1135,7 +1153,7 @@ window.DF = (function(){
   return {
     showPipeline:renderPipeline, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, toggleClosed:toggleClosed,
     newDeal:newDeal, newProperty:newProperty, newProposal:newProposal, newRound:newRound,
-    setStage:setStage, basisChange:basisChange, close:closeSheet, proposalPdf:proposalPdf, copyProposal:copyProposal,
+    setStage:setStage, basisChange:basisChange, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
     shareDeal:shareDeal, toggleProposalVisible:toggleProposalVisible,
     attachDoc:attachDoc, attachLeaseDoc:attachLeaseDoc, downloadDoc:downloadDoc, deleteDoc:deleteDoc, toggleDocVisible:toggleDocVisible,
     aiDraft:aiDraft, aiPickTmpl:aiPickTmpl, aiDocx:aiDocx, toggleVoice:toggleVoice, editRound:editRound,
