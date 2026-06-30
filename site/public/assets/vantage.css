@@ -434,6 +434,9 @@
   .cm-opt{text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink-faint);font-size:10px}
   .cm-curr{width:100%;border:1px solid var(--line-2);border-radius:9px;padding:9px 11px;font:13px Inter;color:var(--ink);background:var(--paper);outline:none;box-sizing:border-box}
   .cm-curr:focus{border-color:var(--accent)}
+  .cm-resbar{display:flex;justify-content:flex-end;margin-bottom:10px}
+  .cm-pdf{display:inline-flex;align-items:center;gap:7px;font:600 11.5px Inter;color:var(--ink-soft);background:var(--paper-2);border:1px solid var(--line-2);border-radius:8px;padding:7px 12px;cursor:pointer}
+  .cm-pdf:hover{border-color:var(--accent);color:var(--accent)}
   .cm-summary{font:500 12.5px/1.55 Inter;color:var(--ink-soft);background:var(--paper-2);border:1px solid var(--line);border-radius:11px;padding:11px 13px;margin-bottom:12px}
   .cm-summary b{color:var(--ink);font-family:"JetBrains Mono";font-weight:600}
   .cm-curcard{border:1px dashed var(--line-2);border-radius:11px;background:var(--paper);padding:11px 14px;margin-bottom:9px}

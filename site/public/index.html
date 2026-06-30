@@ -1485,6 +1485,7 @@
     var ranked=dest.slice().filter(function(b){return stats[b.id].median!=null;}).sort(function(a,b){return stats[a.id].median-stats[b.id].median;});
     var html='';
     if(ranked.length){
+      html+='<div class="cm-resbar"><button class="cm-pdf" id="cmPdfBtn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Save as PDF</button></div>';
       var bestM=stats[ranked[0].id].median, worstM=stats[ranked[ranked.length-1].id].median;
       var spread=(bestM!=null&&worstM!=null)?Math.round(worstM-bestM):0;
       var beats=cur&&cur.median!=null?ranked.filter(function(b){return stats[b.id].median<cur.median;}).length:0;
@@ -1520,6 +1521,40 @@
     if(cmRes.failed) html+='<div class="cm-skip">'+cmRes.failed+' address'+(cmRes.failed>1?'es':'')+' couldn’t be located and were skipped.</div>';
     el.innerHTML=html;
     Array.prototype.forEach.call(el.querySelectorAll('.cmbcard'),function(c){ c.onclick=function(){ cmSelect(c.getAttribute('data-b')); }; });
+    var pb=document.getElementById('cmPdfBtn'); if(pb) pb.onclick=cmBuildPrintDoc;
+  }
+  // branded one-page commute PDF (reuses the questionnaire print container/styles)
+  function cmBuildPrintDoc(){
+    if(!cmRes) return;
+    var dest=cmRes.dest, stats=cmRes.stats, cur=cmRes.current;
+    var ranked=dest.slice().filter(function(b){return stats[b.id].median!=null;}).sort(function(a,b){return stats[a.id].median-stats[b.id].median;});
+    var destIdx={}; dest.forEach(function(b,j){ destIdx[b.id]=j; });
+    var dateStr=''; try{ dateStr=new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}); }catch(e){}
+    var depart=''; try{ depart=new Date(cmRes.iso).toLocaleString('en-US',{weekday:'long',hour:'numeric',minute:'2-digit'}); }catch(e){}
+    var teamN=cmRes.located;
+    var html='<div class="pdq-head"><div class="logo">Vantage<span>.</span></div><div class="meta">Team commute analysis'+(dateStr?' · '+dateStr:'')+'</div></div>'+
+      '<h1>Team commute</h1>'+
+      '<div style="font-size:12px;color:#55606F;margin-bottom:2px">'+teamN+' teammate'+(teamN>1?'s':'')+' mapped'+(depart?' · departing '+cmEsc(depart):'')+'</div>';
+    if(cur && cur.median!=null){
+      var beats=ranked.filter(function(b){return stats[b.id].median<cur.median;}).length;
+      html+='<div style="font-size:12px;margin:6px 0">Current office ('+cmEsc(cur.raw)+'): median '+cmFmt(cur.median)+' · '+beats+' of '+ranked.length+' buildings beat it.</div>';
+    }
+    html+='<h2>Buildings ranked by team drive time</h2>';
+    ranked.forEach(function(b,i){
+      var s=stats[b.id], delta='';
+      if(cur && cur.median!=null){ var dm=Math.round(cur.median-s.median); delta=dm>0?(' · '+dm+' min faster than current'):(dm<0?(' · '+(-dm)+' min slower than current'):''); }
+      html+='<div class="pdq-m"><b>'+(i+1)+'. '+cmEsc(b.name)+'</b> — '+cmEsc(b.submarket)+' · median '+cmFmt(s.median)+' · '+Math.round(s.pct)+'% within 30 min'+delta+'</div>';
+    });
+    if(ranked.length){
+      var wb=ranked[0], j=destIdx[wb.id];
+      html+='<h2>Each teammate’s drive to '+cmEsc(wb.name)+'</h2>';
+      cmTeam.filter(function(t){return (t.raw||'').trim();}).map(function(t){ var sec=(t.times&&t.times[j]!=null)?t.times[j]:null; return {name:(t.name||t.raw||'').trim(), min:sec!=null?Math.round(sec/60):null}; })
+        .sort(function(a,c){ if(a.min==null)return 1; if(c.min==null)return -1; return a.min-c.min; })
+        .forEach(function(r){ html+='<div class="qa-row"><span class="qa-l">'+cmEsc(r.name||'—')+'</span><span class="qa-v">'+(r.min!=null?r.min+' min':'—')+'</span></div>'; });
+    }
+    html+='<div class="pdq-foot">Drive times via Google with live traffic for the departure shown. Estimates; actual times vary. Prepared by Havill &amp; Co.</div>';
+    document.getElementById('qPrintDoc').innerHTML=html;
+    window.print();
   }
 
   function cmClear(){
