@@ -66,8 +66,32 @@
   .cv-bc .open{font:600 12px Inter;color:var(--accent);margin-left:auto;white-space:nowrap}
   .cv-disc{font:400 11.5px/1.5 Inter;color:var(--ink-faint);margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
 
-  /* commute (compact, client-editable) */
-  .cv-commute{display:grid;grid-template-columns:minmax(320px,380px) 1fr;height:calc(100vh - 57px)}
+  /* commute (read-only baked view) */
+  .cv-commute{display:grid;grid-template-columns:minmax(280px,340px) minmax(280px,1fr) minmax(320px,1.15fr);height:calc(100vh - 57px)}
+  .cv-cm-sum{font:500 12.5px/1.5 Inter;color:var(--ink-soft);background:var(--paper-2);border:1px solid var(--line);border-radius:11px;padding:11px 13px;margin-bottom:12px}
+  .cv-cm-sum b{color:var(--ink)}
+  .cv-cm-cur{border:1px dashed var(--line-2);border-radius:11px;padding:11px 13px}
+  .cv-cm-cur .t{font:700 12.5px 'Bricolage Grotesque',sans-serif;color:var(--ink-soft)}
+  .cv-cm-cur .a{font:500 11.5px Inter;color:var(--ink-faint);margin:2px 0 4px}
+  .cv-cm-cur .m{font:600 12px Inter;color:var(--ink-soft)}
+  .cv-cm-bcard{padding:13px 18px;border-bottom:1px solid var(--line);cursor:pointer}
+  .cv-cm-bcard.sel{background:var(--paper-2)}
+  .cv-cm-bcard .r1{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+  .cv-cm-bcard .nm{font:700 14px 'Bricolage Grotesque',sans-serif;color:var(--ink)}
+  .cv-cm-bcard .rk{font:700 11px Inter;color:var(--ink-faint)}
+  .cv-cm-bcard .loc{font:500 11.5px Inter;color:var(--ink-faint);margin-top:1px}
+  .cv-cm-bcard .dl{margin-top:5px}
+  .cv-cm-bcard .big{margin-top:7px;font:500 12px Inter;color:var(--ink-soft)}
+  .cv-cm-bcard .big .v{font:800 17px 'Bricolage Grotesque',sans-serif;margin-right:4px}
+  .cv-cm-delta{display:inline-block;font:600 10.5px Inter;border-radius:6px;padding:2px 8px;background:var(--line);color:var(--ink-soft)}
+  .cv-cm-delta.good{background:rgba(58,140,90,.14);color:#2f7d4e}
+  .cv-cm-delta.bad{background:rgba(194,69,63,.12);color:#b1443c}
+  .cv-cm-emps{margin-top:11px;padding-top:9px;border-top:1px solid var(--line)}
+  .cv-cm-emps .h{font:600 9.5px Inter;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-faint);margin-bottom:6px}
+  .cv-cm-emps .e{display:flex;justify-content:space-between;gap:12px;padding:3px 0;font:500 12.5px Inter}
+  .cv-cm-emps .e .n{color:var(--ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cv-cm-emps .e .m{font:700 12.5px 'JetBrains Mono',monospace;flex:none}
+  .cv-cm-empty{padding:40px 24px;text-align:center;font:500 13px Inter;color:var(--ink-faint)}
   .cv-cm-in{overflow:auto;padding:24px;border-right:1px solid var(--line)}
   .cv-cm-in h1{font:700 22px 'Bricolage Grotesque',sans-serif;color:var(--ink);margin:0 0 6px}
   .cv-cm-in .sub{font:400 12.5px/1.5 Inter;color:var(--ink-soft);margin-bottom:14px}
@@ -283,18 +307,9 @@
     <div class="cv-commute">
       <aside class="cv-cm-in">
         <h1>Your team's commute</h1>
-        <div class="sub">See how each building drives from your team's homes. Add addresses below — they stay in your browser for this session only.</div>
-        <div class="cv-cm-priv">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex:none"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          <span>Addresses are sent only to Google for the lookup, never saved, and gone when you refresh.</span>
-        </div>
-        <label class="fld">Home addresses (one per line)</label>
-        <textarea id="cmvPaste" placeholder="1200 Montana Ave, Santa Monica&#10;90291&#10;456 Rose Ave, Venice"></textarea>
-        <label class="fld">Morning departure</label>
-        <input type="time" id="cmvTime" value="08:30">
-        <button class="cv-cm-btn primary" id="cmvRun">Calculate drive times</button>
-        <button class="cv-cm-btn ghost" id="cmvClear">Clear</button>
-        <div class="cv-cm-note" id="cmvNote"></div>
+        <div class="sub">Drive times your broker calculated for your team across these buildings. Tap any building to see each teammate.</div>
+        <div id="cmvSummary"></div>
+        <div id="cmvCurrent"></div>
       </aside>
       <aside class="cv-cm-res" id="cmvRes"></aside>
       <div class="cv-cm-map"><div id="cmvMap"></div></div>
@@ -362,6 +377,9 @@
     var n=VV.buildings.length;
     document.getElementById('landSub').textContent=n+' building'+(n===1?'':'s')+' selected for you across Santa Monica. Open any one for spaces, rents, the neighborhood, and a walkable-amenity map.';
     document.title='Vantage — prepared for '+(c.name||'you');
+    // only show the Commute tab if the broker baked a read-only analysis into this package
+    var hasCommute=!!(PKG.bakedCommute && PKG.bakedCommute.buildings && PKG.bakedCommute.buildings.length);
+    var cbtn=document.querySelector('#cvNav button[data-v="commute"]'); if(cbtn) cbtn.style.display=hasCommute?'':'none';
     renderLanding(); wireNav();
     track('open');
     setTimeout(function(){ if(landMap) landMap.invalidateSize(); },80);
@@ -489,42 +507,39 @@
     setTimeout(function(){ VV.invalidateMap(); },90);
   }
 
-  // ---- commute (compact, client-driven; baked results shown if present) ----
-  function cmvDepartureISO(){
-    var t=(document.getElementById('cmvTime').value||'08:30').split(':');
-    var d=new Date(); d.setHours(+t[0]||8,+t[1]||30,0,0);
-    if(d.getTime()<Date.now()+60000) d.setDate(d.getDate()+1);
-    var dow=d.getDay(); if(dow===6) d.setDate(d.getDate()+2); else if(dow===0) d.setDate(d.getDate()+1);
-    return d.toISOString();
+  // ---- commute (READ-ONLY: shows the analysis the broker pre-ran; the client cannot run new searches) ----
+  function fmtm(m){ return m!=null?Math.round(m)+'m':'—'; }
+  function empHtml(b){
+    if(!b.perEmp||!b.perEmp.length) return '';
+    return '<div class="cv-cm-emps"><div class="h">Each teammate’s drive here</div>'+
+      b.perEmp.map(function(p){ return '<div class="e"><span class="n">'+esc(p.name||'Team member')+'</span><span class="m" style="color:'+VV.cmColor(p.min)+'">'+(p.min!=null?p.min+'m':'—')+'</span></div>'; }).join('')+'</div>';
   }
-  function note(m){ var n=document.getElementById('cmvNote'); n.textContent=m||''; }
   function renderCommute(){
-    var el=document.getElementById('cmvRes');
-    var dests=VV.dests();
-    if(!cmvRes){
-      // baked (if the broker pre-ran it) or an empty prompt
-      var baked=PKG.bakedCommute&&PKG.bakedCommute.byBuilding;
-      if(baked){
-        el.innerHTML='<div style="padding:14px 18px;border-bottom:1px solid var(--line);font:500 12px Inter;color:var(--ink-soft)">Pre-calculated by your broker <span class="cv-cm-baked">baked</span></div>'+
-          dests.slice().sort(function(a,b){return (baked[a.id]==null?999:baked[a.id])-(baked[b.id]==null?999:baked[b.id]);}).map(function(b){
-            var m=baked[b.id];
-            return rowHtml(b,m);
-          }).join('');
-      } else {
-        el.innerHTML='<div class="cv-cm-empty">Add your team’s home addresses on the left and calculate to see drive times to each building.</div>';
-      }
-      drawCmvMap();
-      return;
+    var bc=PKG.bakedCommute, res=document.getElementById('cmvRes');
+    if(!bc || !bc.buildings || !bc.buildings.length){ if(res) res.innerHTML='<div class="cv-cm-empty">No commute analysis was included with this package.</div>'; return; }
+    var bs=bc.buildings.slice();
+    var sEl=document.getElementById('cmvSummary');
+    if(sEl){
+      var best=bs[0], spread=bs.length>1?Math.round((bs[bs.length-1].median||0)-(best.median||0)):0;
+      var beats=(bc.current&&bc.current.median!=null)?bs.filter(function(b){return b.median!=null&&b.median<bc.current.median;}).length:0;
+      sEl.innerHTML='<div class="cv-cm-sum"><b>'+bc.located+'</b> teammate'+(bc.located>1?'s':'')+' mapped · fastest median <b>'+fmtm(best.median)+'</b> at '+esc(best.name)+
+        (spread>0?(' · up to <b>'+spread+'m</b> faster than the slowest option'):'')+
+        ((bc.current&&bc.current.median!=null)?(' · <b>'+beats+' of '+bs.length+'</b> beat your current office'):'')+'</div>';
     }
-    el.innerHTML=dests.slice().sort(function(a,b){ var ma=cmvRes.stats[a.id].median, mb=cmvRes.stats[b.id].median; return (ma==null?999:ma)-(mb==null?999:mb); }).map(function(b){
-      return rowHtml(b,cmvRes.stats[b.id].median);
+    var cEl=document.getElementById('cmvCurrent');
+    if(cEl) cEl.innerHTML=(bc.current&&bc.current.median!=null)?'<div class="cv-cm-cur"><div class="t">Current office</div><div class="a">'+esc(bc.current.raw)+'</div><div class="m">'+fmtm(bc.current.median)+' median · '+Math.round(bc.current.pct||0)+'% within 30 min</div></div>':'';
+    res.innerHTML=bs.map(function(b,i){
+      var sel=(cmvSel===b.id), delta='';
+      if(bc.current&&bc.current.median!=null&&b.median!=null){ var dm=Math.round(bc.current.median-b.median);
+        delta=dm>0?'<span class="cv-cm-delta good">'+dm+'m faster than current</span>':(dm<0?'<span class="cv-cm-delta bad">'+(-dm)+'m slower than current</span>':''); }
+      return '<div class="cv-cm-bcard'+(sel?' sel':'')+'" data-b="'+esc(b.id)+'">'+
+        '<div class="r1"><span class="nm">'+esc(b.name)+'</span><span class="rk">#'+(i+1)+'</span></div>'+
+        '<div class="loc">'+esc(b.submarket)+'</div>'+(delta?'<div class="dl">'+delta+'</div>':'')+
+        '<div class="big"><span class="v" style="color:'+VV.cmColor(b.median)+'">'+fmtm(b.median)+'</span> median · '+Math.round(b.pct||0)+'% within 30 min</div>'+
+        (sel?empHtml(b):'')+'</div>';
     }).join('');
+    Array.prototype.forEach.call(res.querySelectorAll('.cv-cm-bcard'),function(c){ c.onclick=function(){ var id=c.getAttribute('data-b'); cmvSel=(cmvSel===id)?null:id; renderCommute(); }; });
     drawCmvMap();
-  }
-  function rowHtml(b,min){
-    return '<div class="cv-cm-row"><span class="dot" style="background:'+VV.cmColor(min)+'"></span>'+
-      '<div><div class="nm">'+esc(b.name)+'</div><div class="loc">'+esc(b.submarket)+'</div></div>'+
-      '<div class="big"><div class="v">'+(min!=null?Math.round(min)+'m':'—')+'</div><div class="k">median drive</div></div></div>';
   }
   function drawCmvMap(){
     if(!cmvMap){
@@ -533,46 +548,14 @@
       cmvLayer=L.layerGroup().addTo(cmvMap);
     }
     cmvLayer.clearLayers();
+    var bc=PKG.bakedCommute, byId={}; if(bc&&bc.buildings) bc.buildings.forEach(function(b){ byId[b.id]=b.median; });
     var pts=[];
     VV.dests().forEach(function(b){
       var m=L.marker([b.lat,b.lng],{icon:VV.buildingIcon('')}).addTo(cmvLayer);
-      m.bindPopup('<div class="pop-nm">'+esc(b.name)+'</div><div class="pop-sub">'+esc(b.submarket)+'</div>');
+      m.bindPopup('<div class="pop-nm">'+esc(b.name)+'</div><div class="pop-sub">'+(byId[b.id]!=null?Math.round(byId[b.id])+'m median drive':esc(b.submarket))+'</div>');
       pts.push([b.lat,b.lng]);
     });
-    cmvTeam.forEach(function(t){
-      if(t.lat==null) return;
-      var ic=L.divIcon({className:'',iconSize:[16,16],iconAnchor:[8,8],html:'<div style="width:16px;height:16px;border-radius:50%;background:#55606F;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)"></div>'});
-      var m=L.marker([t.lat,t.lng],{icon:ic}).addTo(cmvLayer);
-      m.bindPopup('<div class="pop-sub">'+esc(t.raw||'Home')+'</div>');
-      pts.push([t.lat,t.lng]);
-    });
     if(pts.length) cmvMap.fitBounds(pts,{padding:[50,50],maxZoom:13});
-  }
-  function cmvRun(){
-    var lines=(document.getElementById('cmvPaste').value||'').split('\n').map(function(s){return s.trim();}).filter(Boolean);
-    if(!lines.length){ note('Add at least one home address.'); return; }
-    if(lines.length>100){ note('Please keep it to 100 homes.'); return; }
-    cmvTeam=lines.map(function(l){return {raw:l,lat:null,lng:null};});
-    var btn=document.getElementById('cmvRun'); btn.disabled=true; btn.textContent='Looking up…'; note('');
-    var iso=cmvDepartureISO();
-    VV.callCommute({action:'geocode',items:lines}).then(function(res){
-      (res.points||[]).forEach(function(p,i){ if(p&&p.ok){cmvTeam[i].lat=p.lat;cmvTeam[i].lng=p.lng;} });
-      var origins=[],idx=[]; cmvTeam.forEach(function(t,i){ if(t.lat!=null){origins.push({lat:t.lat,lng:t.lng});idx.push(i);} });
-      if(!origins.length) throw new Error('None of those addresses could be located.');
-      btn.textContent='Calculating…';
-      return VV.callCommute({action:'matrix',origins:origins,destinations:VV.dests().map(function(d){return {lat:d.lat,lng:d.lng};}),departureTime:iso})
-        .then(function(mx){ return {durations:mx.durations,idx:idx}; });
-    }).then(function(out){
-      var dests=VV.dests(), stats={};
-      dests.forEach(function(b,j){
-        var times=out.durations.map(function(r){return r[j];}).filter(function(v){return v!=null;}).map(function(s){return s/60;});
-        stats[b.id]={median:VV.median(times),n:times.length};
-      });
-      cmvRes={stats:stats};
-      note(out.idx.length+' of '+cmvTeam.length+' homes located.');
-      renderCommute();
-    }).catch(function(e){ note(e.message||String(e)); })
-      .then(function(){ btn.disabled=false; btn.textContent='Calculate drive times'; });
   }
 
   // ---- init ----
@@ -585,8 +568,6 @@
   }
   document.getElementById('gateBtn').addEventListener('click',unlock);
   document.getElementById('gatePass').addEventListener('keydown',function(e){ if(e.key==='Enter') unlock(); });
-  document.getElementById('cmvRun')&&document.getElementById('cmvRun').addEventListener('click',cmvRun);
-  document.getElementById('cmvClear')&&document.getElementById('cmvClear').addEventListener('click',function(){ cmvTeam=[]; cmvRes=null; document.getElementById('cmvPaste').value=''; note(''); renderCommute(); });
 })();
 </script>
 </body>

@@ -373,6 +373,11 @@
         <div class="sh-field"><label>Broker secret <span class="sh-opt">remembered</span></label><input id="shSecret" type="password" placeholder="your BROKER_SECRET"></div>
       </div>
 
+      <div class="sh-field" id="shCommuteWrap" style="display:none">
+        <label class="sh-check"><input type="checkbox" id="shCommute"> Include the team commute analysis <span class="sh-opt" id="shCommuteMeta"></span></label>
+        <div class="sh-subnote">The client sees the drive-time results read-only — they can’t re-run it, so it never adds to your Google cost.</div>
+      </div>
+
       <div class="sh-actions">
         <button class="sh-create" id="shCreate">Create link</button>
         <div class="sh-err" id="shErr"></div>
@@ -1485,7 +1490,8 @@
     var ranked=dest.slice().filter(function(b){return stats[b.id].median!=null;}).sort(function(a,b){return stats[a.id].median-stats[b.id].median;});
     var html='';
     if(ranked.length){
-      html+='<div class="cm-resbar"><button class="cm-pdf" id="cmPdfBtn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Save as PDF</button></div>';
+      html+='<div class="cm-resbar"><button class="cm-pdf" id="cmPdfBtn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Save as PDF</button>'+
+        '<button class="cm-share" id="cmShareBtn">Share with client →</button></div>';
       var bestM=stats[ranked[0].id].median, worstM=stats[ranked[ranked.length-1].id].median;
       var spread=(bestM!=null&&worstM!=null)?Math.round(worstM-bestM):0;
       var beats=cur&&cur.median!=null?ranked.filter(function(b){return stats[b.id].median<cur.median;}).length:0;
@@ -1522,6 +1528,7 @@
     el.innerHTML=html;
     Array.prototype.forEach.call(el.querySelectorAll('.cmbcard'),function(c){ c.onclick=function(){ cmSelect(c.getAttribute('data-b')); }; });
     var pb=document.getElementById('cmPdfBtn'); if(pb) pb.onclick=cmBuildPrintDoc;
+    var sb=document.getElementById('cmShareBtn'); if(sb) sb.onclick=function(){ if(window.openShareWith) window.openShareWith((cmRes.dest||[]).map(function(b){return b.id;})); };
   }
   // branded one-page commute PDF (reuses the questionnaire print container/styles)
   function cmBuildPrintDoc(){
@@ -1821,9 +1828,34 @@
     document.getElementById('shLogo').value='';
     document.getElementById('shPass').value=shSuggestPass();
     document.getElementById('shSecret').value=localStorage.getItem('vantage_broker_secret')||'';
+    shSyncCommute();
     document.getElementById('shModal').classList.add('show');
   };
   function shClose(){ document.getElementById('shModal').classList.remove('show'); }
+  // show/prime the "include commute" toggle when a commute has been run this session
+  function shSyncCommute(){
+    var wrap=document.getElementById('shCommuteWrap'), ck=document.getElementById('shCommute'), meta=document.getElementById('shCommuteMeta');
+    if(!wrap||!ck) return;
+    if(cmRes && cmRes.dest && cmRes.dest.length){
+      wrap.style.display=''; ck.checked=true;
+      if(meta) meta.textContent='· '+cmRes.located+' teammate'+(cmRes.located>1?'s':'')+' · '+cmRes.dest.length+' building'+(cmRes.dest.length>1?'s':'')+(cmRes.current?' + current office':'');
+    } else { wrap.style.display='none'; ck.checked=false; }
+  }
+  // bake the commute results into a portable, read-only object for the client package (names only — no home addresses)
+  function cmBakeForShare(){
+    if(!cmRes) return null;
+    var dest=cmRes.dest, stats=cmRes.stats, destIdx={}; dest.forEach(function(b,j){ destIdx[b.id]=j; });
+    var ranked=dest.slice().filter(function(b){return stats[b.id].median!=null;}).sort(function(a,b){return stats[a.id].median-stats[b.id].median;});
+    function emp(b){ var j=destIdx[b.id];
+      return cmTeam.filter(function(t){return (t.raw||'').trim();}).map(function(t){ var sec=(t.times&&t.times[j]!=null)?t.times[j]:null; return {name:(t.name||'').trim()||'Team member', min:sec!=null?Math.round(sec/60):null}; })
+        .sort(function(a,c){ if(a.min==null)return 1; if(c.min==null)return -1; return a.min-c.min; }); }
+    return {
+      departure: cmRes.iso, located: cmRes.located,
+      buildings: ranked.map(function(b){ var s=stats[b.id]; return {id:b.id, name:b.name, submarket:b.submarket, median:s.median, pct:s.pct, n:s.n, perEmp:emp(b)}; }),
+      current: (cmRes.current && cmRes.current.median!=null) ? {raw:cmRes.current.raw, median:cmRes.current.median, pct:cmRes.current.pct,
+        perEmp:(cmRes.current.perEmp||[]).map(function(p){return {name:(p.name||'').trim()||'Team member', min:p.min!=null?Math.round(p.min):null};})} : null
+    };
+  }
   function shCreate(){
     var ids=Object.keys(shSel);
     var err=document.getElementById('shErr');
@@ -1841,6 +1873,8 @@
       buildings:ids.map(function(id){ return shStripped(BUILDINGS.filter(function(b){return b.id===id;})[0]); }),
       categories:CATEGORIES, industries:IORDER
     };
+    var ck=document.getElementById('shCommute');
+    if(ck && ck.checked && cmRes){ var bc=cmBakeForShare(); if(bc) payload.bakedCommute=bc; }
     var btn=document.getElementById('shCreate'); btn.disabled=true; btn.textContent='Creating…'; err.textContent='';
     fetch('/.netlify/functions/create-package',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
       .then(function(r){ return r.text().then(function(t){ var d=null; try{d=JSON.parse(t);}catch(e){} if(!r.ok) throw new Error((d&&d.error)||('Error '+r.status)); return d; }); })
@@ -2136,6 +2170,7 @@
     document.getElementById('shLogo').value='';
     document.getElementById('shPass').value=shSuggestPass();
     document.getElementById('shSecret').value=localStorage.getItem('vantage_broker_secret')||'';
+    shSyncCommute();
     document.getElementById('shModal').classList.add('show');
   };
 
