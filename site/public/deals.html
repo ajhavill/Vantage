@@ -238,6 +238,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
 <script>
 window.DF = (function(){
   "use strict";
@@ -510,7 +511,7 @@ window.DF = (function(){
       + '<td class="num">'+(ge==null?'—':psf(ge))+'</td>'
       + '<td class="num">'+(r.size_sf==null?'—':Number(r.size_sf).toLocaleString())+'</td>'
       + '<td class="num">'+(r.term_months==null?'—':(r.term_months+'mo'))+'</td>'
-      + '<td>'+esc(r.summary||'')+'<button class="rev" onclick="DF.editRound(\''+r.id+'\',\''+r.deal_id+'\')">'+(r.status==='draft'?'review':'edit')+'</button></td>'
+      + '<td>'+esc(r.summary||'')+'<button class="rev" onclick="DF.editRound(\''+r.id+'\',\''+r.deal_id+'\')">'+(r.draft_text?'view proposal':(r.status==='draft'?'review':'edit'))+'</button></td>'
       + '</tr>';
   }
 
@@ -659,10 +660,11 @@ window.DF = (function(){
     var r; try{ r=(await q(sb.from('proposal_rounds').select('*').eq('id',roundId).limit(1)))[0]; }catch(e){ alert('Could not load the round.'); return; }
     if(!r) return;
     var isDraft=r.status==='draft', hasProse=r.draft_text!=null;
-    var draftSec = hasProse ? fld('Proposal draft'+(r.source==='ai'?' <span class="draftpill">AI</span>':''),'<textarea id="f_draft_text" style="min-height:150px">'+esc(r.draft_text)+'</textarea>') : '';
-    openSheet('<h3>Edit round '+esc(r.round_no)+(isDraft?' <span class="draftpill">draft</span>':'')+'</h3>'
-      + '<div class="ssub">Adjust the terms'+(hasProse?' and proposal wording':'')+(isDraft?', then save — or mark it final to make it a real round you can compare and share.':'.')+'</div>'
-      + draftSec + roundFields(r)
+    var draftSec = hasProse ? fld('Proposal'+(r.source==='ai'?' <span class="draftpill">AI-drafted</span>':''),'<textarea id="f_draft_text" style="min-height:190px">'+esc(r.draft_text)+'</textarea>') : '';
+    var actionBar = hasProse ? '<div style="display:flex;gap:10px;margin:2px 0 14px;flex-wrap:wrap"><button class="btn" type="button" onclick="DF.proposalPdf()">📄 Download as PDF</button><button class="btn" type="button" onclick="DF.copyProposal()">Copy text</button></div>' : '';
+    openSheet('<h3>'+(hasProse?'Proposal — round ':'Edit round ')+esc(r.round_no)+(isDraft?' <span class="draftpill">draft</span>':'')+'</h3>'
+      + '<div class="ssub">'+(hasProse?'Read it, tweak the wording or terms, then download or copy it to send — or mark it final.':('Adjust the terms'+(isDraft?', then save — or mark it final to make it a real round you can compare and share.':'.')))+'</div>'
+      + draftSec + actionBar + roundFields(r)
       + '<div class="formerr" id="f_err"></div>'
       + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button>'
       +   '<button class="btn" id="f_del">Delete</button>'
@@ -689,6 +691,29 @@ window.DF = (function(){
       try{ await q(sb.from('proposal_rounds').delete().eq('id',roundId)); closeSheet(); openDeal(dealId); }
       catch(e){ $('f_err').textContent=e.message; }
     });
+  }
+
+  /* ---------- proposal document export (PDF / copy) ---------- */
+  function downloadProposalPdf(text, title){
+    var w=window.open('', '_blank');
+    if(!w){ alert('Allow pop-ups for this site, then try Download again.'); return; }
+    var bodyHtml = window.marked ? window.marked.parse(text||'') : '<pre style="white-space:pre-wrap;font-family:Georgia,serif">'+esc(text||'')+'</pre>';
+    w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>'+esc(title||'Proposal')+'</title>'
+      + '<style>body{font:13.5px/1.65 Georgia,"Times New Roman",serif;color:#1A2230;max-width:7.4in;margin:0 auto;padding:0.7in 0.25in}'
+      + 'h1,h2,h3{font-family:Helvetica,Arial,sans-serif;color:#1B2A4A;line-height:1.2}h1{font-size:20px;margin:0 0 12px}h2{font-size:15.5px;margin:18px 0 6px}h3{font-size:13px;margin:14px 0 4px}'
+      + 'p{margin:0 0 10px}ul,ol{margin:0 0 10px 18px}li{margin:2px 0}strong{color:#1B2A4A}'
+      + 'table{border-collapse:collapse;width:100%;margin:8px 0}td,th{border:1px solid #D2CCBF;padding:6px 9px;text-align:left;font-size:12.5px}th{background:#F4F1EA}'
+      + '</style></head><body>'+bodyHtml+'</body></html>');
+    w.document.close();
+    setTimeout(function(){ try{ w.focus(); w.print(); }catch(e){} }, 350);
+  }
+  function proposalPdf(){ var el=$('f_draft_text'); downloadProposalPdf(el?el.value:'', 'Proposal'); }
+  function copyProposal(){
+    var el=$('f_draft_text'); var t=el?el.value:'';
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(t).then(function(){ aiToast('Copied — paste it into Word or your email.'); })
+        .catch(function(){ alert('Could not copy automatically — select the text in the box and copy it manually.'); });
+    } else { alert('Copy isn\'t supported in this browser — select the text in the box and copy it manually.'); }
   }
 
   /* ---------- tour stops ---------- */
@@ -1110,7 +1135,7 @@ window.DF = (function(){
   return {
     showPipeline:renderPipeline, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, toggleClosed:toggleClosed,
     newDeal:newDeal, newProperty:newProperty, newProposal:newProposal, newRound:newRound,
-    setStage:setStage, basisChange:basisChange, close:closeSheet,
+    setStage:setStage, basisChange:basisChange, close:closeSheet, proposalPdf:proposalPdf, copyProposal:copyProposal,
     shareDeal:shareDeal, toggleProposalVisible:toggleProposalVisible,
     attachDoc:attachDoc, attachLeaseDoc:attachLeaseDoc, downloadDoc:downloadDoc, deleteDoc:deleteDoc, toggleDocVisible:toggleDocVisible,
     aiDraft:aiDraft, aiPickTmpl:aiPickTmpl, aiDocx:aiDocx, toggleVoice:toggleVoice, editRound:editRound,
