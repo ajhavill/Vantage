@@ -1421,6 +1421,22 @@
     }).catch(function(err){ cmShowError((err&&err.message)?err.message:String(err)); });
   }
 
+  // per-employee drive times to one building (uses the times captured at run time)
+  function cmEmpBreakdown(b, destIdx){
+    var j=destIdx[b.id]; if(j==null) return '';
+    var rows=cmTeam.map(function(t){
+      if(!(t.raw||'').trim()) return null;
+      var sec=(t.times && t.times[j]!=null)?t.times[j]:null;
+      return { name:(t.name||t.raw||'').trim(), min: sec!=null?sec/60:null };
+    }).filter(Boolean);
+    if(!rows.length) return '';
+    rows.sort(function(a,c){ if(a.min==null) return 1; if(c.min==null) return -1; return a.min-c.min; });
+    return '<div class="cm-emps"><div class="cm-emps-h">Each teammate’s drive here</div>'+
+      rows.map(function(r){
+        return '<div class="cm-emp"><span class="nm">'+cmEsc(r.name||'—')+'</span>'+
+          '<span class="mn" style="color:'+cmColor(r.min)+'">'+(r.min!=null?Math.round(r.min)+' min':'—')+'</span></div>';
+      }).join('')+'</div>';
+  }
   function cmRenderResults(){
     var el=document.getElementById('cmResults'); if(!el)return;
     if(!cmRes){
@@ -1437,6 +1453,7 @@
       html+='<div class="cm-winner"><div class="e">Shortest commute for your team</div><div class="nm">'+cmEsc(w.name)+'</div>'+
         '<div class="st">Median <b>'+cmFmt(ws.median)+'</b> · <b>'+Math.round(ws.pct)+'%</b> within 30 min · '+ws.n+' of '+cmRes.located+' located</div></div>';
     }
+    var destIdx={}; dest.forEach(function(b,j){ destIdx[b.id]=j; });
     var order=ranked.concat(dest.filter(function(b){return stats[b.id].median==null;}));
     order.forEach(function(b,i){
       var s=stats[b.id], sel=(b.id===cmSel);
@@ -1445,7 +1462,8 @@
         '<div class="loc">'+cmEsc(b.submarket)+'</div>'+
         '<div class="stats"><div class="stat"><div class="v">'+cmFmt(s.median)+'</div><div class="k">median drive</div></div>'+
         '<div class="stat"><div class="v">'+(s.median!=null?Math.round(s.pct):'—')+'<small>%</small></div><div class="k">within 30 min</div></div></div>'+
-        (s.median!=null?'<div class="pctbar"><span class="fill" style="width:'+Math.round(s.pct)+'%"></span></div>':'')+'</div>';
+        (s.median!=null?'<div class="pctbar"><span class="fill" style="width:'+Math.round(s.pct)+'%"></span></div>':'')+
+        (sel?cmEmpBreakdown(b,destIdx):'')+'</div>';
     });
     if(cmRes.failed) html+='<div class="cm-skip">'+cmRes.failed+' address'+(cmRes.failed>1?'es':'')+' couldn’t be located and were skipped.</div>';
     el.innerHTML=html;

@@ -449,6 +449,11 @@
   .cmbcard .stat .k{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint);margin-top:3px}
   .cmbcard .pctbar{margin-top:9px;height:6px;border-radius:6px;background:var(--line);overflow:hidden}
   .cmbcard .pctbar .fill{height:100%;border-radius:6px;background:var(--fitness)}
+  .cm-emps{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+  .cm-emps-h{font:600 9.5px Inter;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-faint);margin-bottom:6px}
+  .cm-emp{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:3px 0;font:500 12.5px Inter}
+  .cm-emp .nm{color:var(--ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cm-emp .mn{font:700 12.5px 'JetBrains Mono',monospace;flex:none}
   .cm-results-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:88%;text-align:center;color:var(--ink-faint);padding:30px}
   .cm-results-empty svg{opacity:.32;margin-bottom:12px}
   .cm-results-empty h3{font-size:15px;color:var(--ink-soft);margin-bottom:5px}
