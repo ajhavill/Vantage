@@ -105,21 +105,21 @@
   <div class="sliders" id="sliders"><!-- weighted-category sliders rendered from CATEGORIES --></div>
 </div>
 
-<!-- PORTFOLIO VIEW -->
-<section class="portfolio" id="portfolioView">
-  <div class="pf-list">
-    <div class="pf-head">
-      <h1 class="display">Building shortlist</h1>
-      <span class="sub" id="rankNote">ranked by priorities</span>
-    </div>
-    <div class="pf-sub">Office buildings across Santa Monica's submarkets. Move the priority sliders and the ranking re-sorts live.</div>
-    <div id="cards"></div>
-    <div class="disclaimer">
-      <b>What's real:</b> every amenity, rating, and walk distance is pulled from live Google Places and scored consistently across buildings. <b>What's staged:</b> the building stats, available suites, and asking rents are illustrative placeholders standing in for your own pipeline — no CoStar in the loop.
-    </div>
+<!-- PORTFOLIO VIEW (map-first market explorer) -->
+<section class="mkt" id="portfolioView">
+  <div class="mkt-filters" id="mktFilters"></div>
+  <div class="mkt-stats" id="mktStats"></div>
+  <div class="mkt-mapwrap" id="mktMapWrap">
+    <div id="overviewMap"></div>
+    <button class="mkt-expand" id="mktExpand" type="button"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M16 21h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg><span id="mktExpandLbl">Expand map</span></button>
+    <div class="mkt-legend"><span><i style="background:#1D9E75"></i>strong fit</span><span><i style="background:#EF9F27"></i>moderate</span><span><i style="background:#888780"></i>lower</span></div>
   </div>
-  <div class="pf-map"><div id="overviewMap"></div>
-    <div class="maptag"><span><i style="background:var(--building)"></i>Building</span><span>tap a marker to open</span></div>
+  <div class="mkt-results" id="mktResults">
+    <div class="mkt-rhead"><span class="mkt-count" id="mktCount"></span><div class="mkt-sortwrap" id="mktSortWrap"></div></div>
+    <div class="mkt-tablewrap"><table class="mkt-table" id="mktTable"></table></div>
+    <div class="disclaimer">
+      <b>What's real:</b> every amenity, rating, and walk distance is pulled from live Google Places and scored consistently across buildings. <b>What's staged:</b> building stats, available suites, asking rents — and class &amp; height until you add your own — are illustrative placeholders standing in for your pipeline. No CoStar in the loop.
+    </div>
   </div>
 </section>
 
@@ -483,26 +483,154 @@
     client:{coffee:3,dining:5,fitness:2,transit:4}
   };
 
-  // ---- portfolio render ----
-  var cardsEl=document.getElementById('cards');
-  function renderCards(){
-    var ranked=BUILDINGS.slice().sort(function(a,b){return matchScore(b)-matchScore(a);});
-    cardsEl.innerHTML='';
-    ranked.forEach(function(b,i){
-      var ms=matchScore(b);
-      var card=document.createElement('div');
-      card.className='bcard'+(i===0?' top':'');
-      card.onclick=function(){openDetail(b.id)};
-      card.innerHTML=
-        '<div class="rank"><span class="hash">#</span>'+(i+1)+'</div>'+
-        '<div><div class="nm">'+b.name+'</div><div class="loc">'+b.submarket+'</div>'+
-          '<div class="bars">'+weightedCats().map(function(c){return bar(c.key,b);}).join('')+'</div>'+
-          '<div class="meta2">Avail <b>'+b.avail+' SF</b> · '+b.rent+'</div>'+
-        '</div>'+
-        '<div class="match"><div class="n">'+ms+'</div><div class="l">match</div><div class="open">Open →</div></div>';
-      cardsEl.appendChild(card);
+  // ============ MARKET EXPLORER (map-first; filter + sort all buildings) ============
+  var mkt={ subs:{}, classes:{}, heights:{}, sizeMin:null, sizeMax:null, rentMin:null, rentMax:null, sort:'match' };
+  function mktCnt(o){ return Object.keys(o).length; }
+  function mktToggle(o,k){ if(o[k]) delete o[k]; else o[k]=true; }
+  function numOrNull(v){ v=parseFloat(v); return isNaN(v)?null:v; }
+  function bHash(b){ var s=String(b.id||b.name||''),h=0; for(var i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0; return h; }
+  function bAvailSF(b){ var m=String(b.avail||'').replace(/[^0-9]/g,''); return m?parseInt(m,10):0; }
+  function bRentNums(b){ return (String(b.rent||'').match(/[\d.]+/g)||[]).map(parseFloat).filter(function(n){return !isNaN(n)&&n<100;}); }
+  function bRentLow(b){ var n=bRentNums(b); return n.length?Math.min.apply(null,n):null; }
+  function bRentHigh(b){ var n=bRentNums(b); return n.length?Math.max.apply(null,n):null; }
+  // class & height: use real data when present (b.class / b.height); otherwise a stable placeholder until listings land
+  function bClass(b){ if(b.class) return String(b.class).trim().toUpperCase().slice(0,1);
+    var r=bRentHigh(b), base; if(r!=null){ base=r>=5.6?'A':r>=4.7?'B':r>=3.8?'C':'D'; } else base=['A','B','B','C'][bHash(b)%4];
+    if(bHash(b)%6===0) base={A:'B',B:'C',C:'D',D:'D'}[base]; return base; }
+  function bHeight(b){ if(b.height){ var s=String(b.height).toLowerCase(); return s.indexOf('high')>-1?'high':s.indexOf('mid')>-1?'mid':'low'; }
+    return ['high','mid','low','mid'][bHash(b)%4]; }
+  function bHeightLabel(x){ return x==='high'?'High-rise':x==='mid'?'Mid-rise':'Low-rise'; }
+  function mktSubmarkets(){ var s={}; BUILDINGS.forEach(function(b){ if(b.submarket) s[b.submarket]=1; }); return Object.keys(s).sort(); }
+  function fmtSF(n){ return n>=1000000?(n/1000000).toFixed(1)+'M':n>=1000?Math.round(n/1000)+'k':String(n); }
+
+  function mktPass(b){
+    if(mktCnt(mkt.subs) && !mkt.subs[b.submarket]) return false;
+    if(mktCnt(mkt.classes) && !mkt.classes[bClass(b)]) return false;
+    if(mktCnt(mkt.heights) && !mkt.heights[bHeight(b)]) return false;
+    var sf=bAvailSF(b);
+    if(mkt.sizeMin!=null && sf<mkt.sizeMin) return false;
+    if(mkt.sizeMax!=null && sf>mkt.sizeMax) return false;
+    var rl=bRentLow(b), rh=bRentHigh(b);
+    if(mkt.rentMin!=null && (rh==null || rh<mkt.rentMin)) return false;
+    if(mkt.rentMax!=null && (rl==null || rl>mkt.rentMax)) return false;
+    return true;
+  }
+  function mktListed(){
+    var arr=BUILDINGS.filter(mktPass);
+    arr.sort(function(a,b){
+      switch(mkt.sort){
+        case 'rent_asc': return (bRentLow(a)==null?1e9:bRentLow(a))-(bRentLow(b)==null?1e9:bRentLow(b));
+        case 'rent_desc': return (bRentHigh(b)||0)-(bRentHigh(a)||0);
+        case 'size_desc': return bAvailSF(b)-bAvailSF(a);
+        case 'name': return a.name<b.name?-1:a.name>b.name?1:0;
+        default: return matchScore(b)-matchScore(a);
+      }
     });
-    syncOverview(ranked);
+    return arr;
+  }
+  function mktTier(ms){ return ms>=60?'#1D9E75':ms>=45?'#EF9F27':'#888780'; }
+
+  function renderCards(){ renderMarket(false); } // legacy callers (priority sliders/presets) re-rank the market
+  function renderMarket(fit){
+    if(!document.getElementById('mktTable')) return;
+    var list=mktListed();
+    renderMktStats(list); renderMktTable(list); syncMarketMap(list, !!fit);
+    var total=BUILDINGS.length, c=document.getElementById('crumb');
+    if(c) c.innerHTML=(list.length<total?('<b>'+list.length+'</b> of '+total):('<b>'+total+'</b>'))+' buildings';
+    var cnt=document.getElementById('mktCount'); if(cnt) cnt.textContent=list.length+' result'+(list.length!==1?'s':'');
+  }
+  function renderMktStats(list){
+    var rents=list.map(bRentLow).filter(function(v){return v!=null;});
+    var avgRent=rents.length?(rents.reduce(function(a,b){return a+b;},0)/rents.length):null;
+    var sf=list.reduce(function(a,b){return a+bAvailSF(b);},0);
+    var ms=list.map(matchScore), avgM=ms.length?Math.round(ms.reduce(function(a,b){return a+b;},0)/ms.length):0;
+    function card(l,v){ return '<div class="mkt-stat"><div class="l">'+l+'</div><div class="v">'+v+'</div></div>'; }
+    document.getElementById('mktStats').innerHTML=card('Buildings',list.length)+card('Avg rent',avgRent!=null?('$'+avgRent.toFixed(2)):'—')+card('Avail SF',fmtSF(sf))+card('Avg match',avgM);
+  }
+  function renderMktTable(list){
+    var t=document.getElementById('mktTable'); if(!t) return;
+    if(!list.length){ t.innerHTML='<tbody><tr><td class="mkt-empty">No buildings match these filters. <button class="mkt-clearlink" id="mktClear2" type="button">Clear filters</button></td></tr></tbody>'; var c2=document.getElementById('mktClear2'); if(c2) c2.onclick=mktClearFilters; return; }
+    var head='<thead><tr><th class="r">Match</th><th>Building</th><th>Class</th><th>Height</th><th class="r">Avail SF</th><th class="r">Rent FS</th><th></th></tr></thead>';
+    var rows=list.map(function(b){ var ms=matchScore(b);
+      return '<tr data-b="'+b.id+'"><td class="r"><span class="mkt-msc" style="color:'+mktTier(ms)+'">'+ms+'</span></td>'+
+        '<td><div class="mkt-bn">'+cmEsc(b.name)+'</div><div class="mkt-bs">'+cmEsc(b.submarket)+'</div></td>'+
+        '<td><span class="mkt-cl mkt-cl-'+bClass(b)+'">'+bClass(b)+'</span></td>'+
+        '<td class="mkt-ht">'+bHeightLabel(bHeight(b))+'</td>'+
+        '<td class="r">'+(bAvailSF(b)?bAvailSF(b).toLocaleString():'—')+'</td>'+
+        '<td class="r">'+cmEsc(b.rent||'—')+'</td>'+
+        '<td class="r"><span class="mkt-open">Open →</span></td></tr>';
+    }).join('');
+    t.innerHTML=head+'<tbody>'+rows+'</tbody>';
+    Array.prototype.forEach.call(t.querySelectorAll('tbody tr[data-b]'),function(tr){ tr.onclick=function(){ openDetail(tr.getAttribute('data-b')); }; });
+  }
+  var mktCluster=null;
+  function mktMarkerIcon(b){ return L.divIcon({className:'',iconSize:[18,18],iconAnchor:[9,9],html:'<div style="width:16px;height:16px;border-radius:50%;background:'+mktTier(matchScore(b))+';border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)"></div>'}); }
+  function syncMarketMap(list, fit){
+    if(!overviewMap) return;
+    if(!mktCluster){ mktCluster=L.markerClusterGroup({iconCreateFunction:clusterIcon,maxClusterRadius:46,showCoverageOnHover:false,chunkedLoading:true}); overviewMap.addLayer(mktCluster); }
+    mktCluster.clearLayers();
+    var grp=[];
+    list.forEach(function(b){
+      var m=L.marker([b.lat,b.lng],{icon:mktMarkerIcon(b)});
+      m.bindPopup('<div class="pop-nm">'+cmEsc(b.name)+'</div><div class="pop-sub">'+cmEsc(b.submarket)+' · Class '+bClass(b)+' · '+cmEsc(b.rent||'')+'</div>');
+      m.on('popupopen',function(e){ var el=e.popup.getElement().querySelector('.leaflet-popup-content'); var a=document.createElement('button'); a.textContent='Open building →'; a.style.cssText='margin-top:7px;font:600 12px Inter;color:#2D6E7E;background:none;border:0;cursor:pointer;padding:0'; a.onclick=function(){openDetail(b.id)}; el.appendChild(a); });
+      mktCluster.addLayer(m); grp.push([b.lat,b.lng]);
+    });
+    if(fit && grp.length){ try{ overviewMap.fitBounds(grp,{padding:[40,40],maxZoom:15}); }catch(e){} }
+  }
+  // ---- filter bar ----
+  function renderMktFilters(){
+    var el=document.getElementById('mktFilters'); if(!el) return;
+    var subs=mktSubmarkets();
+    var caret='<svg class="mf-caret" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="6 9 12 15 18 9"/></svg>';
+    el.innerHTML=
+      '<div class="mf-pop"><button class="mf-btn" id="mfSubBtn" type="button">Submarket<span id="mfSubCount">'+(mktCnt(mkt.subs)?' ('+mktCnt(mkt.subs)+')':'')+'</span>'+caret+'</button>'+
+        '<div class="mf-panel" id="mfSubPanel">'+(subs.length?subs.map(function(s){return '<label class="mf-check"><input type="checkbox" data-sub="'+cmEsc(s)+'"'+(mkt.subs[s]?' checked':'')+'><span>'+cmEsc(s)+'</span></label>';}).join(''):'<div class="mf-none">No submarkets yet.</div>')+'</div></div>'+
+      '<div class="mf-grp"><span class="mf-lbl">Class</span>'+['A','B','C','D'].map(function(c){return '<button class="mf-chip'+(mkt.classes[c]?' on':'')+'" data-class="'+c+'" type="button">'+c+'</button>';}).join('')+'</div>'+
+      '<div class="mf-grp"><span class="mf-lbl">Height</span>'+[['high','High'],['mid','Mid'],['low','Low']].map(function(h){return '<button class="mf-chip'+(mkt.heights[h[0]]?' on':'')+'" data-height="'+h[0]+'" type="button">'+h[1]+'</button>';}).join('')+'</div>'+
+      '<div class="mf-grp"><span class="mf-lbl">Avail SF</span><input class="mf-num" id="mfSizeMin" type="number" inputmode="numeric" placeholder="min" value="'+(mkt.sizeMin!=null?mkt.sizeMin:'')+'"><span class="mf-dash">–</span><input class="mf-num" id="mfSizeMax" type="number" inputmode="numeric" placeholder="max" value="'+(mkt.sizeMax!=null?mkt.sizeMax:'')+'"></div>'+
+      '<div class="mf-grp"><span class="mf-lbl">Rent $</span><input class="mf-num sm" id="mfRentMin" type="number" step="0.25" placeholder="min" value="'+(mkt.rentMin!=null?mkt.rentMin:'')+'"><span class="mf-dash">–</span><input class="mf-num sm" id="mfRentMax" type="number" step="0.25" placeholder="max" value="'+(mkt.rentMax!=null?mkt.rentMax:'')+'"></div>'+
+      '<button class="mf-btn" id="mfPrio" type="button">Priorities</button>'+
+      '<button class="mf-clear" id="mfClear" type="button">Clear all</button>';
+  }
+  function updateSubCount(){ var s=document.getElementById('mfSubCount'); if(s) s.textContent=mktCnt(mkt.subs)?(' ('+mktCnt(mkt.subs)+')'):''; }
+  function wireMktFilters(){
+    var el=document.getElementById('mktFilters'); if(!el || el._wired) return; el._wired=true;
+    el.addEventListener('click',function(e){
+      var chip=e.target.closest('.mf-chip');
+      if(chip){ if(chip.dataset.class) mktToggle(mkt.classes,chip.dataset.class); else if(chip.dataset.height) mktToggle(mkt.heights,chip.dataset.height); chip.classList.toggle('on'); renderMarket(true); return; }
+      if(e.target.closest('#mfSubBtn')){ var p=document.getElementById('mfSubPanel'); if(p) p.classList.toggle('open'); return; }
+      if(e.target.closest('#mfPrio')){ mktTogglePriorities(); return; }
+      if(e.target.closest('#mfClear')){ mktClearFilters(); return; }
+    });
+    el.addEventListener('change',function(e){
+      var cb=e.target.closest('input[data-sub]'); if(!cb) return;
+      if(cb.checked) mkt.subs[cb.dataset.sub]=true; else delete mkt.subs[cb.dataset.sub];
+      updateSubCount(); renderMarket(true);
+    });
+    el.addEventListener('input',function(e){
+      var id=e.target.id;
+      if(id==='mfSizeMin') mkt.sizeMin=numOrNull(e.target.value);
+      else if(id==='mfSizeMax') mkt.sizeMax=numOrNull(e.target.value);
+      else if(id==='mfRentMin') mkt.rentMin=numOrNull(e.target.value);
+      else if(id==='mfRentMax') mkt.rentMax=numOrNull(e.target.value);
+      else return;
+      renderMarket(false);
+    });
+    document.addEventListener('click',function(e){ var p=document.getElementById('mfSubPanel'); if(p && p.classList.contains('open') && !e.target.closest('.mf-pop')) p.classList.remove('open'); });
+  }
+  function mktClearFilters(){ mkt.subs={};mkt.classes={};mkt.heights={};mkt.sizeMin=null;mkt.sizeMax=null;mkt.rentMin=null;mkt.rentMax=null; renderMktFilters(); renderMarket(true); }
+  function mktTogglePriorities(){ var p=document.getElementById('priobar'); if(!p) return; p.style.display=(p.style.display==='none'||!p.style.display)?'':'none'; }
+  function renderMktSort(){
+    var w=document.getElementById('mktSortWrap'); if(!w) return;
+    w.innerHTML='<label class="mkt-sortlbl" for="mktSort">Sort</label><select id="mktSort" class="mkt-sortsel"><option value="match">Best match</option><option value="rent_asc">Rent: low to high</option><option value="rent_desc">Rent: high to low</option><option value="size_desc">Largest available</option><option value="name">Name A–Z</option></select>';
+    var s=document.getElementById('mktSort'); s.value=mkt.sort; s.onchange=function(){ mkt.sort=this.value; renderMarket(false); };
+  }
+  function mktToggleExpand(){
+    var v=document.getElementById('portfolioView'); v.classList.toggle('map-full');
+    var full=v.classList.contains('map-full');
+    var lbl=document.getElementById('mktExpandLbl'); if(lbl) lbl.textContent=full?'Show list':'Expand map';
+    setTimeout(function(){ if(overviewMap) overviewMap.invalidateSize(); },210);
   }
   function bar(cat,b){
     var s=b.cscore[cat], pct=Math.round(s*10);
@@ -522,10 +650,15 @@
   function buildingIcon(rank){
     return L.divIcon({className:'',html:'<div style="width:30px;height:30px;border-radius:50%;background:'+COLOR.building+';color:#fff;display:flex;align-items:center;justify-content:center;font:700 14px Bricolage Grotesque,sans-serif;box-shadow:0 2px 6px rgba(0,0,0,.3);border:2px solid #fff">'+(rank||'')+'</div>',iconSize:[30,30],iconAnchor:[15,15]});
   }
+  function initMarketControls(){
+    renderMktFilters(); wireMktFilters(); renderMktSort();
+    var ex=document.getElementById('mktExpand'); if(ex) ex.onclick=mktToggleExpand;
+  }
   function initOverview(){
     overviewMap=L.map('overviewMap',{zoomControl:true,scrollWheelZoom:true,attributionControl:true}).setView([34.022,-118.472],13);
     L.tileLayer(TILE,{attribution:ATTR,subdomains:'abcd',maxZoom:20}).addTo(overviewMap);
-    renderCards();
+    initMarketControls();
+    renderMarket(true);
   }
   function syncOverview(ranked){
     if(!overviewMap)return;
@@ -1140,9 +1273,8 @@
     closeSV();
     document.getElementById('detailView').classList.remove('show');
     document.getElementById('competitionView').classList.remove('show');
-    document.getElementById('portfolioView').style.display='grid';
-    setNav('portfolio'); setPriobar(true);
-    document.getElementById('crumb').innerHTML='Santa Monica · <b>'+BUILDINGS.length+' buildings</b>';
+    document.getElementById('portfolioView').style.display='block';
+    setNav('portfolio'); setPriobar(false);
     setTimeout(function(){if(overviewMap)overviewMap.invalidateSize();},60);
   };
 
@@ -1691,7 +1823,7 @@
     renderSliders();
     document.getElementById('crumb').innerHTML='Santa Monica · <b>'+BUILDINGS.length+' buildings</b>';
     if(window.L){ initOverview(); }
-    else{ document.getElementById('overviewMap').innerHTML='<div style="padding:20px;font:13px Inter;color:#8A93A0">Map library could not load. Serve this over http (Netlify or a local server) with internet access.</div>'; renderCards(); }
+    else{ document.getElementById('overviewMap').innerHTML='<div style="padding:20px;font:13px Inter;color:#8A93A0">Map library could not load. Serve this over http (Netlify or a local server) with internet access.</div>'; initMarketControls(); renderMarket(false); }
     if(window.showModule) showModule(initialModule());
   }
   // ============ PORTAL NAVIGATION (sidebar modules) ============
@@ -1713,7 +1845,7 @@
     if(m==='home') renderHome();
     else if(m==='clients') renderClients();
     else if(m==='settings') renderSettings();
-    else if(m==='market'){ setTimeout(function(){ try{ if(overviewMap) overviewMap.invalidateSize(); if(detailMap) detailMap.invalidateSize(); }catch(e){} },60); }
+    else if(m==='market'){ var dv=document.getElementById('detailView'); if((!dv||!dv.classList.contains('show')) && !document.getElementById('competitionView').classList.contains('show') && !document.getElementById('commuteView').classList.contains('show')){ if(window.showPortfolio) showPortfolio(); } setTimeout(function(){ try{ if(overviewMap) overviewMap.invalidateSize(); if(detailMap) detailMap.invalidateSize(); }catch(e){} },60); }
     if(m!=='market'){ var d=document.getElementById('detailView'); if(d) d.classList.remove('show'); }
   };
   var MAIL_IC='<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>';
