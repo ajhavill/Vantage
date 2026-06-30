@@ -662,7 +662,11 @@ window.DF = (function(){
   async function editRound(roundId, dealId){
     var r; try{ r=(await q(sb.from('proposal_rounds').select('*').eq('id',roundId).limit(1)))[0]; }catch(e){ alert('Could not load the round.'); return; }
     if(!r) return;
-    _curRound={r:r, dealId:dealId};
+    _curRound={r:r, dealId:dealId, building:'', address:''};
+    try{
+      var prx=(await q(sb.from('proposals').select('title,property_id').eq('id',r.proposal_id).limit(1)))[0];
+      if(prx){ _curRound.building=prx.title||''; if(prx.property_id){ var px=(await q(sb.from('deal_properties').select('name,address').eq('id',prx.property_id).limit(1)))[0]; if(px){ if(px.name) _curRound.building=px.name; _curRound.address=px.address||''; } } }
+    }catch(e){}
     var isDraft=r.status==='draft', hasProse=r.draft_text!=null;
     var draftSec = hasProse ? fld('Proposal'+(r.source==='ai'?' <span class="draftpill">AI-drafted</span>':''),'<textarea id="f_draft_text" style="min-height:190px">'+esc(r.draft_text)+'</textarea>') : '';
     var actionBar = hasProse ? '<div style="display:flex;gap:10px;margin:2px 0 6px;flex-wrap:wrap">'
@@ -717,7 +721,16 @@ window.DF = (function(){
     w.document.close();
     setTimeout(function(){ try{ w.focus(); w.print(); }catch(e){} }, 350);
   }
-  function proposalPdf(){ var el=$('f_draft_text'); downloadProposalPdf(el?el.value:'', 'Proposal'); }
+  function safeName(s){ return (s||'').replace(/[\\/:*?"<>|\n\r\t]/g,' ').replace(/\s+/g,' ').trim(); }
+  function todayStamp(){ var dt=new Date(); return dt.getFullYear()+'-'+('0'+(dt.getMonth()+1)).slice(-2)+'-'+('0'+dt.getDate()).slice(-2); }
+  function proposalFilename(){
+    var d=_curRound?deals.filter(function(x){return x.id===_curRound.dealId;})[0]:null;
+    var client=safeName((d&&d.client_name)||'')||'Proposal';
+    var addr=safeName((_curRound&&(_curRound.address||_curRound.building))||'');
+    var parts=[client+' Proposal']; if(addr) parts.push(addr); parts.push(todayStamp());
+    return safeName(parts.join(' - '));
+  }
+  function proposalPdf(){ var el=$('f_draft_text'); downloadProposalPdf(el?el.value:'', proposalFilename()); }
   function downloadProposalDocx(text, filename){
     if(!window.htmlDocx){ alert('The Word exporter is still loading — give it a second and try again.'); return; }
     var inner = window.marked ? window.marked.parse(text||'') : '<pre>'+esc(text||'')+'</pre>';
@@ -731,10 +744,11 @@ window.DF = (function(){
       var url=URL.createObjectURL(blob);
       var a=document.createElement('a'); a.href=url; a.download=(filename||'Proposal')+'.docx';
       document.body.appendChild(a); a.click();
+      aiToast('Saved “'+(filename||'Proposal')+'.docx” to your Downloads.');
       setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
     }catch(e){ alert('Could not build the Word file: '+(e.message||e)); }
   }
-  function proposalDocx(){ var el=$('f_draft_text'); downloadProposalDocx(el?el.value:'', 'Proposal'); }
+  function proposalDocx(){ var el=$('f_draft_text'); downloadProposalDocx(el?el.value:'', proposalFilename()); }
 
   /* ---- firm letterhead (.docx template merge via docxtemplater) ---- */
   function getLetterhead(){
@@ -796,6 +810,7 @@ window.DF = (function(){
       var url=URL.createObjectURL(out);
       var a=document.createElement('a'); a.href=url; a.download=(filename||'Proposal')+'.docx';
       document.body.appendChild(a); a.click();
+      aiToast('Saved “'+(filename||'Proposal')+'.docx” to your Downloads.');
       setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
     }catch(e){
       var msg=e.message||(''+e);
@@ -806,15 +821,10 @@ window.DF = (function(){
   async function proposalTemplateDl(){
     if(!_curRound) return;
     var r=_curRound.r, dealId=_curRound.dealId, d=deals.filter(function(x){return x.id===dealId;})[0];
-    var bldg='';
-    try{
-      var pr=(await q(sb.from('proposals').select('title,property_id').eq('id',r.proposal_id).limit(1)))[0];
-      if(pr){ bldg=pr.title||''; if(pr.property_id){ var p=(await q(sb.from('deal_properties').select('name').eq('id',pr.property_id).limit(1)))[0]; if(p&&p.name) bldg=p.name; } }
-    }catch(e){}
-    var bodyEl=$('f_draft_text'), data=buildMergeData(r, d, bldg, bodyEl?bodyEl.value:r.draft_text);
+    var bodyEl=$('f_draft_text'), data=buildMergeData(r, d, _curRound.building, bodyEl?bodyEl.value:r.draft_text);
     var ab=getLetterhead();
     if(!ab){ aiToast('Pick your firm\'s Word letterhead (.docx) — I\'ll remember it for next time.'); ab=await pickLetterhead(); if(!ab) return; }
-    fillTemplateDocx(ab, data, 'Proposal - '+((d&&d.client_name)||'deal'));
+    fillTemplateDocx(ab, data, proposalFilename());
   }
   function copyProposal(){
     var el=$('f_draft_text'); var t=el?el.value:'';
