@@ -94,14 +94,14 @@ async function dealContext(dealId, userId) {
 }
 
 async function pipelineContext(userId) {
-  const dr = await sb.rest("deals?owner_id=eq." + userId + "&select=client_name,stage,commission_amount,commission_pct,commission_status&order=created_at.desc");
+  const dr = await sb.rest("deals?owner_id=eq." + userId + "&select=id,client_name,stage,commission_amount,commission_pct,commission_status&order=created_at.desc");
   const deals = arr(dr);
   const tr = await sb.rest("deal_tasks?owner_id=eq." + userId + "&done=is.false&select=title,due_date");
   const tasks = arr(tr);
   const active = deals.filter((d) => d.stage !== "dead" && d.stage !== "executed");
   let t = "BROKER PIPELINE OVERVIEW\n";
   t += "Active deals: " + active.length + " (of " + deals.length + " total)\n";
-  if (deals.length) t += "\nDEALS:\n" + deals.map((d) => "  - " + (d.client_name || "(unnamed)") + " — stage " + d.stage +
+  if (deals.length) t += "\nDEALS:\n" + deals.map((d) => "  - [deal_id:" + d.id + "] " + (d.client_name || "(unnamed)") + " — stage " + d.stage +
     (d.commission_amount != null ? (", commission " + money(d.commission_amount)) : "") + (d.commission_status ? (" [" + d.commission_status + "]") : "")).join("\n") + "\n";
   if (tasks.length) t += "\nOPEN TASKS: " + tasks.map((x) => x.title + (x.due_date ? (" (due " + x.due_date + ")") : "")).join("; ") + "\n";
   return { label: "your pipeline", text: t };
@@ -116,13 +116,13 @@ const SYSTEM =
 
 const ALLOWED = ["add_task", "complete_task", "set_step_status", "set_stage", "update_commission", "add_round"];
 const ACTIONS_DOC =
-  "\n\nACTIONS — you can take actions for the broker, but they CONFIRM each one before it runs, so propose freely when asked. " +
-  "When the broker asks you to do something below, write your normal reply, THEN append an actions block on its own lines, exactly:\n" +
+  "\n\nACTIONS — you CAN take actions for the broker (you are not just an advisor). They CONFIRM each one before it runs, so propose freely when asked. " +
+  "When the broker asks you to do one of the things below, write a brief natural reply, THEN append an actions block on its own lines, exactly:\n" +
   "<<ACTIONS>>\n[{\"type\":\"...\",\"label\":\"...\",\"params\":{...}}]\n<<END>>\n" +
-  "'label' is the short confirmation the broker sees (e.g. 'Add task: Call the landlord (due Jul 3)'). Only propose an action the broker clearly asked for or agreed to. Omit the block entirely when no action is needed. Never wrap the block in code fences. " +
-  "All actions apply to the CURRENT deal in context; if there is no deal in context, tell the broker to open the deal first instead of proposing the action. Never invent an id — only use task_id/step_id/proposal_id values shown in the context.\n" +
+  "'label' is the short confirmation the broker sees (e.g. 'Add task: Call Savannah (due Jul 1)'). Only propose an action the broker clearly asked for or agreed to. Omit the block entirely when no action is needed. Never wrap the block in code fences. Never invent an id — only use task_id/step_id/proposal_id/deal_id values shown in the context.\n" +
+  "add_task works ANY time, even with no deal open — it creates a to-do for the broker. If the task clearly relates to a deal in the context, set params.deal_id to that deal's deal_id to link it; otherwise leave it off. The OTHER actions each need a specific deal open in context; if none is open, ask the broker to open that deal first.\n" +
   "Allowed actions:\n" +
-  "- add_task: params {title (required), due_date 'YYYY-MM-DD' (optional), priority 'low'|'normal'|'high' (optional)}\n" +
+  "- add_task: params {title (required), due_date 'YYYY-MM-DD' (optional), priority 'low'|'normal'|'high' (optional), deal_id (optional — a deal_id from context)}\n" +
   "- complete_task: params {task_id}\n" +
   "- set_step_status: params {step_id, status 'done'|'active'|'pending'|'na'}  (use 'done' to check a step off)\n" +
   "- set_stage: params {stage 'needs'|'touring'|'evaluating'|'proposals'|'negotiation'|'executed'|'dead'}\n" +
@@ -168,8 +168,9 @@ exports.handler = async (event) => {
     ? body.history.filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string").slice(-6)
     : [];
   const messages = history.concat([{ role: "user", content: question }]);
-  const canAct = !!body.dealId;   // actions are deal-scoped
-  const system = SYSTEM + (canAct ? ACTIONS_DOC : "") + "\n\nCURRENT CONTEXT (" + (ctx.label || "") + "):\n" + (ctx.text || "(none)");
+  const today = new Date().toISOString().slice(0, 10);
+  const system = SYSTEM + ACTIONS_DOC + "\n\nToday's date is " + today + " (UTC) — use it to resolve 'tomorrow', 'Friday', 'next week', etc. into YYYY-MM-DD." +
+    "\n\nCURRENT CONTEXT (" + (ctx.label || "") + "):\n" + (ctx.text || "(none)");
 
   try {
     const raw = await callClaude(system, messages);

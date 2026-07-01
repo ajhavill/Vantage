@@ -40,22 +40,28 @@ exports.handler = async (event) => {
   const action = body.action || {};
   const type = action.type;
   const p = action.params || {};
-  if (!dealId) return okJSON({ error: "Open a deal first — that action needs a deal in context." });
 
-  const deal = await ownsDeal(dealId, user);
-  if (!deal) return okJSON({ error: "You don't have access to that deal." });
+  // Resolve the deal this action targets: the open deal, or (for add_task) a deal linked via params.
+  const targetDeal = dealId || String((p && p.deal_id) || "");
+  if (type !== "add_task" && !targetDeal) return okJSON({ error: "Open a deal first — that action needs a specific deal." });
+
+  let deal = null;
+  if (targetDeal) {
+    deal = await ownsDeal(targetDeal, user);
+    if (!deal) return okJSON({ error: "You don't have access to that deal." });
+  }
 
   try {
     if (type === "add_task") {
       if (!p.title) return okJSON({ error: "The task needs a title." });
-      const row = { owner_id: user.id, deal_id: dealId, title: String(p.title).slice(0, 300), due_date: p.due_date || null, priority: PRIS.indexOf(p.priority) >= 0 ? p.priority : "normal" };
+      const row = { owner_id: user.id, deal_id: deal ? deal.id : null, title: String(p.title).slice(0, 300), due_date: p.due_date || null, priority: PRIS.indexOf(p.priority) >= 0 ? p.priority : "normal" };
       await sb.rest("deal_tasks", { method: "POST", headers: WHDR, body: JSON.stringify(row) });
       return okJSON({ message: "Added task: " + row.title + (row.due_date ? (" (due " + row.due_date + ")") : "") });
     }
 
     if (type === "complete_task") {
       const id = String(p.task_id || "");
-      const chk = await sb.rest("deal_tasks?id=eq." + encodeURIComponent(id) + "&deal_id=eq." + dealId + "&select=id,title&limit=1");
+      const chk = await sb.rest("deal_tasks?id=eq." + encodeURIComponent(id) + "&deal_id=eq." + deal.id + "&select=id,title&limit=1");
       const row = chk.data && chk.data[0];
       if (!row) return okJSON({ error: "Couldn't find that task on this deal." });
       await sb.rest("deal_tasks?id=eq." + encodeURIComponent(id), { method: "PATCH", headers: WHDR, body: JSON.stringify({ done: true, completed_at: new Date().toISOString() }) });
@@ -65,7 +71,7 @@ exports.handler = async (event) => {
     if (type === "set_step_status") {
       const id = String(p.step_id || "");
       const st = STEP_ST.indexOf(p.status) >= 0 ? p.status : "done";
-      const chk = await sb.rest("deal_steps?id=eq." + encodeURIComponent(id) + "&deal_id=eq." + dealId + "&select=id,label&limit=1");
+      const chk = await sb.rest("deal_steps?id=eq." + encodeURIComponent(id) + "&deal_id=eq." + deal.id + "&select=id,label&limit=1");
       const row = chk.data && chk.data[0];
       if (!row) return okJSON({ error: "Couldn't find that checklist step on this deal." });
       await sb.rest("deal_steps?id=eq." + encodeURIComponent(id), { method: "PATCH", headers: WHDR, body: JSON.stringify({ status: st, completed_at: st === "done" ? new Date().toISOString() : null }) });
@@ -74,7 +80,7 @@ exports.handler = async (event) => {
 
     if (type === "set_stage") {
       if (STAGES.indexOf(p.stage) < 0) return okJSON({ error: "Unknown stage." });
-      await sb.rest("deals?id=eq." + dealId, { method: "PATCH", headers: WHDR, body: JSON.stringify({ stage: p.stage, updated_at: new Date().toISOString() }) });
+      await sb.rest("deals?id=eq." + deal.id, { method: "PATCH", headers: WHDR, body: JSON.stringify({ stage: p.stage, updated_at: new Date().toISOString() }) });
       return okJSON({ message: "Moved the deal to “" + p.stage + "”." });
     }
 
@@ -88,20 +94,20 @@ exports.handler = async (event) => {
         if (p.commission_status === "paid") patch.commission_paid_on = today();
       }
       if (!Object.keys(patch).length) return okJSON({ error: "Nothing to update on the commission." });
-      await sb.rest("deals?id=eq." + dealId, { method: "PATCH", headers: WHDR, body: JSON.stringify(patch) });
+      await sb.rest("deals?id=eq." + deal.id, { method: "PATCH", headers: WHDR, body: JSON.stringify(patch) });
       return okJSON({ message: "Updated the commission." });
     }
 
     if (type === "add_round") {
       const pid = String(p.proposal_id || "");
-      const chk = await sb.rest("proposals?id=eq." + encodeURIComponent(pid) + "&deal_id=eq." + dealId + "&select=id,title&limit=1");
+      const chk = await sb.rest("proposals?id=eq." + encodeURIComponent(pid) + "&deal_id=eq." + deal.id + "&select=id,title&limit=1");
       const pr = chk.data && chk.data[0];
       if (!pr) return okJSON({ error: "Couldn't find that proposal on this deal." });
       let nextNo = 1;
       const rr = await sb.rest("proposal_rounds?proposal_id=eq." + encodeURIComponent(pid) + "&select=round_no&order=round_no.desc&limit=1");
       if (rr.data && rr.data[0]) nextNo = (rr.data[0].round_no || 0) + 1;
       const row = {
-        deal_id: dealId, proposal_id: pid, round_no: nextNo,
+        deal_id: deal.id, proposal_id: pid, round_no: nextNo,
         from_party: PARTY.indexOf(p.from_party) >= 0 ? p.from_party : "landlord",
         status: "final", source: "manual",
         rent_basis: BASES.indexOf(p.rent_basis) >= 0 ? p.rent_basis : null,
