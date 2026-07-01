@@ -437,6 +437,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.50.0/build/docxtemplater.js"></script>
 <script src="assets/van.js"></script>
 <script src="assets/model-engine.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 window.DF = (function(){
   "use strict";
@@ -1943,7 +1944,7 @@ window.DF = (function(){
     el.innerHTML=
       '<button class="dsr-back" onclick="DF.openDeal(\''+_modelDeal+'\')">‹ Back to deal</button>'
       + '<div class="mhead"><div><h1>Occupancy model</h1><div class="sub">Every assumption is live-editable — toggle during a pitch. Autosaves.</div></div>'
-      +   '<div class="mexport"><button class="btn" onclick="DF.modelPrint()">🖨 Print / PDF</button></div></div>'
+      +   '<div class="mexport"><button class="btn" onclick="DF.modelPdf()">📄 Branded PDF</button><button class="btn" onclick="DF.modelExcel()">⤓ Excel</button></div></div>'
       + '<div id="modelSummary"></div>'
       + '<div class="dsetbar">'
       +   dfld('Discount rate','discountRatePct',0.25,'%')
@@ -1983,9 +1984,103 @@ window.DF = (function(){
   function modelAdd(){ _model.options.push(optSeed('New option','go','NNN')); saveModel(); renderModel(); }
   function modelRemove(id){ if(_model.options.length<=1) return; _model.options=_model.options.filter(function(o){return o.id!==id;}); saveModel(); renderModel(); }
   function modelPrint(){ window.print(); }
+  function computeRuns(){ return _model.options.map(function(o){ return VModel.runOption(mergeDeal(o)); }); }
+  function round4(v){ return Math.round((v+Number.EPSILON)*10000)/10000; }
+
+  /* ---- branded PDF (Havill letterhead, print-to-PDF) ---- */
+  function modelPdf(){
+    if(!_model) return;
+    var d=deals.filter(function(x){return x.id===_modelDeal;})[0];
+    var client=esc((d&&d.client_name)||'Client');
+    var runs=computeRuns();
+    var bestNpv=Math.min.apply(null, runs.map(function(r){return r.base.npv;}));
+    var stay=null,go=null; runs.forEach(function(r){ if(r.side==='stay'&&!stay)stay=r; if(r.side==='go'&&!go)go=r; });
+    var rec=''; if(stay&&go){ var dN=go.base.npv-stay.base.npv; rec='<div class="rec"><b>'+(dN<0?'Relocating':'Renewing in place')+'</b> is the lower-NPV path by <b>'+money(Math.abs(dN))+'</b> over the term (base case) — Stay '+money(stay.base.npv)+' vs Go '+money(go.base.npv)+'.</div>'; }
+    function cell(v,best){ return '<td'+(best?' class="best"':'')+'>'+v+'</td>'; }
+    var head='<th></th>'+runs.map(function(r){return '<th>'+esc(r.input.name)+'<div class="s">'+(r.side==='stay'?'Stay':'Go')+' · '+r.structure+'</div></th>';}).join('');
+    var rows=''
+      +'<tr><td class="l">Net effective</td>'+runs.map(function(r){return cell(psf(r.base.netEffectivePSF)+'/RSF');}).join('')+'</tr>'
+      +'<tr class="b"><td class="l">All-in ($, term)</td>'+runs.map(function(r){return cell(money(r.base.allIn));}).join('')+'</tr>'
+      +'<tr class="b"><td class="l">NPV</td>'+runs.map(function(r){return cell(money(r.base.npv), r.base.npv===bestNpv&&runs.length>1);}).join('')+'</tr>'
+      +'<tr><td class="l">NPV band (low–high)</td>'+runs.map(function(r){return cell(money(r.bands.low.npv)+' – '+money(r.bands.high.npv));}).join('')+'</tr>'
+      +'<tr><td class="l">Size</td>'+runs.map(function(r){return cell(r.base.rsf.toLocaleString()+' RSF');}).join('')+'</tr>'
+      +'<tr><td class="l">Term</td>'+runs.map(function(r){return cell(r.termYears+' yrs');}).join('')+'</tr>';
+    var arows=MODEL_ROWS.filter(function(x){return !x.sec;}).map(function(rw){
+      return '<tr><td class="l">'+rw.label+(rw.unit?' <span class="u">'+rw.unit+'</span>':'')+'</td>'+_model.options.map(function(o){
+        var v = rw.type==='makegood' ? ((o.makeGood&&o.makeGood.on)?('$'+mGet(o,'makeGood.psf')+' on'):'—') : mGet(o,rw.k);
+        return '<td>'+esc(v==null?'':v)+'</td>';
+      }).join('')+'</tr>';
+    }).join('');
+    var scheds=runs.map(function(r){
+      var yr=r.base.years.map(function(y){ return '<tr><td>'+y.t+'</td><td>'+psf(y.baseAfterFreePSF)+'</td><td>'+psf(y.opexTenantPSF)+'</td><td>'+money(y.tenantPays)+'</td><td>'+money(y.parking)+'</td><td>'+money(y.recurring)+'</td><td>'+y.df.toFixed(4)+'</td><td>'+money(y.recurring*y.df)+'</td></tr>'; }).join('');
+      return '<div class="sched"><h3>'+esc(r.input.name)+' — year-by-year</h3><table class="yr"><thead><tr><th>Yr</th><th>Base $/RSF</th><th>Opex $/RSF</th><th>Tenant $</th><th>Parking $</th><th>Recurring $</th><th>DF</th><th>PV $</th></tr></thead><tbody>'+yr
+        +'<tr class="tot"><td colspan="5">Upfront (one-time + make-good − TI) · All-in · NPV</td><td>'+money(r.base.upfront)+'</td><td></td><td>'+money(r.base.npv)+'</td></tr></tbody></table></div>';
+    }).join('');
+    var dr=_model.discountRatePct;
+    var html='<!doctype html><html><head><meta charset="utf-8"><title>Occupancy Analysis — '+client+'</title><style>'
+      +'*{box-sizing:border-box}body{font:12px/1.5 Arial,Helvetica,sans-serif;color:#1A2230;margin:0;padding:40px 44px}'
+      +'.lh{border-bottom:2px solid #D2CCBF;padding-bottom:10px;margin-bottom:18px}'
+      +'.lh .n{font:800 22px Georgia,serif;color:#1B2A4A;letter-spacing:.5px}.lh .t{font:11px Arial;color:#55606F;letter-spacing:2px;margin-top:2px}'
+      +'h1{font:700 17px Georgia,serif;color:#1B2A4A;margin:0 0 2px}.date{color:#8A92A0;font-size:11px;margin-bottom:14px}'
+      +'.rec{border:1px solid #cdd6df;border-left:4px solid #2D6E7E;background:#f6f8f9;padding:9px 12px;border-radius:6px;margin-bottom:16px;font-size:12.5px}'
+      +'table{border-collapse:collapse;width:100%;margin-bottom:8px}'
+      +'.cmp th,.cmp td{border:1px solid #e2ddd2;padding:7px 10px;text-align:right;font-variant-numeric:tabular-nums}'
+      +'.cmp thead th{background:#1B2A4A;color:#fff;text-align:right;font-weight:600}.cmp thead th .s{font-weight:400;font-size:9.5px;color:#cfd6e0;text-align:right}'
+      +'.cmp td.l,.cmp th:first-child{text-align:left}.cmp .l{background:#faf9f6;font-weight:600;color:#55606F}'
+      +'.cmp tr.b td{font-size:13px;font-weight:700}.cmp td.best{background:#2D6E7E;color:#fff;border-color:#2D6E7E}'
+      +'h2{font:700 12px Arial;color:#1B2A4A;text-transform:uppercase;letter-spacing:.06em;margin:22px 0 6px;border-bottom:1px solid #e2ddd2;padding-bottom:4px}'
+      +'.asm th,.asm td{border:1px solid #e9e4d9;padding:4px 8px;text-align:right;font-size:10.5px}.asm td.l{text-align:left;color:#55606F}.asm .u{color:#a7adb6;font-size:9px}'
+      +'.sched{page-break-inside:avoid;margin-top:14px}.sched h3{font:700 11px Arial;color:#1B2A4A;margin:0 0 4px}'
+      +'.yr th,.yr td{border:1px solid #e9e4d9;padding:3px 7px;text-align:right;font-size:10px}.yr thead th{background:#f0eee7}.yr .tot td{font-weight:700;background:#faf9f6}'
+      +'.ft{margin-top:26px;border-top:1px solid #D2CCBF;padding-top:8px;color:#8A92A0;font-size:10px;text-align:center}'
+      +'@media print{body{padding:22px}}'
+      +'</style></head><body>'
+      +'<div class="lh"><div class="n">HAVILL &amp; CO.</div><div class="t">COMMERCIAL REAL ESTATE · TENANT REPRESENTATION</div></div>'
+      +'<h1>Occupancy Cost Analysis — '+client+'</h1><div class="date">Prepared '+new Date().toLocaleDateString(undefined,{year:'numeric',month:'long',day:'numeric'})+' · Discount rate '+dr+'%</div>'
+      +rec
+      +'<table class="cmp"><thead><tr>'+head+'</tr></thead><tbody>'+rows+'</tbody></table>'
+      +'<h2>Assumptions</h2><table class="asm"><thead><tr><th class="l">Assumption</th>'+_model.options.map(function(o){return '<th>'+esc(o.name)+'</th>';}).join('')+'</tr></thead><tbody>'+arows+'</tbody></table>'
+      +'<h2>Year-by-year schedules</h2>'+scheds
+      +'<div class="ft">Prepared by Havill &amp; Co. · Confidential &amp; proprietary · Net effective is gross-equivalent rent net of concessions; NPV discounts all-in cost at '+dr+'% (rent-in-advance).</div>'
+      +'</body></html>';
+    var w=window.open('','_blank'); if(!w){ alert('Please allow pop-ups to generate the PDF.'); return; }
+    w.document.write(html); w.document.close(); w.focus(); setTimeout(function(){ try{ w.print(); }catch(e){} }, 350);
+  }
+
+  /* ---- full-model Excel (SheetJS) ---- */
+  function modelExcel(){
+    if(!window.XLSX){ alert('The Excel library is still loading — try again in a second.'); return; }
+    if(!_model) return;
+    var d=deals.filter(function(x){return x.id===_modelDeal;})[0];
+    var client=((d&&d.client_name)||'Client');
+    var runs=computeRuns();
+    var wb=XLSX.utils.book_new();
+    var sum=[['Occupancy Cost Analysis — '+client],['Prepared '+new Date().toLocaleDateString()+' · Havill & Co.'],[],
+      ['Option','Side','Structure','Size (RSF)','Term (yrs)','Net Effective $/RSF','All-in $ (term)','NPV','NPV low','NPV high']];
+    runs.forEach(function(r){ var o=r.input; sum.push([o.name,o.side,r.structure,r.base.rsf,r.termYears, VModel.round2(r.base.netEffectivePSF), Math.round(r.base.allIn), Math.round(r.base.npv), Math.round(r.bands.low.npv), Math.round(r.bands.high.npv)]); });
+    sum.push([]); sum.push(['Discount rate (%)',_model.discountRatePct,'Headcount',_model.headcountStart,'Density (usf/emp)',_model.densityUsfPerEmp,'Load',_model.loadFactor,'Growth L/B/H (%)',_model.growth.low+'/'+_model.growth.base+'/'+_model.growth.high]);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sum), 'Summary');
+
+    var asRows=[['Assumption'].concat(runs.map(function(r){return r.input.name;}))];
+    MODEL_ROWS.forEach(function(rw){ if(rw.sec){ asRows.push([rw.sec]); return; } asRows.push([rw.label+(rw.unit?' ('+rw.unit+')':'')].concat(_model.options.map(function(o){ return rw.type==='makegood'? ((o.makeGood&&o.makeGood.on)?('ON '+mGet(o,'makeGood.psf')):'off') : mGet(o,rw.k); }))); });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(asRows), 'Assumptions');
+
+    runs.forEach(function(r,i){
+      var rows=[['Year','Base $/RSF','Opex $/RSF','Tenant $','Parking $','Recurring $','Discount factor','PV $']];
+      r.base.years.forEach(function(y){ rows.push([y.t, VModel.round2(y.baseAfterFreePSF), VModel.round2(y.opexTenantPSF), Math.round(y.tenantPays), Math.round(y.parking), Math.round(y.recurring), round4(y.df), Math.round(y.recurring*y.df)]); });
+      rows.push([]);
+      rows.push(['Upfront (one-time + make-good − TI)','','','','','','', Math.round(r.base.upfront)]);
+      rows.push(['All-in (nominal)','','','','','','', Math.round(r.base.allIn)]);
+      rows.push(['NPV','','','','','','', Math.round(r.base.npv)]);
+      rows.push(['Net effective $/RSF/yr','','','','','','', VModel.round2(r.base.netEffectivePSF)]);
+      var nm=((r.input.name||('Option'+(i+1))).replace(/[\\/?*\[\]:]/g,' ').trim().slice(0,26))+' '+(i+1);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), nm.slice(0,31));
+    });
+    XLSX.writeFile(wb, safeName(client+' Occupancy Model - '+todayStamp())+'.xlsx');
+  }
 
   return {
-    openModel:openModel, modelInput:modelInput, modelToggle:modelToggle, modelDeal:modelDeal, modelAdd:modelAdd, modelRemove:modelRemove, modelPrint:modelPrint,
+    openModel:openModel, modelInput:modelInput, modelToggle:modelToggle, modelDeal:modelDeal, modelAdd:modelAdd, modelRemove:modelRemove, modelPrint:modelPrint, modelPdf:modelPdf, modelExcel:modelExcel,
     showDashboard:showDashboard, showPipeline:showPipeline, setPipeView:setPipeView, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, toggleClosed:toggleClosed,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask,
