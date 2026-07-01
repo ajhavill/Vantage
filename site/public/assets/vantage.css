@@ -728,6 +728,16 @@
   .vnav-item svg{width:18px;height:18px;flex:none}
   .vnav-item:hover{background:rgba(255,255,255,.08);color:#fff}
   .vnav-item.on{background:var(--accent);color:#fff}
+  .vnav-caret{width:14px;height:14px;flex:none;margin-left:auto;opacity:.55;transition:transform .16s}
+  .vnav-item.sub-open .vnav-caret{transform:rotate(180deg)}
+  .vnav-sub{display:none;flex-direction:column;gap:1px;margin:1px 0 5px}
+  .vnav-sub.open{display:flex}
+  .vnav-subitem{position:relative;display:flex;align-items:center;width:100%;text-align:left;font:600 12.5px Inter;color:rgba(255,255,255,.6);background:none;border:0;border-radius:8px;padding:8px 11px 8px 32px;cursor:pointer}
+  .vnav-subitem::before{content:"";position:absolute;left:16px;top:50%;width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.28);transform:translateY(-50%)}
+  .vnav-subitem:hover{background:rgba(255,255,255,.07);color:#fff}
+  .vnav-subitem.on{color:#fff;background:rgba(255,255,255,.06)}
+  .vnav-subitem.on::before{background:var(--accent)}
+  .app-shell.nav-collapsed .vnav-sub,.app-shell.nav-collapsed .vnav-caret{display:none}
   .vnav-spacer{flex:1}
   .vnav .userchip{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 8px 0;border-top:1px solid rgba(255,255,255,.14);margin-top:8px}
   .vnav .userchip .uemail{font:500 11.5px Inter;color:rgba(255,255,255,.7);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-basis:100%}

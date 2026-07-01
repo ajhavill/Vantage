@@ -59,7 +59,12 @@
     <span class="by">by Havill &amp; Co.</span>
   </div>
   <button class="vnav-item on" data-m="home" onclick="showModule('home')" title="Home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v10h14V10"/></svg><span>Home</span></button>
-  <button class="vnav-item" data-m="market" onclick="showModule('market')" title="Market"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M9 8h2M13 8h2M9 12h2M13 12h2M9 16h2M13 16h2"/></svg><span>Market</span></button>
+  <button class="vnav-item has-sub" data-m="market" id="mktNavBtn" onclick="marketClick()" title="Market"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M9 8h2M13 8h2M9 12h2M13 12h2M9 16h2M13 16h2"/></svg><span>Market</span><svg class="vnav-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>
+  <div class="vnav-sub" id="marketSub">
+    <button class="vnav-subitem on" data-sv="buildings" onclick="marketSub('buildings')">Buildings</button>
+    <button class="vnav-subitem" data-sv="tenants" onclick="marketSub('tenants')">Tenants</button>
+    <button class="vnav-subitem" data-sv="commute" onclick="marketSub('commute')">Commute</button>
+  </div>
   <button class="vnav-item" data-m="clients" onclick="showModule('clients')" title="Clients"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 6.6a3 3 0 0 1 0 5.8M20.5 20a5 5 0 0 0-4-4.9"/></svg><span>Clients</span></button>
   <a class="vnav-item" data-m="deals" href="deals.html" title="Deals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg><span>Deals</span></a>
   <button class="vnav-item" data-m="settings" onclick="showModule('settings')" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 0 1-4 0v-.2A1.7 1.7 0 0 0 7 19.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H3a2 2 0 0 1 0-4h.1A1.7 1.7 0 0 0 4.6 7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 4.6V4a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg><span>Settings</span></button>
@@ -86,11 +91,6 @@
       <button class="vsearch-x" id="vsearchX" aria-label="Clear">&times;</button>
     </div>
     <div class="vsearch-res" id="vsearchResults"></div>
-  </div>
-  <div class="viewnav" id="viewnav">
-    <button data-v="portfolio" class="on" onclick="showPortfolio()">Portfolio</button>
-    <button data-v="competition" onclick="showCompetition()">Competition</button>
-    <button data-v="commute" onclick="showCommute()">Commute</button>
   </div>
 </div>
 
@@ -1131,7 +1131,9 @@
 
   // ---- view nav ----
   function setNav(name){
-    document.querySelectorAll('#viewnav button').forEach(function(b){b.classList.toggle('on',b.dataset.v===name)});
+    var map={portfolio:'buildings',competition:'tenants',commute:'commute'};
+    var sv=map[name]||name;
+    document.querySelectorAll('#marketSub .vnav-subitem').forEach(function(b){b.classList.toggle('on',b.getAttribute('data-sv')===sv)});
   }
 
   // ---- competition lens ----
@@ -1264,7 +1266,7 @@
     document.getElementById('detailView').classList.remove('show');
     document.getElementById('competitionView').classList.add('show');
     setNav('competition'); setPriobar(true);
-    document.getElementById('crumb').innerHTML='Santa Monica · <b>Competition Lens</b>';
+    document.getElementById('crumb').innerHTML='Santa Monica · <b>Tenants</b>';
     cInitChips();
     if(!compMap) cInitMap();
     cRender();
@@ -1840,10 +1842,28 @@
     navRedraw();
   };
   (function applyNavPref(){ try{ if(localStorage.getItem('vantage_nav_collapsed')==='1'){ var s=document.getElementById('appShell'); if(s){ s.classList.add('nav-collapsed'); var t=document.getElementById('vnavToggle'); if(t) t.title='Expand menu'; } } }catch(e){} })();
+  function setMarketSubOpen(o){ var s=document.getElementById('marketSub'); var b=document.getElementById('mktNavBtn'); if(s) s.classList.toggle('open',o); if(b) b.classList.toggle('sub-open',o); }
+  // clicking the Market parent: toggle the submenu if already in Market, else enter it
+  window.marketClick=function(){
+    var inMkt=document.getElementById('marketModule').style.display!=='none';
+    if(inMkt){ var s=document.getElementById('marketSub'); setMarketSubOpen(!s.classList.contains('open')); }
+    else showModule('market');
+  };
+  // pick a Market sub-view from the sidebar
+  window.marketSub=function(sv){
+    if(document.getElementById('marketModule').style.display==='none'){
+      ['homeView','clientsView','settingsView'].forEach(function(id){ var el=document.getElementById(id); if(el) el.style.display='none'; });
+      document.getElementById('marketModule').style.display='';
+      document.querySelectorAll('#vnav .vnav-item').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-m')==='market'); });
+    }
+    setMarketSubOpen(true);
+    if(sv==='tenants') showCompetition(); else if(sv==='commute') showCommute(); else showPortfolio();
+  };
   window.showModule=function(m){
     var map={home:'homeView',market:'marketModule',clients:'clientsView',settings:'settingsView'};
     Object.keys(map).forEach(function(k){ var el=document.getElementById(map[k]); if(el) el.style.display=(k===m)?'':'none'; });
     document.querySelectorAll('#vnav .vnav-item').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-m')===m); });
+    setMarketSubOpen(m==='market');
     if(m==='home') renderHome();
     else if(m==='clients') renderClients();
     else if(m==='settings') renderSettings();
