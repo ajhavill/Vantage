@@ -287,41 +287,7 @@
   .tasks-done summary{font:600 11.5px Inter;color:var(--ink-faint);cursor:pointer;padding:6px 0}
   @media(max-width:760px){ .dstats{grid-template-columns:repeat(2,1fr)} .dgrid{grid-template-columns:1fr} }
 
-  /* AI assistant */
-  .ai-fab{position:fixed;right:22px;bottom:22px;z-index:2300;font:700 13px Inter;color:#fff;background:var(--building);border:0;border-radius:999px;padding:12px 18px;cursor:pointer;box-shadow:var(--shadow);display:inline-flex;align-items:center;gap:7px}
-  .ai-fab:hover{filter:brightness(1.08)}
-  .ai-panel{position:fixed;top:0;right:0;height:100vh;width:min(420px,100%);background:var(--paper-2);border-left:1px solid var(--line);box-shadow:-8px 0 30px rgba(20,26,38,.16);z-index:2400;display:flex;flex-direction:column;transform:translateX(102%);transition:transform .22s ease}
-  .ai-panel.open{transform:translateX(0)}
-  .ai-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 18px;border-bottom:1px solid var(--line)}
-  .ai-title{font:800 17px 'Bricolage Grotesque';color:var(--ink);line-height:1.1}
-  .ai-tag{font:500 10.5px Inter;color:var(--ink-faint);margin-top:1px}
-  .ai-ctx{font:600 11px Inter;color:var(--accent);margin-top:3px}
-  .ai-headbtns{display:flex;gap:12px;align-items:center}
-  .ai-clear{font:600 11px Inter;color:var(--ink-faint);background:none;border:0;cursor:pointer}
-  .ai-clear:hover{color:var(--ink-soft)}
-  .ai-x{font-size:15px;background:none;border:0;color:var(--ink-faint);cursor:pointer;line-height:1}
-  .ai-x:hover{color:var(--ink)}
-  .ai-quick{display:flex;flex-wrap:wrap;gap:7px;padding:12px 16px;border-bottom:1px solid var(--line)}
-  .ai-chip{font:600 11.5px Inter;color:var(--ink-soft);background:var(--paper);border:1px solid var(--line-2);border-radius:999px;padding:6px 11px;cursor:pointer;text-align:left}
-  .ai-chip:hover{border-color:var(--accent);color:var(--accent)}
-  .ai-msgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:11px}
-  .ai-msg{font:400 13.5px Inter;line-height:1.5;border-radius:13px;padding:10px 13px;max-width:90%;word-wrap:break-word}
-  .ai-msg.user{align-self:flex-end;background:var(--building);color:#fff;border-bottom-right-radius:4px}
-  .ai-msg.assistant{align-self:flex-start;background:var(--paper);border:1px solid var(--line);color:var(--ink);border-bottom-left-radius:4px}
-  .ai-msg.assistant p{margin:0 0 8px} .ai-msg.assistant p:last-child{margin:0}
-  .ai-msg.assistant ul,.ai-msg.assistant ol{margin:6px 0;padding-left:18px} .ai-msg.assistant li{margin:3px 0}
-  .ai-msg.assistant h1,.ai-msg.assistant h2,.ai-msg.assistant h3{font-family:'Bricolage Grotesque';font-size:14px;margin:8px 0 4px}
-  .ai-msg.assistant strong{color:var(--ink)}
-  .ai-msg.assistant code{font-family:'JetBrains Mono';font-size:12px;background:var(--paper-2);padding:1px 4px;border-radius:4px}
-  .ai-input{display:flex;gap:8px;padding:12px 14px;border-top:1px solid var(--line);align-items:flex-end}
-  .ai-input textarea{flex:1;resize:none;font:400 13.5px Inter;padding:10px 12px;border:1px solid var(--line-2);border-radius:10px;background:var(--paper);color:var(--ink);max-height:120px;overflow-y:auto}
-  .ai-input textarea:focus{outline:none;border-color:var(--accent)}
-  .ai-input button{font-size:15px;color:#fff;background:var(--building);border:0;border-radius:10px;padding:0 15px;height:40px;cursor:pointer;flex:none}
-  .ai-input button:disabled{opacity:.5;cursor:default}
-  .ai-dots i{display:inline-block;width:6px;height:6px;margin-right:3px;border-radius:999px;background:var(--ink-faint);animation:aiblink 1s infinite}
-  .ai-dots i:nth-child(2){animation-delay:.2s} .ai-dots i:nth-child(3){animation-delay:.4s}
-  @keyframes aiblink{0%,60%,100%{opacity:.25}30%{opacity:1}}
-  @media(max-width:520px){ .ai-panel{width:100%} .ai-fab{right:16px;bottom:16px} }
+  /* Van AI assistant styles live in assets/van.js (injected, prefixed .van-) */
 </style>
 </head>
 <body>
@@ -405,23 +371,7 @@
 <!-- generic modal -->
 <div class="ov" id="ov"><div class="sheet" id="sheet"></div></div>
 
-<!-- AI assistant -->
-<button class="ai-fab" id="aiFab" onclick="DF.aiPanelToggle()" title="Van — your AI tenant-rep specialist" style="display:none">
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.9 5.1L19 9l-5.1 1.9L12 16l-1.9-5.1L5 9l5.1-1.9L12 2z"/></svg>
-  Ask Van
-</button>
-<div class="ai-panel" id="aiPanel">
-  <div class="ai-head">
-    <div><div class="ai-title">Van</div><div class="ai-tag">Your AI tenant-rep specialist</div><div class="ai-ctx" id="aiCtx">Your pipeline</div></div>
-    <div class="ai-headbtns"><button class="ai-clear" onclick="DF.aiClear()">Clear</button><button class="ai-x" onclick="DF.aiPanelToggle()" aria-label="Close">✕</button></div>
-  </div>
-  <div class="ai-quick" id="aiQuick"></div>
-  <div class="ai-msgs" id="aiMsgs"></div>
-  <div class="ai-input">
-    <textarea id="aiText" rows="1" placeholder="Ask about this deal…"></textarea>
-    <button id="aiSend" onclick="DF.aiSend()" title="Send">➤</button>
-  </div>
-</div>
+<!-- Van AI assistant (launcher + panel) is injected site-wide by assets/van.js -->
 
 </div><!-- /app-main -->
 </div><!-- /app-shell -->
@@ -432,6 +382,7 @@
 <script src="https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pizzip@3.1.7/dist/pizzip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.50.0/build/docxtemplater.js"></script>
+<script src="assets/van.js"></script>
 <script>
 window.DF = (function(){
   "use strict";
@@ -483,7 +434,6 @@ window.DF = (function(){
   ];
 
   var sb=null, me=null, deals=[], _rec=null, _aiTmpls=[], _showClosed=false, _curRound=null, _view='board', _agg=null;
-  var _activeDealId=null, _aiHistory=[], _aiBusy=false, _aiChips=[];
 
   /* ---------- tiny helpers ---------- */
   function $(id){ return document.getElementById(id); }
@@ -536,11 +486,10 @@ window.DF = (function(){
     $('authGate').style.display='none';
     me=session.user;
     var chip=$('userChip'); if(chip){ chip.style.display='inline-flex'; $('userEmail').textContent=me.email||''; }
-    var fab=$('aiFab'); if(fab) fab.style.display='';
     try{ _view=localStorage.getItem('vantage_deal_view')||'board'; }catch(e){}
     loadDeals();
   }
-  function showLogin(){ $('authGate').style.display='flex'; var c=$('userChip'); if(c) c.style.display='none'; var f=$('aiFab'); if(f) f.style.display='none'; var p=$('aiPanel'); if(p) p.classList.remove('open'); }
+  function showLogin(){ $('authGate').style.display='flex'; var c=$('userChip'); if(c) c.style.display='none'; if(window.Van) Van.close(); }
 
   function bindAuth(){
     if(!window.supabase){ $('agErr').textContent='Could not reach the login service. Check your connection and refresh.'; return; }
@@ -577,7 +526,7 @@ window.DF = (function(){
     $('pipelineView').style.display='block';
     $('crumb').innerHTML='Deal flow';
     setSubnav('pipeline');
-    _activeDealId=null; aiSyncContext();
+    if(window.Van) Van.setContext({dealId:null, label:'your pipeline'});
     var t=$('vtoggle'); if(t){ [].forEach.call(t.children,function(b){ b.className=(b.getAttribute('data-v')===_view)?'on':''; }); }
     if(_view==='table'){ $('pipe').style.display='none'; $('closed').style.display='none'; $('dealTable').style.display='block'; renderTable(); }
     else { $('pipe').style.display=''; $('closed').style.display=''; $('dealTable').style.display='none'; renderBoard(); }
@@ -689,7 +638,7 @@ window.DF = (function(){
     $('dashboardView').style.display='block';
     $('crumb').innerHTML='Deal flow';
     setSubnav('dashboard');
-    _activeDealId=null; aiSyncContext();
+    if(window.Van) Van.setContext({dealId:null, label:'your pipeline'});
     renderDashboard();
   }
 
@@ -851,7 +800,7 @@ window.DF = (function(){
     $('pipelineView').style.display='none';
     $('dashboardView').style.display='none';
     setSubnav('deal');
-    _activeDealId=id; aiSyncContext();
+    if(window.Van) Van.setContext({dealId:id, label:(d.client_name||'this deal')});
     var v=$('dealView'); v.style.display='block';
     $('crumb').innerHTML='Deal flow <b>›</b> '+esc(d.client_name||'Deal');
     v.innerHTML='<div class="loading">Loading deal…</div>';
@@ -1855,78 +1804,8 @@ window.DF = (function(){
   /* ---------- boot ---------- */
   document.addEventListener('DOMContentLoaded',bindAuth);
 
-  /* ---------- AI assistant (slide-out panel) ---------- */
-  function aiSyncContext(){ var p=$('aiPanel'); if(p&&p.classList.contains('open')) aiUpdateContext(); }
-  function aiPanelToggle(){
-    var p=$('aiPanel'); if(!p) return;
-    var open=p.classList.toggle('open');
-    var fab=$('aiFab'); if(fab) fab.style.display=open?'none':'';
-    if(open){ aiUpdateContext(); if(!$('aiMsgs').children.length) aiGreet(); setTimeout(function(){ var t=$('aiText'); if(t) t.focus(); },60); }
-  }
-  function aiUpdateContext(){
-    var d=_activeDealId?deals.filter(function(x){return x.id===_activeDealId;})[0]:null;
-    var ctx=$('aiCtx'); if(ctx) ctx.textContent = d?('Deal · '+(d.client_name||'Untitled')) : 'Your pipeline';
-    var ta=$('aiText'); if(ta) ta.placeholder = d?('Ask Van about '+(d.client_name||'this deal')+'…') : 'Ask Van about your pipeline…';
-    _aiChips = d
-      ? [['Summarize this deal','Give me a 3-sentence summary of where this deal stands and what matters most right now.'],
-         ['Next step & risks','What are my top 3 next steps on this deal, and what risks should I be watching? Be specific.'],
-         ['Email client an update','Draft a short, friendly status-update email to my client on this deal.'],
-         ['Reply to the landlord','Draft a professional email to the landlord or listing broker that advances the current negotiation.'],
-         ['Compare the proposals','Compare the options/proposals on this deal in plain English and tell me which is the stronger economic deal and why.']]
-      : [['Focus for today','Look across my pipeline and tell me the 3 most important things to focus on today, and why.'],
-         ['Which deals are at risk?','Which of my deals look stalled or at risk, and what should I do about each?'],
-         ['Plan my day','Draft a short, prioritized to-do list for my day based on my pipeline and open tasks.']];
-    var q=$('aiQuick'); if(q) q.innerHTML=_aiChips.map(function(c,i){ return '<button class="ai-chip" onclick="DF.aiQuick('+i+')">'+esc(c[0])+'</button>'; }).join('');
-  }
-  function aiQuick(i){ var c=_aiChips[i]; if(c) aiSend(c[1]); }
-  function aiGreet(){
-    var d=_activeDealId?deals.filter(function(x){return x.id===_activeDealId;})[0]:null;
-    aiPush('assistant', "Hi, I'm **Van** — your tenant-rep specialist. Ask me anything about "+(d?('**'+esc(d.client_name||'this deal')+'**'):'your pipeline')+", or tap a suggestion. I can summarize, draft emails, compare proposals, and flag what needs attention.");
-  }
-  function aiPush(role, html){
-    var m=$('aiMsgs'); if(!m) return null;
-    var div=document.createElement('div'); div.className='ai-msg '+role;
-    div.innerHTML = role==='assistant' && html.indexOf('ai-dots')<0 ? (window.marked?marked.parse(html):esc(html)) : (role==='user'?esc(html):html);
-    m.appendChild(div); m.scrollTop=m.scrollHeight; return div;
-  }
-  function aiClear(){ _aiHistory=[]; var m=$('aiMsgs'); if(m) m.innerHTML=''; aiGreet(); }
-  async function aiSend(preset){
-    if(_aiBusy) return;
-    var ta=$('aiText'); var text=(preset!=null?preset:(ta?ta.value:'')).trim();
-    if(!text) return;
-    if(ta && preset==null){ ta.value=''; ta.style.height='auto'; }
-    aiPush('user', text); _aiHistory.push({role:'user', content:text});
-    _aiBusy=true; var sendBtn=$('aiSend'); if(sendBtn) sendBtn.disabled=true;
-    var thinking=aiPush('assistant','<span class="ai-dots"><i></i><i></i><i></i></span>');
-    try{
-      var s=await sb.auth.getSession(); var token=s&&s.data&&s.data.session?s.data.session.access_token:null;
-      var ctrl=new AbortController(); var to=setTimeout(function(){ ctrl.abort(); }, 45000);
-      var res=await fetch('/.netlify/functions/deal-ai-assist',{
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({ token:token, dealId:_activeDealId||null, question:text, history:_aiHistory.slice(0,-1).slice(-6) }),
-        signal:ctrl.signal
-      });
-      clearTimeout(to);
-      var data=await res.json().catch(function(){ return null; });
-      if(thinking) thinking.remove();
-      if(!data || data.error){ aiPush('assistant', '⚠️ '+esc((data&&data.error)||'Something went wrong. Please try again.')); }
-      else { aiPush('assistant', data.text||'(no response)'); _aiHistory.push({role:'assistant', content:data.text||''}); }
-    }catch(e){
-      if(thinking) thinking.remove();
-      aiPush('assistant', (e&&e.name==='AbortError') ? '⚠️ That took too long — try a shorter question.' : '⚠️ '+esc((e&&e.message)||'Network error.'));
-    }
-    _aiBusy=false; if(sendBtn) sendBtn.disabled=false;
-    var mm=$('aiMsgs'); if(mm) mm.scrollTop=mm.scrollHeight;
-  }
-  (function bindAI(){
-    var ta=$('aiText'); if(!ta) return;
-    ta.addEventListener('keydown',function(e){ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); aiSend(); } });
-    ta.addEventListener('input',function(){ this.style.height='auto'; this.style.height=Math.min(this.scrollHeight,120)+'px'; });
-  })();
-
   return {
     showDashboard:showDashboard, showPipeline:showPipeline, setPipeView:setPipeView, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, toggleClosed:toggleClosed,
-    aiPanelToggle:aiPanelToggle, aiSend:aiSend, aiQuick:aiQuick, aiClear:aiClear,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask,
     newDeal:newDeal, newProperty:newProperty, newProposal:newProposal, newRound:newRound,
