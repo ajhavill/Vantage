@@ -515,7 +515,9 @@ window.DF = (function(){
   async function loadDeals(){
     try{
       deals=await q(sb.from('deals').select('*').order('created_at',{ascending:false}));
-      showDashboard();
+      var dl=null; try{ dl=new URLSearchParams(location.search).get('deal'); }catch(e){}
+      if(dl && deals.some(function(d){return d.id===dl;})) openDeal(dl);
+      else showDashboard();
     }catch(e){ $('pipe').innerHTML='<div class="loading">Could not load deals: '+esc(e.message)+'</div>'; }
   }
 
