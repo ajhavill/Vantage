@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vantage — Tenants</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/vantage.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+<style>
+  /* ---- Tenants module (reuses vantage.css tokens) ---- */
+  .navlink{font:600 12.5px Inter;color:var(--ink-soft);text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+  .navlink:hover{color:var(--accent)}
+  .wrap{max-width:1240px;margin:0 auto;padding:20px}
+  .vhead{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:14px;flex-wrap:wrap}
+  .vhead h1{font:800 22px 'Bricolage Grotesque';color:var(--ink)}
+  .vhead .sub{font-size:12.5px;color:var(--ink-faint);margin-top:3px}
+
+  /* mode toggle */
+  .modetog{display:inline-flex;border:1px solid var(--line-2);border-radius:999px;overflow:hidden;background:var(--paper-2)}
+  .modetog button{font:600 12px Inter;color:var(--ink-soft);background:none;border:0;padding:7px 15px;cursor:pointer}
+  .modetog button.on{background:var(--building);color:#fff}
+
+  /* controls */
+  .controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+  .controls input[type=search],.controls select{font:500 13px Inter;padding:8px 11px;border:1px solid var(--line-2);border-radius:9px;background:var(--paper-2);color:var(--ink)}
+  .controls input[type=search]{min-width:210px}
+  .ctlbtn{font:600 12px Inter;color:var(--ink-soft);background:var(--paper-2);border:1px solid var(--line-2);border-radius:9px;padding:8px 12px;cursor:pointer}
+  .ctlbtn:hover{border-color:var(--accent);color:var(--accent)}
+
+  /* layout split */
+  .split{display:grid;grid-template-columns:minmax(320px,1fr) minmax(420px,1.5fr);gap:16px;align-items:start}
+  @media(max-width:900px){.split{grid-template-columns:1fr}}
+  #map{height:520px;border:1px solid var(--line);border-radius:14px;background:var(--paper-2)}
+  .panel{background:var(--paper-2);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+
+  /* ops table */
+  table.tt{width:100%;border-collapse:collapse;font:500 12.5px Inter}
+  table.tt th{position:sticky;top:0;background:var(--paper);text-align:left;font:600 10.5px Inter;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-faint);padding:10px 10px;border-bottom:1px solid var(--line);cursor:pointer;white-space:nowrap}
+  table.tt th .ar{color:var(--accent)}
+  table.tt td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle;color:var(--ink)}
+  table.tt tr{cursor:pointer}
+  table.tt tr:hover td{background:rgba(45,110,126,.05)}
+  .tname{font:700 13px 'Bricolage Grotesque';color:var(--ink)}
+  .tsub{font-size:11px;color:var(--ink-faint)}
+  .mono{font-family:'JetBrains Mono';font-size:11.5px}
+
+  /* score meter */
+  .score{display:inline-flex;align-items:center;gap:8px}
+  .score .bar{width:52px;height:6px;border-radius:4px;background:var(--line);overflow:hidden}
+  .score .fill{height:100%;border-radius:4px}
+  .score .n{font:700 13px 'JetBrains Mono'}
+
+  /* chips */
+  .chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
+  .tchip{font:600 10.5px Inter;border-radius:999px;padding:2px 8px;border:1px solid;white-space:nowrap}
+  .tchip.hot{color:#8f2f24;background:rgba(201,84,63,.12);border-color:rgba(201,84,63,.35)}
+  .tchip.warn{color:#8a5a12;background:rgba(192,138,45,.13);border-color:rgba(192,138,45,.36)}
+  .tchip.info{color:#1f5561;background:rgba(45,110,126,.12);border-color:rgba(45,110,126,.34)}
+  .renew{font:700 10px Inter;letter-spacing:.03em;text-transform:uppercase;color:#256b4e;background:rgba(63,143,107,.14);border:1px solid rgba(63,143,107,.4);border-radius:999px;padding:2px 8px}
+
+  /* pitch mode */
+  .pitchhead{background:linear-gradient(135deg,var(--building),#0f1b31);color:#fff;border-radius:16px;padding:26px 28px;margin-bottom:16px}
+  .pitchhead .ttl{font:800 26px 'Bricolage Grotesque'}
+  .pitchhead .sb{font:500 13.5px Inter;color:rgba(255,255,255,.72);margin-top:6px;max-width:640px}
+  .pitchhead .stats{display:flex;gap:26px;margin-top:18px;flex-wrap:wrap}
+  .pitchhead .stat .n{font:800 24px 'Bricolage Grotesque'}
+  .pitchhead .stat .l{font:600 10.5px Inter;letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.6)}
+  .pcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
+  .pcard{background:var(--paper-2);border:1px solid var(--line);border-radius:13px;padding:14px;cursor:pointer;transition:border-color .14s,box-shadow .14s,transform .14s}
+  .pcard:hover{border-color:var(--accent);box-shadow:var(--shadow);transform:translateY(-1px)}
+  .pcard .pn{font:700 15px 'Bricolage Grotesque';color:var(--ink)}
+  .pcard .pi{font-size:11.5px;color:var(--ink-faint);margin-top:1px}
+  .pcard .prow{display:flex;justify-content:space-between;align-items:center;margin-top:11px;font-size:12px;color:var(--ink-soft)}
+  .pcard .prow b{color:var(--ink);font-weight:600}
+
+  /* sparkline */
+  .spark{display:block}
+
+  /* drawer */
+  .scrim{position:fixed;inset:0;background:rgba(26,34,48,.34);display:none;z-index:1500}
+  .scrim.on{display:block}
+  .drawer{position:fixed;top:0;right:0;height:100%;width:min(440px,100%);background:var(--paper);border-left:1px solid var(--line-2);box-shadow:var(--shadow);transform:translateX(100%);transition:transform .2s;z-index:1600;overflow-y:auto}
+  .drawer.on{transform:none}
+  .drawer .dh{display:flex;justify-content:space-between;align-items:flex-start;padding:20px 20px 12px;border-bottom:1px solid var(--line)}
+  .drawer .dbody{padding:18px 20px 40px}
+  .drawer .x{font:600 18px Inter;color:var(--ink-faint);background:none;border:0;cursor:pointer;line-height:1}
+  .kv{display:grid;grid-template-columns:132px 1fr;gap:6px 12px;font-size:12.5px;margin:12px 0}
+  .kv .k{color:var(--ink-faint);font-weight:600}
+  .kv .v{color:var(--ink)}
+  .sect{font:600 10.5px Inter;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint);margin:20px 0 8px}
+  .snapform{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}
+  .snapform input{font:500 13px Inter;padding:8px 10px;border:1px solid var(--line-2);border-radius:8px;background:var(--paper-2);width:110px}
+  .snapform button{font:600 12px Inter;color:#fff;background:var(--building);border:0;border-radius:8px;padding:9px 14px;cursor:pointer}
+  .loading{padding:40px;text-align:center;color:var(--ink-faint);font:500 13px Inter}
+  .muted{color:var(--ink-faint)}
+</style>
+</head>
+<body>
+<div class="app-main">
+
+<!-- LOGIN GATE (shares vantage.css styles) -->
+<div id="authGate">
+  <div class="ag-card">
+    <div class="ag-logo">Vantage<span class="dot">.</span></div>
+    <div class="ag-by">Tenants · Havill &amp; Co.</div>
+    <h1>Sign in</h1>
+    <label for="agEmail">Email</label>
+    <input id="agEmail" type="email" autocomplete="username" placeholder="you@havillco.com">
+    <label for="agPass">Password</label>
+    <input id="agPass" type="password" autocomplete="current-password" placeholder="••••••••">
+    <button id="agBtn">Sign in</button>
+    <div class="ag-err" id="agErr"></div>
+    <div class="ag-note">Access is invite-only. Need an account? Ask your administrator.</div>
+  </div>
+</div>
+
+<div class="topbar">
+  <span class="crumb" id="crumb">Tenants</span>
+  <a class="navlink" href="index.html" style="margin-left:14px">← Map</a>
+  <a class="navlink" href="deals.html">Deal flow</a>
+  <span class="userchip" id="userChip" style="display:none;margin-left:auto">
+    <span class="uemail" id="userEmail"></span>
+    <button id="signOutBtn" title="Sign out">Sign out</button>
+  </span>
+  <span class="pill">Tenant intelligence</span>
+</div>
+
+<main class="wrap">
+  <div class="vhead">
+    <div>
+      <h1 id="hTitle">Tenant intelligence</h1>
+      <div class="sub" id="hSub">Live from HubSpot · scored on lease timing, headcount, funding & sublease signals.</div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <button id="hsSetup" class="ctlbtn" style="display:none" onclick="TEN.hubspotSetup()" title="Create / verify the Vantage tenant properties in HubSpot (admin only)">⚙ HubSpot setup</button>
+      <div class="modetog" id="modetog">
+        <button data-mode="ops" class="on" onclick="TEN.setMode('ops')">Ops grid</button>
+        <button data-mode="pitch" onclick="TEN.setMode('pitch')">Pitch mode</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls" id="opsControls">
+    <input type="search" id="q" placeholder="Search tenant, building…" oninput="TEN.render()">
+    <select id="fIndustry" onchange="TEN.render()"><option value="">All industries</option></select>
+    <button class="ctlbtn" id="fRenew" aria-pressed="false" onclick="TEN.toggle('renew')">Renewal window (18–24mo)</button>
+    <button class="ctlbtn" id="fSub" aria-pressed="false" onclick="TEN.toggle('sub')">Sublease listed</button>
+    <select id="sort" onchange="TEN.render()">
+      <option value="score">Sort: Propensity ↓</option>
+      <option value="mte">Sort: Soonest expiration</option>
+      <option value="name">Sort: Name A–Z</option>
+      <option value="headcount">Sort: Headcount ↓</option>
+      <option value="rsf">Sort: RSF ↓</option>
+    </select>
+    <button class="ctlbtn" onclick="TEN.reload(true)" title="Bypass cache & re-score">↻ Refresh</button>
+  </div>
+
+  <div id="stage"><div class="loading">Signing you in…</div></div>
+</main>
+</div>
+
+<!-- detail drawer -->
+<div class="scrim" id="scrim" onclick="TEN.closeDrawer()"></div>
+<aside class="drawer" id="drawer" aria-hidden="true"></aside>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script>
+window.TEN = (function(){
+  "use strict";
+  var SUPA_URL  = "https://siaoqjvvxuckyxpxftwt.supabase.co";
+  var SUPA_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNpYW9xanZ2eHVja3l4cHhmdHd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2OTU5MTMsImV4cCI6MjA5ODI3MTkxM30.HgWjVlB9e0rYgX-MCTee16UV5tZ6m-pCXXjwY1cu3b0";
+
+  var sb=null, me=null, token=null;
+  var BUILD={}, TENANTS=[], map=null, cluster=null;
+  var mode='ops', sortKey='score', layoutMode=null, fitted=false;
+  var filt={renew:false, sub:false};
+
+  function $(id){ return document.getElementById(id); }
+  function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function fnum(v){ return v==null?'—':Number(v).toLocaleString(); }
+  function fdate(s){ if(!s) return '—'; var d=new Date(s); return isNaN(d)?'—':d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}); }
+
+  /* ---------- auth gate (same pattern as deals.html) ---------- */
+  function showApp(session){
+    $('authGate').style.display='none';
+    me=session.user; token=session.access_token;
+    var chip=$('userChip'); if(chip){ chip.style.display='inline-flex'; $('userEmail').textContent=me.email||''; }
+    // Reveal the HubSpot setup button only for a platform_admin (RLS lets you read your own profile).
+    sb.from('profiles').select('role').eq('id', me.id).single().then(function(r){
+      if(r && r.data && r.data.role==='platform_admin'){ var el=$('hsSetup'); if(el) el.style.display=''; }
+    }).catch(function(){});
+    reload(false);
+  }
+  function showLogin(){ $('authGate').style.display='flex'; var c=$('userChip'); if(c) c.style.display='none'; }
+  function bindAuth(){
+    if(!window.supabase){ $('agErr').textContent='Could not reach the login service. Refresh and try again.'; return; }
+    sb=window.supabase.createClient(SUPA_URL, SUPA_ANON);
+    window.vantageSB=sb; // lets a platform_admin grab a token in the console to run hubspot-bootstrap once
+    async function login(){
+      var btn=$('agBtn'), err=$('agErr');
+      var email=($('agEmail').value||'').trim(), pass=$('agPass').value||'';
+      if(!email||!pass){ err.textContent='Enter your email and password.'; return; }
+      btn.disabled=true; btn.textContent='Signing in…'; err.textContent='';
+      var res=await sb.auth.signInWithPassword({email:email,password:pass});
+      btn.disabled=false; btn.textContent='Sign in';
+      if(res.error){ err.textContent=res.error.message||'Sign-in failed.'; }
+    }
+    $('agBtn').addEventListener('click',login);
+    $('agPass').addEventListener('keydown',function(e){ if(e.key==='Enter') login(); });
+    $('signOutBtn').addEventListener('click',async function(){ await sb.auth.signOut(); location.reload(); });
+    sb.auth.onAuthStateChange(function(_e,session){ if(session) showApp(session); else showLogin(); });
+    sb.auth.getSession().then(function(r){ if(r&&r.data&&r.data.session) showApp(r.data.session); else showLogin(); });
+  }
+
+  async function callFn(name, body){
+    var res=await fetch('/.netlify/functions/'+name, {method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(Object.assign({token:token}, body||{}))});
+    var data=await res.json().catch(function(){return {};});
+    if(!res.ok) throw new Error(data.error||('Request failed ('+res.status+')'));
+    return data;
+  }
+
+  /* ---------- load ---------- */
+  async function reload(fresh){
+    $('stage').innerHTML='<div class="loading">Loading tenants from HubSpot…</div>';
+    layoutMode=null; fitted=false; // force layout rebuild + refit for the fresh data
+    try{
+      if(!Object.keys(BUILD).length){
+        var vd=await (await fetch('vantage-data.json')).json();
+        (vd.buildings||[]).forEach(function(b){ BUILD[b.id]=b; });
+        var ind=$('fIndustry');
+        (vd.industries||[]).forEach(function(n){ var o=document.createElement('option'); o.value=n; o.textContent=n; ind.appendChild(o); });
+      }
+      var r=await callFn('tenants-list', {fresh:!!fresh});
+      TENANTS=r.tenants||[];
+      $('hSub').textContent='Live from HubSpot · '+TENANTS.length+' mapped tenants · scored '+new Date(r.scoredAt).toLocaleString();
+      render();
+    }catch(e){
+      $('stage').innerHTML='<div class="loading">Could not load tenants: '+esc(e.message)+'</div>';
+    }
+  }
+
+  /* ---------- map (reuses Leaflet + vantage-data buildings) ---------- */
+  function initMap(){
+    map=L.map('map',{scrollWheelZoom:true}).setView([34.017,-118.49],13);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+      {attribution:'© OpenStreetMap, © CARTO', maxZoom:19}).addTo(map);
+    cluster=L.markerClusterGroup({maxClusterRadius:44});
+    map.addLayer(cluster);
+  }
+  function scoreColor(s){ return s>=67?'#C9543F':(s>=34?'#C08A2D':'#2D6E7E'); }
+  function drawMap(rows){
+    if(!cluster) return;
+    cluster.clearLayers();
+    var byB={};
+    rows.forEach(function(t){ if(t.buildingId && BUILD[t.buildingId]){ (byB[t.buildingId]=byB[t.buildingId]||[]).push(t); } });
+    var pts=[];
+    Object.keys(byB).forEach(function(bid){
+      var b=BUILD[bid], list=byB[bid];
+      var top=list.reduce(function(m,t){ return Math.max(m, t.propensity.score); },0);
+      var col=scoreColor(top);
+      var icon=L.divIcon({className:'', iconSize:[18,18], html:'<div style="width:16px;height:16px;border-radius:50%;background:'+col+';border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.35)"></div>'});
+      var m=L.marker([b.lat,b.lng],{icon:icon});
+      var pop='<b style="font:700 13px Bricolage Grotesque">'+esc(b.name)+'</b><br><span style="font:500 11px Inter;color:#8A93A0">'+esc(b.addr||'')+'</span><hr style="border:0;border-top:1px solid #E2DDD2;margin:6px 0">'
+        + list.sort(function(a,c){return c.propensity.score-a.propensity.score;}).map(function(t){
+            return '<div style="font:500 12px Inter;margin:2px 0"><span style="display:inline-block;width:22px;font:700 11px JetBrains Mono;color:'+scoreColor(t.propensity.score)+'">'+t.propensity.score+'</span> '+esc(t.name)+(t.renewalFlag?' <span style="color:#3F8F6B">●</span>':'')+'</div>';
+          }).join('');
+      m.bindPopup(pop);
+      cluster.addLayer(m); pts.push([b.lat,b.lng]);
+    });
+    if(pts.length && !fitted){ try{ map.fitBounds(pts,{padding:[40,40],maxZoom:15}); fitted=true; }catch(e){} }
+  }
+
+  // Build the map + list skeleton ONCE per mode (so the map isn't recreated on every
+  // filter keystroke — that would drop the user's pan/zoom). Within a mode we only
+  // refresh #listpanel + the cluster layers.
+  function ensureLayout(){
+    if(layoutMode===mode && $('map') && $('listpanel')) return;
+    if(mode==='pitch'){
+      $('stage').innerHTML='<div id="pitchheadslot"></div><div class="split"><div id="map"></div><div id="listpanel"></div></div>';
+    }else{
+      $('stage').innerHTML='<div class="split"><div id="map"></div><div class="panel" id="listpanel" style="max-height:520px;overflow:auto"></div></div>';
+    }
+    layoutMode=mode;
+    if(map){ try{ map.remove(); }catch(e){} map=null; }
+    initMap();
+  }
+
+  /* ---------- filtering / sorting ---------- */
+  function visible(){
+    var q=($('q')&&$('q').value||'').trim().toLowerCase();
+    var ind=$('fIndustry')?$('fIndustry').value:'';
+    var rows=TENANTS.filter(function(t){
+      if(filt.renew && !t.renewalFlag) return false;
+      if(filt.sub && !t.subleaseFlag) return false;
+      if(ind && t.industry!==ind) return false;
+      if(q){
+        var b=BUILD[t.buildingId]||{};
+        var hay=(t.name+' '+(t.industry||'')+' '+(b.name||'')+' '+(b.addr||'')).toLowerCase();
+        if(hay.indexOf(q)<0) return false;
+      }
+      return true;
+    });
+    rows.sort(function(a,b){
+      if(sortKey==='name') return (a.name||'').localeCompare(b.name||'');
+      if(sortKey==='mte'){ var av=a.monthsToExpiration==null?1e9:a.monthsToExpiration, bv=b.monthsToExpiration==null?1e9:b.monthsToExpiration; return av-bv; }
+      if(sortKey==='headcount') return (b.headcount||0)-(a.headcount||0);
+      if(sortKey==='rsf') return (b.rsf||0)-(a.rsf||0);
+      return b.propensity.score-a.propensity.score; // score
+    });
+    return rows;
+  }
+
+  /* ---------- render dispatch ---------- */
+  function render(){
+    sortKey=$('sort')?$('sort').value:'score';
+    var rows=visible();
+    if(mode==='pitch') renderPitch(rows); else renderOps(rows);
+  }
+
+  function chipsHtml(chips){
+    return '<div class="chips">'+(chips||[]).map(function(c){ return '<span class="tchip '+c.tone+'">'+esc(c.label)+'</span>'; }).join('')+'</div>';
+  }
+  function scoreHtml(s){
+    var col=scoreColor(s);
+    return '<span class="score"><span class="bar"><span class="fill" style="width:'+s+'%;background:'+col+'"></span></span><span class="n" style="color:'+col+'">'+s+'</span></span>';
+  }
+  function mteHtml(t){
+    if(t.monthsToExpiration==null) return '<span class="muted">—</span>';
+    var m=t.monthsToExpiration;
+    var lbl = m<0 ? 'Expired' : (Math.round(m)+' mo');
+    return '<span class="mono">'+esc(lbl)+'</span>'+(t.renewalFlag?' <span class="renew">Renewal</span>':'');
+  }
+
+  /* ---------- OPS grid ---------- */
+  function renderOps(rows){
+    var cols=[['name','Tenant'],['building','Building'],['industry','Industry'],['rsf','RSF'],['headcount','Headcount'],['lease','Lease expiration'],['funding','Funding'],['sub','Sublease'],['score','Propensity']];
+    var head='<tr>'+cols.map(function(c){ return '<th onclick="TEN.sortBy(\''+c[0]+'\')">'+c[1]+'</th>'; }).join('')+'</tr>';
+    var body=rows.map(function(t){
+      var b=BUILD[t.buildingId]||{};
+      var dh=t.headcountDeltaPct==null?'':' <span class="tsub">('+(t.headcountDeltaPct>0?'+':'')+Math.round(t.headcountDeltaPct*100)+'%)</span>';
+      return '<tr onclick="TEN.openDrawer(\''+t.id+'\')">'
+        + '<td><div class="tname">'+esc(t.name)+'</div>'+chipsHtml(t.propensity.chips)+'</td>'
+        + '<td>'+(t.buildingId?('<div>'+esc(b.name||t.buildingId)+'</div><div class="tsub">'+esc(b.addr||'')+'</div>'):'<span class="muted">Unlinked</span>')+'</td>'
+        + '<td>'+esc(t.industry||'—')+'</td>'
+        + '<td class="mono">'+fnum(t.rsf)+'</td>'
+        + '<td class="mono">'+fnum(t.headcount)+dh+'</td>'
+        + '<td>'+mteHtml(t)+'<div class="tsub">'+fdate(t.leaseExpiration)+'</div></td>'
+        + '<td>'+(t.fundingRound?('<div>'+esc(t.fundingRound)+'</div><div class="tsub">'+fdate(t.fundingDate)+'</div>'):'<span class="muted">—</span>')+'</td>'
+        + '<td>'+(t.subleaseFlag?'<span class="tchip warn">Listed</span>':'<span class="muted">No</span>')+'</td>'
+        + '<td>'+scoreHtml(t.propensity.score)+'</td>'
+        + '</tr>';
+    }).join('');
+    ensureLayout();
+    $('listpanel').innerHTML = rows.length
+      ? ('<table class="tt"><thead>'+head+'</thead><tbody>'+body+'</tbody></table>')
+      : '<div class="loading">No tenants match these filters.</div>';
+    drawMap(rows);
+  }
+  // Header click → set the matching sort option (only for columns that map to a sort key).
+  function sortBy(k){ var m={name:'name',rsf:'rsf',headcount:'headcount',lease:'mte',score:'score'}; if(m[k]){ $('sort').value=m[k]; render(); } }
+
+  /* ---------- PITCH mode (client-safe: no internal notes, no score internals) ---------- */
+  function sparkline(series, w, h){
+    if(!series||series.length<2) return '';
+    var xs=series.map(function(p){ return new Date(p[0]).getTime(); });
+    var ys=series.map(function(p){ return Number(p[1]); });
+    var x0=Math.min.apply(null,xs), x1=Math.max.apply(null,xs), y0=Math.min.apply(null,ys), y1=Math.max.apply(null,ys);
+    var dx=(x1-x0)||1, dy=(y1-y0)||1, pad=3;
+    var pts=series.map(function(p){
+      var x=pad+(new Date(p[0]).getTime()-x0)/dx*(w-2*pad);
+      var y=h-pad-(Number(p[1])-y0)/dy*(h-2*pad);
+      return x.toFixed(1)+','+y.toFixed(1);
+    }).join(' ');
+    var up=ys[ys.length-1]>=ys[0];
+    return '<svg class="spark" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'"><polyline points="'+pts+'" fill="none" stroke="'+(up?'#3F8F6B':'#C9543F')+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>';
+  }
+  function renderPitch(rows){
+    var withLease=rows.filter(function(t){return t.monthsToExpiration!=null;}).length;
+    var inWindow=rows.filter(function(t){return t.renewalFlag;}).length;
+    var totalRsf=rows.reduce(function(s,t){return s+(t.rsf||0);},0);
+    var head='<div class="pitchhead"><div class="ttl">Your market, mapped tenant by tenant.</div>'
+      + '<div class="sb">Every occupier below is tracked live — lease timing, growth trajectory, capital events and space signals — so we reach them at exactly the right moment.</div>'
+      + '<div class="stats">'
+      + '<div class="stat"><div class="n">'+rows.length+'</div><div class="l">Tracked tenants</div></div>'
+      + '<div class="stat"><div class="n">'+inWindow+'</div><div class="l">In renewal window</div></div>'
+      + '<div class="stat"><div class="n">'+withLease+'</div><div class="l">Lease dates on file</div></div>'
+      + '<div class="stat"><div class="n">'+(totalRsf?Math.round(totalRsf/1000)+'K':'—')+'</div><div class="l">RSF tracked</div></div>'
+      + '</div></div>';
+    var cards=rows.map(function(t){
+      var b=BUILD[t.buildingId]||{};
+      var lease = t.monthsToExpiration==null ? '<span class="muted">—</span>'
+        : (t.renewalFlag?'<b style="color:#256b4e">Renewal window</b>':(t.monthsToExpiration<0?'Holdover':('<b>'+Math.round(t.monthsToExpiration)+' mo</b> to expiry')));
+      var spark=sparkline(t.headcountSeries, 92, 26);
+      return '<div class="pcard" onclick="TEN.openDrawer(\''+t.id+'\')">'
+        + '<div class="pn">'+esc(t.name)+'</div>'
+        + '<div class="pi">'+esc(t.industry||'')+(b.name?' · '+esc(b.name):'')+'</div>'
+        + '<div class="prow"><span>Lease</span><span>'+lease+'</span></div>'
+        + '<div class="prow"><span>Headcount</span><span>'+(spark||'')+' <b>'+fnum(t.headcount)+'</b></span></div>'
+        + (t.fundingRound?'<div class="prow"><span>Capital</span><span><b>'+esc(t.fundingRound)+'</b></span></div>':'')
+        + '</div>';
+    }).join('');
+    ensureLayout();
+    $('pitchheadslot').innerHTML=head;
+    $('listpanel').innerHTML = rows.length ? ('<div class="pcards">'+cards+'</div>') : '<div class="loading">No tenants to present yet.</div>';
+    drawMap(rows);
+  }
+
+  /* ---------- drawer / detail ---------- */
+  async function openDrawer(id){
+    var t=TENANTS.filter(function(x){return x.id===id;})[0]; if(!t) return;
+    var b=BUILD[t.buildingId]||{};
+    $('scrim').classList.add('on'); var d=$('drawer'); d.classList.add('on'); d.setAttribute('aria-hidden','false');
+    var internal = mode==='ops';
+    d.innerHTML='<div class="dh"><div><div class="tname" style="font-size:17px">'+esc(t.name)+'</div>'
+      + '<div class="tsub">'+esc(t.industry||'')+(b.name?' · '+esc(b.name):'')+'</div></div>'
+      + '<button class="x" onclick="TEN.closeDrawer()">✕</button></div>'
+      + '<div class="dbody" id="dbody"><div class="loading">Loading…</div></div>';
+    try{
+      var r=await callFn('tenant-get', {companyId:id});
+      var tt=r.tenant, snaps=r.snapshots||[];
+      var kv='<div class="kv">'
+        + '<div class="k">Propensity</div><div class="v">'+scoreHtml(tt.propensity.score)+'</div>'
+        + '<div class="k">Lease expires</div><div class="v">'+fdate(tt.leaseExpiration)+' · '+mteHtml(tt)+'</div>'
+        + '<div class="k">Commencement</div><div class="v">'+fdate(tt.leaseCommencement)+'</div>'
+        + '<div class="k">Estimated RSF</div><div class="v mono">'+fnum(tt.rsf)+'</div>'
+        + '<div class="k">Headcount</div><div class="v mono">'+fnum(tt.headcount)+(tt.headcountDeltaPct==null?'':' ('+(tt.headcountDeltaPct>0?'+':'')+Math.round(tt.headcountDeltaPct*100)+'%)')+'</div>'
+        + '<div class="k">Building</div><div class="v">'+esc(b.name||tt.buildingId||'—')+'</div>'
+        + '<div class="k">Funding</div><div class="v">'+(tt.fundingRound?esc(tt.fundingRound)+' · '+fdate(tt.fundingDate):'—')+'</div>'
+        + '<div class="k">Sublease</div><div class="v">'+(tt.subleaseFlag?'Listed':'No')+'</div>'
+        + '</div>'
+        + chipsHtml(tt.propensity.chips);
+      var trend='<div class="sect">Headcount trend</div>'
+        + (snaps.length>=2 ? sparkline(snaps.map(function(s){return [s.captured_at,s.headcount];}), 380, 90)
+                           : '<div class="muted" style="font-size:12.5px">Not enough snapshots yet to chart a trend.</div>');
+      var snapList = snaps.length ? '<div style="margin-top:8px;font-size:11.5px" class="muted">'+snaps.map(function(s){return fdate(s.captured_at)+': '+fnum(s.headcount)+(s.source&&s.source!=='manual'?' ('+esc(s.source)+')':'');}).join(' · ')+'</div>' : '';
+      var addForm = internal ? '<div class="sect">Record a headcount snapshot</div>'
+        + '<div class="snapform"><input id="snapN" type="number" min="0" placeholder="Headcount"><button onclick="TEN.addSnap(\''+id+'\')">Add snapshot</button><span id="snapMsg" class="muted" style="font-size:12px"></span></div>' : '';
+      $('dbody').innerHTML=kv+trend+snapList+addForm;
+    }catch(e){ $('dbody').innerHTML='<div class="loading">Could not load: '+esc(e.message)+'</div>'; }
+  }
+  function closeDrawer(){ $('scrim').classList.remove('on'); var d=$('drawer'); d.classList.remove('on'); d.setAttribute('aria-hidden','true'); }
+  async function addSnap(id){
+    var n=Number($('snapN').value); var msg=$('snapMsg');
+    if(!Number.isInteger(n)||n<0){ msg.textContent='Enter a whole number.'; return; }
+    msg.textContent='Saving…';
+    try{ await callFn('tenant-snapshot', {companyId:id, headcount:n, source:'manual'});
+      msg.textContent='Saved.'; await reload(true); openDrawer(id);
+    }catch(e){ msg.textContent=e.message; }
+  }
+
+  /* ---------- controls ---------- */
+  function setMode(m){ mode=m; [].forEach.call($('modetog').children,function(btn){ btn.className=(btn.getAttribute('data-mode')===m)?'on':''; });
+    $('opsControls').style.display = m==='ops'?'flex':'none';
+    $('hTitle').textContent = m==='pitch' ? 'Tenant intelligence — presentation' : 'Tenant intelligence';
+    render();
+  }
+  function toggle(k){ filt[k]=!filt[k]; var el=$(k==='renew'?'fRenew':'fSub'); el.setAttribute('aria-pressed', filt[k]?'true':'false'); el.style.borderColor=filt[k]?'var(--accent)':''; el.style.color=filt[k]?'var(--accent)':''; render(); }
+
+  // Admin one-click: create/verify the HubSpot Company properties. Idempotent & safe to re-run.
+  async function hubspotSetup(){
+    if(!window.confirm('Create / verify the Vantage tenant properties in HubSpot?\nSafe to run repeatedly. Requires HUBSPOT_PRIVATE_APP_TOKEN to be set in Netlify.')) return;
+    var el=$('hsSetup'), old=el.textContent; el.disabled=true; el.textContent='Setting up…';
+    try{
+      var r=await callFn('hubspot-bootstrap', {});
+      var msg='HubSpot setup complete.'
+        + '\nCreated: '+((r.created&&r.created.length)?r.created.join(', '):'none')
+        + '\nAlready present: '+((r.skipped&&r.skipped.length)?r.skipped.join(', '):'none')
+        + (r.failed&&r.failed.length?'\nFailed: '+JSON.stringify(r.failed):'')
+        + (r.industryNativeReused?'\nNative HubSpot "industry" reused.':'\nNote: native "industry" property not found.');
+      window.alert(msg);
+    }catch(e){ window.alert('Setup failed: '+e.message); }
+    el.disabled=false; el.textContent=old;
+  }
+
+  document.addEventListener('DOMContentLoaded', bindAuth);
+  return { setMode:setMode, toggle:toggle, render:render, reload:reload, sortBy:sortBy, openDrawer:openDrawer, closeDrawer:closeDrawer, addSnap:addSnap, hubspotSetup:hubspotSetup };
+})();
+</script>
+</body>
+</html>
