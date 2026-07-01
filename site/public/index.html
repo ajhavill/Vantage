@@ -484,7 +484,8 @@
   };
 
   // ============ MARKET EXPLORER (map-first; filter + sort all buildings) ============
-  var mkt={ subs:{}, classes:{}, heights:{}, sizeMin:null, sizeMax:null, rentMin:null, rentMax:null, sort:'match' };
+  var mkt={ subs:{}, classes:{}, heights:{}, sizeMin:null, sizeMax:null, rentMin:null, rentMax:null, rbaMin:null, rbaMax:null, availNow:false, sort:'match' };
+  function bRBA(b){ var m=String(b.size||'').replace(/[^0-9]/g,''); return m?parseInt(m,10):0; }
   function mktCnt(o){ return Object.keys(o).length; }
   function mktToggle(o,k){ if(o[k]) delete o[k]; else o[k]=true; }
   function numOrNull(v){ v=parseFloat(v); return isNaN(v)?null:v; }
@@ -515,6 +516,10 @@
     var rl=bRentLow(b), rh=bRentHigh(b);
     if(mkt.rentMin!=null && (rh==null || rh<mkt.rentMin)) return false;
     if(mkt.rentMax!=null && (rl==null || rl>mkt.rentMax)) return false;
+    var rba=bRBA(b);
+    if(mkt.rbaMin!=null && rba<mkt.rbaMin) return false;
+    if(mkt.rbaMax!=null && rba>mkt.rbaMax) return false;
+    if(mkt.availNow && bAvailSF(b)<=0) return false;
     return true;
   }
   function mktListed(){
@@ -592,6 +597,8 @@
       '<div class="mf-grp"><span class="mf-lbl">Height</span>'+[['high','High'],['mid','Mid'],['low','Low']].map(function(h){return '<button class="mf-chip'+(mkt.heights[h[0]]?' on':'')+'" data-height="'+h[0]+'" type="button">'+h[1]+'</button>';}).join('')+'</div>'+
       '<div class="mf-grp"><span class="mf-lbl">Avail SF</span><input class="mf-num" id="mfSizeMin" type="number" inputmode="numeric" placeholder="min" value="'+(mkt.sizeMin!=null?mkt.sizeMin:'')+'"><span class="mf-dash">–</span><input class="mf-num" id="mfSizeMax" type="number" inputmode="numeric" placeholder="max" value="'+(mkt.sizeMax!=null?mkt.sizeMax:'')+'"></div>'+
       '<div class="mf-grp"><span class="mf-lbl">Rent $</span><input class="mf-num sm" id="mfRentMin" type="number" step="0.25" placeholder="min" value="'+(mkt.rentMin!=null?mkt.rentMin:'')+'"><span class="mf-dash">–</span><input class="mf-num sm" id="mfRentMax" type="number" step="0.25" placeholder="max" value="'+(mkt.rentMax!=null?mkt.rentMax:'')+'"></div>'+
+      '<div class="mf-grp"><span class="mf-lbl">Bldg SF</span><input class="mf-num" id="mfRbaMin" type="number" inputmode="numeric" placeholder="min" value="'+(mkt.rbaMin!=null?mkt.rbaMin:'')+'"><span class="mf-dash">–</span><input class="mf-num" id="mfRbaMax" type="number" inputmode="numeric" placeholder="max" value="'+(mkt.rbaMax!=null?mkt.rbaMax:'')+'"></div>'+
+      '<button class="mf-chip mf-toggle'+(mkt.availNow?' on':'')+'" id="mfAvailNow" type="button">Available now</button>'+
       '<button class="mf-btn" id="mfPrio" type="button">Priorities</button>'+
       '<button class="mf-clear" id="mfClear" type="button">Clear all</button>';
   }
@@ -600,7 +607,7 @@
     var el=document.getElementById('mktFilters'); if(!el || el._wired) return; el._wired=true;
     el.addEventListener('click',function(e){
       var chip=e.target.closest('.mf-chip');
-      if(chip){ if(chip.dataset.class) mktToggle(mkt.classes,chip.dataset.class); else if(chip.dataset.height) mktToggle(mkt.heights,chip.dataset.height); chip.classList.toggle('on'); renderMarket(true); return; }
+      if(chip){ if(chip.id==='mfAvailNow') mkt.availNow=!mkt.availNow; else if(chip.dataset.class) mktToggle(mkt.classes,chip.dataset.class); else if(chip.dataset.height) mktToggle(mkt.heights,chip.dataset.height); chip.classList.toggle('on'); renderMarket(true); return; }
       if(e.target.closest('#mfSubBtn')){ var p=document.getElementById('mfSubPanel'); if(p) p.classList.toggle('open'); return; }
       if(e.target.closest('#mfPrio')){ mktTogglePriorities(); return; }
       if(e.target.closest('#mfClear')){ mktClearFilters(); return; }
@@ -616,12 +623,14 @@
       else if(id==='mfSizeMax') mkt.sizeMax=numOrNull(e.target.value);
       else if(id==='mfRentMin') mkt.rentMin=numOrNull(e.target.value);
       else if(id==='mfRentMax') mkt.rentMax=numOrNull(e.target.value);
+      else if(id==='mfRbaMin') mkt.rbaMin=numOrNull(e.target.value);
+      else if(id==='mfRbaMax') mkt.rbaMax=numOrNull(e.target.value);
       else return;
       renderMarket(false);
     });
     document.addEventListener('click',function(e){ var p=document.getElementById('mfSubPanel'); if(p && p.classList.contains('open') && !e.target.closest('.mf-pop')) p.classList.remove('open'); });
   }
-  function mktClearFilters(){ mkt.subs={};mkt.classes={};mkt.heights={};mkt.sizeMin=null;mkt.sizeMax=null;mkt.rentMin=null;mkt.rentMax=null; renderMktFilters(); renderMarket(true); }
+  function mktClearFilters(){ mkt.subs={};mkt.classes={};mkt.heights={};mkt.sizeMin=null;mkt.sizeMax=null;mkt.rentMin=null;mkt.rentMax=null;mkt.rbaMin=null;mkt.rbaMax=null;mkt.availNow=false; renderMktFilters(); renderMarket(true); }
   function mktTogglePriorities(){ var p=document.getElementById('priobar'); if(!p) return; p.style.display=(p.style.display==='none'||!p.style.display)?'':'none'; }
   function renderMktSort(){
     var w=document.getElementById('mktSortWrap'); if(!w) return;

@@ -55,6 +55,7 @@
   .mf-lbl{font:600 10.5px Inter;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);margin-right:2px}
   .mf-chip{font:700 12px Inter;color:var(--ink-soft);background:var(--paper);border:1px solid var(--line-2);border-radius:6px;padding:3px 9px;cursor:pointer}
   .mf-chip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .mf-toggle{padding:7px 12px;font-weight:600}
   .mf-num{width:58px;font:500 12.5px Inter;color:var(--ink);background:var(--paper);border:1px solid var(--line-2);border-radius:6px;padding:4px 7px;outline:none}
   .mf-num.sm{width:50px}
   .mf-num:focus{border-color:var(--accent)}
