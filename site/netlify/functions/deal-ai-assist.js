@@ -55,8 +55,8 @@ async function dealContext(dealId, userId) {
     sb.rest("deal_properties?deal_id=eq." + dealId + "&select=name,address,status&order=sort_order.asc"),
     sb.rest("proposals?deal_id=eq." + dealId + "&select=id,title,status&order=created_at.asc"),
     sb.rest("proposal_rounds?deal_id=eq." + dealId + "&select=proposal_id,round_no,from_party,status,rent_basis,base_rent_psf,opex_psf,size_sf,term_months,annual_escalation_pct,free_rent_months,ti_psf,summary&order=round_no.asc"),
-    sb.rest("deal_steps?deal_id=eq." + dealId + "&select=phase,label,status,due_date&order=sort_order.asc"),
-    sb.rest("deal_tasks?deal_id=eq." + dealId + "&select=title,due_date,done,priority&order=due_date.asc"),
+    sb.rest("deal_steps?deal_id=eq." + dealId + "&select=id,phase,label,status,due_date&order=sort_order.asc"),
+    sb.rest("deal_tasks?deal_id=eq." + dealId + "&select=id,title,due_date,done,priority&order=due_date.asc"),
     sb.rest("lease_abstracts?deal_id=eq." + dealId + "&select=premises,size_sf,commencement_date,expiration_date,base_rent_psf,escalations,options&limit=1")
   ]);
   const props = arr(rr[0]), proposals = arr(rr[1]), rounds = arr(rr[2]), steps = arr(rr[3]), tasks = arr(rr[4]), abst = arr(rr[5])[0];
@@ -71,7 +71,7 @@ async function dealContext(dealId, userId) {
   if (proposals.length) {
     t += "\nPROPOSALS & ROUNDS:\n";
     proposals.forEach((pr) => {
-      t += " " + (pr.title || "Proposal") + " [" + (pr.status || "") + "]\n";
+      t += " " + (pr.title || "Proposal") + " [" + (pr.status || "") + "] (proposal_id:" + pr.id + ")\n";
       const rs = rounds.filter((r) => r.proposal_id === pr.id);
       t += rs.length ? (rs.map(fmtRound).join("\n") + "\n") : "  (no rounds logged)\n";
     });
@@ -80,11 +80,11 @@ async function dealContext(dealId, userId) {
   if (steps.length) {
     const done = steps.filter((s) => s.status === "done").length;
     const open = steps.filter((s) => s.status !== "done" && s.status !== "na");
-    t += "\nCHECKLIST: " + done + "/" + steps.length + " done. Not yet done: " +
-      (open.length ? open.slice(0, 12).map((s) => s.label + (s.due_date ? (" (due " + s.due_date + ")") : "")).join("; ") : "none") + "\n";
+    t += "\nCHECKLIST (" + done + "/" + steps.length + " done). Open steps:\n" +
+      (open.length ? open.slice(0, 20).map((s) => "  - [step_id:" + s.id + "] " + s.label + (s.due_date ? (" (due " + s.due_date + ")") : "")).join("\n") : "  (all complete)") + "\n";
   }
   const openTasks = tasks.filter((x) => !x.done);
-  if (openTasks.length) t += "\nOPEN TASKS: " + openTasks.map((x) => x.title + (x.due_date ? (" (due " + x.due_date + ")") : "")).join("; ") + "\n";
+  if (openTasks.length) t += "\nOPEN TASKS:\n" + openTasks.map((x) => "  - [task_id:" + x.id + "] " + x.title + (x.due_date ? (" (due " + x.due_date + ")") : "")).join("\n") + "\n";
 
   if (abst) t += "\nLEASE ABSTRACT: premises " + (abst.premises || "n/a") + ", size " + (abst.size_sf != null ? abst.size_sf + " SF" : "n/a") +
     ", term " + (abst.commencement_date || "?") + " to " + (abst.expiration_date || "?") + ", base " + psf(abst.base_rent_psf) +
@@ -114,6 +114,34 @@ const SYSTEM =
   "risks, give a short prioritized list. Use ONLY the facts in the provided context; never invent specific figures that aren't given — if a " +
   "number is unknown, say so or mark [TBD]. Prefer clean markdown (short paragraphs, bold labels, tight bullets). If the context is thin, say what you'd need.";
 
+const ALLOWED = ["add_task", "complete_task", "set_step_status", "set_stage", "update_commission", "add_round"];
+const ACTIONS_DOC =
+  "\n\nACTIONS — you can take actions for the broker, but they CONFIRM each one before it runs, so propose freely when asked. " +
+  "When the broker asks you to do something below, write your normal reply, THEN append an actions block on its own lines, exactly:\n" +
+  "<<ACTIONS>>\n[{\"type\":\"...\",\"label\":\"...\",\"params\":{...}}]\n<<END>>\n" +
+  "'label' is the short confirmation the broker sees (e.g. 'Add task: Call the landlord (due Jul 3)'). Only propose an action the broker clearly asked for or agreed to. Omit the block entirely when no action is needed. Never wrap the block in code fences. " +
+  "All actions apply to the CURRENT deal in context; if there is no deal in context, tell the broker to open the deal first instead of proposing the action. Never invent an id — only use task_id/step_id/proposal_id values shown in the context.\n" +
+  "Allowed actions:\n" +
+  "- add_task: params {title (required), due_date 'YYYY-MM-DD' (optional), priority 'low'|'normal'|'high' (optional)}\n" +
+  "- complete_task: params {task_id}\n" +
+  "- set_step_status: params {step_id, status 'done'|'active'|'pending'|'na'}  (use 'done' to check a step off)\n" +
+  "- set_stage: params {stage 'needs'|'touring'|'evaluating'|'proposals'|'negotiation'|'executed'|'dead'}\n" +
+  "- update_commission: params {commission_amount, commission_pct, commission_status 'pending'|'invoiced'|'paid', deal_value}  (include only the fields being set)\n" +
+  "- add_round: params {proposal_id, from_party 'tenant'|'landlord', rent_basis 'FSG'|'MG'|'IG'|'NNN'|'NN'|'N'|'GROSS'|'ABS'|'OTHER', base_rent_psf, opex_psf, size_sf, term_months, annual_escalation_pct, free_rent_months, ti_psf, summary}  (include the numbers the broker gave; omit unknowns)";
+
+function okJSON(obj) { return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) }; }
+function parseActions(text) {
+  const m = text.match(/<<ACTIONS>>([\s\S]*?)<<END>>/);
+  var clean = text.replace(/<<ACTIONS>>[\s\S]*?<<END>>/, "").trim();
+  if (!m) return { clean: text.trim(), actions: [] };
+  var acts = [];
+  try { const j = JSON.parse(m[1].trim()); if (Array.isArray(j)) acts = j; } catch (e) { acts = []; }
+  acts = acts.filter((a) => a && ALLOWED.indexOf(a.type) >= 0 && a.params && typeof a.params === "object")
+    .slice(0, 5).map((a) => ({ type: a.type, label: String(a.label || a.type).slice(0, 140), params: a.params }));
+  if (acts.length && !clean) clean = "Here's what I'll do — confirm below:";
+  return { clean: clean, actions: acts };
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") return { statusCode: 405, body: "Use POST." };
   let body; try { body = JSON.parse(event.body || "{}"); } catch (e) { return { statusCode: 400, body: "bad body" }; }
@@ -140,12 +168,14 @@ exports.handler = async (event) => {
     ? body.history.filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string").slice(-6)
     : [];
   const messages = history.concat([{ role: "user", content: question }]);
-  const system = SYSTEM + "\n\nCURRENT CONTEXT (" + (ctx.label || "") + "):\n" + (ctx.text || "(none)");
+  const canAct = !!body.dealId;   // actions are deal-scoped
+  const system = SYSTEM + (canAct ? ACTIONS_DOC : "") + "\n\nCURRENT CONTEXT (" + (ctx.label || "") + "):\n" + (ctx.text || "(none)");
 
   try {
-    const text = await callClaude(system, messages);
-    return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: text, context: ctx.label }) };
+    const raw = await callClaude(system, messages);
+    const parsed = parseActions(raw);
+    return okJSON({ text: parsed.clean, actions: parsed.actions, context: ctx.label });
   } catch (e) {
-    return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ error: e.message || "The assistant hit an error. Try again." }) };
+    return okJSON({ error: e.message || "The assistant hit an error. Try again." });
   }
 };

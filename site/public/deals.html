@@ -1804,6 +1804,16 @@ window.DF = (function(){
   /* ---------- boot ---------- */
   document.addEventListener('DOMContentLoaded',bindAuth);
 
+  // Van took an action → refresh the current view in place (don't navigate away)
+  async function refreshCurrent(dealId){
+    if(!sb) return;
+    try{ deals=await q(sb.from('deals').select('*').order('created_at',{ascending:false})); }catch(e){}
+    if($('dealView').style.display!=='none' && dealId){ openDeal(dealId); }
+    else if($('dashboardView').style.display!=='none'){ renderDashboard(); }
+    else if($('pipelineView').style.display!=='none'){ if(_view==='table') renderTable(); else renderBoard(); }
+  }
+  window.addEventListener('van:acted', function(ev){ refreshCurrent(ev&&ev.detail&&ev.detail.dealId); });
+
   return {
     showDashboard:showDashboard, showPipeline:showPipeline, setPipeView:setPipeView, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, toggleClosed:toggleClosed,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,

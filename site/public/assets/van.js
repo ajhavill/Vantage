@@ -80,6 +80,18 @@
       ".van-dots i{display:inline-block;width:6px;height:6px;margin-right:3px;border-radius:999px;background:var(--ink-faint,#8a92a0);animation:vanblink 1s infinite}" +
       ".van-dots i:nth-child(2){animation-delay:.2s}.van-dots i:nth-child(3){animation-delay:.4s}" +
       "@keyframes vanblink{0%,60%,100%{opacity:.25}30%{opacity:1}}" +
+      ".van-acts{display:flex;flex-direction:column;gap:8px;align-self:flex-start;max-width:90%}" +
+      ".van-act{border:1px solid var(--line-2,#d8d3c7);background:var(--paper,#f3efe6);border-radius:11px;padding:10px 12px}" +
+      ".van-act-l{font:600 12.5px Inter,system-ui,sans-serif;color:var(--ink,#1a2230);line-height:1.4}" +
+      ".van-act-b{display:flex;gap:8px;justify-content:flex-end;margin-top:9px}" +
+      ".van-act-b button{font:600 11.5px Inter,system-ui,sans-serif;border-radius:7px;padding:6px 13px;cursor:pointer;border:1px solid var(--line-2,#d8d3c7)}" +
+      ".van-act-no{background:none;color:var(--ink-faint,#8a92a0)}" +
+      ".van-act-no:hover{color:var(--ink-soft,#55606f)}" +
+      ".van-act-yes{background:var(--building,#1b2a4a);color:#fff;border-color:var(--building,#1b2a4a)}" +
+      ".van-act-yes:hover{filter:brightness(1.1)}" +
+      ".van-act.done{border-color:#bfe3cd;background:rgba(46,140,90,.09)}.van-act.done .van-act-l{color:#2e7d4f}" +
+      ".van-act.err{border-color:#e6c3bd;background:rgba(201,84,63,.08)}" +
+      ".van-act.dismissed{opacity:.55}" +
       "@media(max-width:520px){.van-panel{width:100%}.van-fab{right:16px;bottom:16px}}";
     var s = document.createElement("style"); s.textContent = css; document.head.appendChild(s);
   }
@@ -128,7 +140,33 @@
     div.innerHTML = (role === "assistant" && !isRaw) ? render(html) : (role === "user" ? esc(html) : html);
     m.appendChild(div); m.scrollTop = m.scrollHeight; return div;
   }
-  function greet() { push("assistant", "Hi, I'm **Van** — your tenant-rep specialist. Ask me anything about " + (ctx.dealId ? ("**" + ctx.label + "**") : "your pipeline") + ", or tap a suggestion. I can summarize, draft emails, compare proposals, and flag what needs attention."); }
+  function greet() { push("assistant", "Hi, I'm **Van** — your tenant-rep specialist. Ask me anything about " + (ctx.dealId ? ("**" + ctx.label + "**") : "your pipeline") + ", or tap a suggestion. I can summarize, draft emails, compare proposals, flag what needs attention" + (ctx.dealId ? ", and take actions (add tasks, check off steps, log rounds — you confirm each one)" : "") + "."); }
+
+  function renderActions(actions) {
+    var m = $("vanMsgs"); if (!m) return;
+    var wrap = document.createElement("div"); wrap.className = "van-acts";
+    actions.forEach(function (a) {
+      var card = document.createElement("div"); card.className = "van-act";
+      card.innerHTML = '<div class="van-act-l">' + esc(a.label || a.type) + '</div>' +
+        '<div class="van-act-b"><button class="van-act-no">Dismiss</button><button class="van-act-yes">Confirm</button></div>';
+      card.querySelector(".van-act-no").addEventListener("click", function () { card.className = "van-act dismissed"; card.innerHTML = '<div class="van-act-l">Dismissed</div>'; });
+      card.querySelector(".van-act-yes").addEventListener("click", function () { doAction(a, card); });
+      wrap.appendChild(card);
+    });
+    m.appendChild(wrap); m.scrollTop = m.scrollHeight;
+  }
+  async function doAction(a, card) {
+    card.innerHTML = '<div class="van-act-l">Working…</div>';
+    try {
+      var client = getSB(); var s = client ? await client.auth.getSession() : null;
+      var token = s && s.data && s.data.session ? s.data.session.access_token : null;
+      var res = await fetch("/.netlify/functions/deal-ai-act", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: token, dealId: ctx.dealId || null, action: a }) });
+      var data = await res.json().catch(function () { return null; });
+      if (!data || data.error) { card.className = "van-act err"; card.innerHTML = '<div class="van-act-l">⚠️ ' + esc((data && data.error) || "Couldn't do that.") + '</div>'; }
+      else { card.className = "van-act done"; card.innerHTML = '<div class="van-act-l">✓ ' + esc(data.message || "Done.") + '</div>'; try { window.dispatchEvent(new CustomEvent("van:acted", { detail: { dealId: ctx.dealId } })); } catch (e) {} }
+    } catch (e) { card.className = "van-act err"; card.innerHTML = '<div class="van-act-l">⚠️ ' + esc((e && e.message) || "Failed.") + '</div>'; }
+    var mm = $("vanMsgs"); if (mm) mm.scrollTop = mm.scrollHeight;
+  }
   function clearChat() { history = []; var m = $("vanMsgs"); if (m) m.innerHTML = ""; greet(); }
 
   async function send(preset) {
@@ -152,7 +190,7 @@
       var data = await res.json().catch(function () { return null; });
       if (thinking) thinking.remove();
       if (!data || data.error) { push("assistant", "⚠️ " + esc((data && data.error) || "Something went wrong. Please try again."), true); }
-      else { push("assistant", data.text || "(no response)"); history.push({ role: "assistant", content: data.text || "" }); }
+      else { push("assistant", data.text || "(no response)"); history.push({ role: "assistant", content: data.text || "" }); if (Array.isArray(data.actions) && data.actions.length) renderActions(data.actions); }
     } catch (e) {
       if (thinking) thinking.remove();
       push("assistant", (e && e.name === "AbortError") ? "⚠️ That took too long — try a shorter question." : "⚠️ " + esc((e && e.message) || "Network error."), true);
