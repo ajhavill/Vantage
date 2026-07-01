@@ -232,6 +232,60 @@
   .step-mini:hover{border-color:var(--accent);color:var(--accent)}
   .step-mini.has{color:var(--accent);border-color:var(--accent)}
   @media(max-width:640px){ .snap{grid-template-columns:1fr} .step-note-txt{display:none} }
+
+  /* sub-nav */
+  .subnav{max-width:1120px;margin:0 auto;padding:16px 22px 0;display:flex;gap:6px}
+  .subnav button{font:600 13px Inter;color:var(--ink-faint);background:none;border:0;border-bottom:2px solid transparent;padding:7px 4px;margin-right:12px;cursor:pointer}
+  .subnav button:hover{color:var(--ink-soft)}
+  .subnav button.on{color:var(--ink);border-bottom-color:var(--building)}
+
+  /* dashboard */
+  .dstats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+  .dstat{background:var(--paper-2);border:1px solid var(--line);border-radius:13px;padding:14px 16px}
+  .dstat .k{font:600 10px Inter;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-faint)}
+  .dstat .v{font:800 26px 'Bricolage Grotesque';color:var(--ink);margin-top:4px;line-height:1}
+  .dstat .s{font:500 11px Inter;color:var(--ink-faint);margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .dpanel{background:var(--paper-2);border:1px solid var(--line);border-radius:14px;padding:8px 6px 10px}
+  .dpanel-h{font:700 13px 'Bricolage Grotesque';color:var(--ink);padding:8px 12px 10px;border-bottom:1px solid var(--line);margin-bottom:2px;display:flex;justify-content:space-between;align-items:center}
+  .dpanel-x{font:600 11.5px Inter;color:var(--accent);cursor:pointer}
+  .dpanel-x:hover{text-decoration:underline}
+  .dempty{font:400 12px Inter;color:var(--ink-faint);padding:16px 12px}
+  .due{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line);cursor:pointer}
+  .due:last-child{border-bottom:0}
+  .due:hover{background:var(--paper)}
+  .due-when{font:700 11px 'JetBrains Mono';color:var(--ink-faint);width:56px;flex:none}
+  .due.over .due-when{color:var(--dining)}
+  .due-l{flex:1;font:500 12.5px Inter;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .due-l em{color:var(--ink-faint);font-style:normal}
+  .due-kind{display:inline-block;width:7px;height:7px;border-radius:999px;margin-right:7px;vertical-align:1px;background:var(--ink-faint)}
+  .due-kind.task{background:var(--accent)} .due-kind.step{background:#b5651d} .due-kind.critical{background:var(--dining)}
+  .due-date{font:500 11px Inter;color:var(--ink-faint);flex:none}
+  .due-done{font:700 11px Inter;color:var(--accent);background:none;border:1px solid var(--line-2);border-radius:6px;padding:3px 7px;cursor:pointer;flex:none}
+  .due-done:hover{border-color:var(--accent)}
+  .rec{display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer}
+  .rec:last-child{border-bottom:0}
+  .rec:hover{background:var(--paper)}
+  .rec-dot{width:7px;height:7px;border-radius:999px;flex:none;background:var(--ink-faint)}
+  .rec.sev2 .rec-dot{background:var(--dining)} .rec.sev1 .rec-dot{background:#b5651d} .rec.sev0 .rec-dot{background:var(--accent)}
+  .rec-t{flex:1;font:500 12.5px Inter;color:var(--ink)}
+  .rec-go{color:var(--ink-faint);font-weight:700;flex:none}
+  .rec:hover .rec-go{color:var(--accent)}
+
+  /* tasks */
+  .task{display:flex;align-items:center;gap:10px;padding:7px 3px;border-bottom:1px solid var(--line)}
+  .task:last-child{border-bottom:0}
+  .taskchk{flex:none;width:17px;height:17px;border-radius:5px;border:2px solid var(--line-2);background:var(--paper);cursor:pointer;padding:0}
+  .taskchk:hover{border-color:var(--accent)}
+  .taskchk.on{border-color:var(--accent);background:var(--accent)}
+  .task-l{flex:1;font:500 13px Inter;color:var(--ink)}
+  .task.done .task-l{color:var(--ink-faint);text-decoration:line-through}
+  .task-pri{font:700 9px Inter;text-transform:uppercase;letter-spacing:.05em;color:var(--dining);background:rgba(201,84,63,.12);border-radius:5px;padding:2px 6px}
+  .task-due{font:500 11px 'JetBrains Mono';color:var(--ink-faint)}
+  .task-due.over{color:var(--dining)}
+  .tasks-done{margin:6px 0}
+  .tasks-done summary{font:600 11.5px Inter;color:var(--ink-faint);cursor:pointer;padding:6px 0}
+  @media(max-width:760px){ .dstats{grid-template-columns:repeat(2,1fr)} .dgrid{grid-template-columns:1fr} }
 </style>
 </head>
 <body>
@@ -277,6 +331,14 @@
 </div>
 
 <main>
+  <div class="subnav" id="subnav">
+    <button data-view="dashboard" onclick="DF.showDashboard()">Dashboard</button>
+    <button data-view="pipeline" onclick="DF.showPipeline()">Pipeline</button>
+  </div>
+
+  <!-- DASHBOARD -->
+  <section id="dashboardView" class="wrap" style="display:none"></section>
+
   <!-- PIPELINE -->
   <section id="pipelineView" class="wrap">
     <div class="vhead">
@@ -448,15 +510,17 @@ window.DF = (function(){
   async function loadDeals(){
     try{
       deals=await q(sb.from('deals').select('*').order('created_at',{ascending:false}));
-      showPipeline();
+      showDashboard();
     }catch(e){ $('pipe').innerHTML='<div class="loading">Could not load deals: '+esc(e.message)+'</div>'; }
   }
 
   /* ---------- pipeline view (board + table) ---------- */
   function showPipeline(){
     $('dealView').style.display='none';
+    $('dashboardView').style.display='none';
     $('pipelineView').style.display='block';
     $('crumb').innerHTML='Deal flow';
+    setSubnav('pipeline');
     var t=$('vtoggle'); if(t){ [].forEach.call(t.children,function(b){ b.className=(b.getAttribute('data-v')===_view)?'on':''; }); }
     if(_view==='table'){ $('pipe').style.display='none'; $('closed').style.display='none'; $('dealTable').style.display='block'; renderTable(); }
     else { $('pipe').style.display=''; $('closed').style.display=''; $('dealTable').style.display='none'; renderBoard(); }
@@ -558,10 +622,177 @@ window.DF = (function(){
     return agg;
   }
 
+  /* ---------- dashboard / broker home ---------- */
+  function setSubnav(v){ var n=$('subnav'); if(n){ [].forEach.call(n.children,function(b){ b.className=(b.getAttribute('data-view')===v)?'on':''; }); } }
+  function daysUntil(ds){ if(!ds) return null; var t=new Date(ds+'T00:00:00'), now=new Date(); now.setHours(0,0,0,0); return Math.round((t-now)/86400000); }
+
+  async function showDashboard(){
+    $('pipelineView').style.display='none';
+    $('dealView').style.display='none';
+    $('dashboardView').style.display='block';
+    $('crumb').innerHTML='Deal flow';
+    setSubnav('dashboard');
+    renderDashboard();
+  }
+
+  async function loadDashData(){
+    var out={tasks:[],steps:[],absts:[]};
+    try{ out.tasks=await q(sb.from('deal_tasks').select('*').order('due_date',{ascending:true,nullsFirst:false})); }catch(e){}
+    try{ out.steps=await q(sb.from('deal_steps').select('deal_id,label,due_date,status').not('due_date','is',null).in('status',['pending','active'])); }catch(e){}
+    try{ out.absts=await q(sb.from('lease_abstracts').select('deal_id,key_dates,expiration_date')); }catch(e){}
+    return out;
+  }
+
+  function statCard(k,v,sub){ return '<div class="dstat"><div class="k">'+k+'</div><div class="v">'+v+'</div>'+(sub?'<div class="s">'+esc(sub)+'</div>':'')+'</div>'; }
+  function byStageMini(active){ var c={}; active.forEach(function(d){ c[d.stage]=(c[d.stage]||0)+1; }); return STAGES.filter(function(s){return c[s[0]];}).map(function(s){ return c[s[0]]+' '+s[1].toLowerCase(); }).join(' · '); }
+
+  async function renderDashboard(){
+    var el=$('dashboardView');
+    el.innerHTML='<div class="loading">Loading your dashboard…</div>';
+    var data; try{ data=await loadDashData(); }catch(e){ el.innerHTML='<div class="loading">Could not load dashboard: '+esc(e.message)+'</div>'; return; }
+    var tasks=data.tasks||[], steps=data.steps||[], absts=data.absts||[];
+    var year=new Date().getFullYear();
+    var dealById={}; deals.forEach(function(d){ dealById[d.id]=d; });
+    var active=deals.filter(function(d){ return d.stage!=='dead' && d.stage!=='executed'; });
+    var pipeComm=active.reduce(function(s,d){ return s+(num(d.commission_amount)||0); },0);
+    var collectedYTD=deals.filter(function(d){ return d.commission_status==='paid' && d.commission_paid_on && (new Date(d.commission_paid_on)).getFullYear()===year; }).reduce(function(s,d){ return s+(num(d.commission_amount)||0); },0);
+    var collectedAll=deals.filter(function(d){ return d.commission_status==='paid'; }).reduce(function(s,d){ return s+(num(d.commission_amount)||0); },0);
+    var openTasks=tasks.filter(function(t){ return !t.done; });
+    var overdue=0;
+    openTasks.forEach(function(t){ if(t.due_date&&daysUntil(t.due_date)<0) overdue++; });
+    steps.forEach(function(s){ if(daysUntil(s.due_date)<0) overdue++; });
+
+    // "What's due" — merge tasks, checklist steps, and lease critical dates
+    var feed=[];
+    openTasks.forEach(function(t){ if(t.due_date) feed.push({date:t.due_date, kind:'task', label:t.title, dealId:t.deal_id, id:t.id}); });
+    steps.forEach(function(s){ feed.push({date:s.due_date, kind:'step', label:s.label, dealId:s.deal_id}); });
+    absts.forEach(function(a){
+      (a.key_dates||[]).forEach(function(k){ if(k&&k.date) feed.push({date:k.date, kind:'critical', label:(k.label||'Critical date'), dealId:a.deal_id}); });
+      if(a.expiration_date) feed.push({date:a.expiration_date, kind:'critical', label:'Lease expiration', dealId:a.deal_id});
+    });
+    feed.sort(function(x,y){ return x.date<y.date?-1:(x.date>y.date?1:0); });
+    var feedItems=feed.filter(function(f){ var du=daysUntil(f.date); return du!=null && du<=60; }).slice(0,14);
+
+    var recs=buildRecs(active, steps, tasks, absts, dealById);
+
+    el.innerHTML =
+      '<div class="vhead"><div><h1>Dashboard</h1><div class="sub">Your book of business at a glance.</div></div>'
+      + '<button class="share-btn" onclick="DF.newTask(null)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Add task</button></div>'
+      + '<div class="dstats">'
+      +   statCard('Commission collected (YTD)', money(collectedYTD), collectedAll>collectedYTD?('All-time '+money(collectedAll)):'')
+      +   statCard('Pipeline commission', money(pipeComm), active.length+' active deal'+(active.length===1?'':'s'))
+      +   statCard('Deals in pipeline', String(active.length), byStageMini(active))
+      +   statCard('Open tasks', String(openTasks.length), overdue?(overdue+' overdue'):'on track')
+      + '</div>'
+      + '<div class="dgrid">'
+      +   '<div class="dpanel"><div class="dpanel-h">What\'s due <span class="dpanel-x" onclick="DF.newTask(null)">+ task</span></div>'
+      +     (feedItems.length? feedItems.map(function(f){ return feedRow(f,dealById); }).join('') : '<div class="dempty">Nothing due in the next 60 days. Add a task to stay ahead.</div>')
+      +   '</div>'
+      +   '<div class="dpanel"><div class="dpanel-h">Recommended next steps</div>'
+      +     (recs.length? recs.map(recRow).join('') : '<div class="dempty">You\'re all caught up. Nice work 🎉</div>')
+      +   '</div>'
+      + '</div>';
+  }
+
+  function feedRow(f, dealById){
+    var d=dealById[f.dealId]; var client=d?(d.client_name||'Deal'):'';
+    var du=daysUntil(f.date), over=du<0;
+    var when= over? (Math.abs(du)+'d late') : (du===0?'today':(du+'d'));
+    return '<div class="due'+(over?' over':'')+'"'+(f.dealId?' onclick="DF.openDeal(\''+f.dealId+'\')"':'')+'>'
+      + '<span class="due-when">'+esc(when)+'</span>'
+      + '<span class="due-l"><span class="due-kind '+f.kind+'"></span>'+esc(f.label)+(client?' <em>· '+esc(client)+'</em>':'')+'</span>'
+      + '<span class="due-date">'+fmtDate(f.date)+'</span>'
+      + (f.kind==='task'?'<button class="due-done" onclick="event.stopPropagation();DF.toggleTask(\''+f.id+'\',true)" title="Mark done">✓</button>':'')
+      + '</div>';
+  }
+  function recRow(r){
+    return '<div class="rec sev'+r.sev+'"'+(r.dealId?' onclick="DF.openDeal(\''+r.dealId+'\')"':'')+'>'
+      + '<span class="rec-dot"></span><span class="rec-t">'+esc(r.text)+'</span><span class="rec-go">→</span></div>';
+  }
+  function buildRecs(active, steps, tasks, absts, dealById){
+    var recs=[];
+    steps.forEach(function(s){ var du=daysUntil(s.due_date); if(du!=null&&du<0){ var d=dealById[s.deal_id]; recs.push({sev:2, dealId:s.deal_id, text:'You\'re behind on “'+s.label+'”'+(d?' for '+(d.client_name||'a client'):'')}); } });
+    tasks.forEach(function(t){ if(!t.done&&t.due_date){ var du=daysUntil(t.due_date); if(du!=null&&du<0){ var d=dealById[t.deal_id]; recs.push({sev:2, dealId:t.deal_id, text:'Overdue task: '+t.title+(d&&d.client_name?' — '+d.client_name:'')}); } } });
+    absts.forEach(function(a){ if(a.expiration_date){ var du=daysUntil(a.expiration_date); if(du!=null&&du>=0&&du<=120){ var d=dealById[a.deal_id]; recs.push({sev:1, dealId:a.deal_id, text:(d&&d.client_name?d.client_name:'A client')+'’s lease expires in '+du+' days — start the renewal conversation'}); } } });
+    var taskDeal={}; tasks.forEach(function(t){ if(!t.done&&t.deal_id) taskDeal[t.deal_id]=true; });
+    active.forEach(function(d){ if(!taskDeal[d.id]) recs.push({sev:0, dealId:d.id, text:'No next action set for '+(d.client_name||'a deal')+' — add a task'}); });
+    active.forEach(function(d){ if(d.commission_amount==null && d.commission_pct==null) recs.push({sev:0, dealId:d.id, text:'Add commission terms for '+(d.client_name||'a deal')}); });
+    recs.sort(function(a,b){ return b.sev-a.sev; });
+    return recs.slice(0,7);
+  }
+
+  /* ---------- tasks ---------- */
+  function tasksSection(d, tasks){
+    tasks=tasks||[];
+    var open=tasks.filter(function(t){return !t.done;}), done=tasks.filter(function(t){return t.done;});
+    var rows=open.length? open.map(function(t){ return taskRow(t,d.id); }).join('') : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No open tasks.</div>';
+    var doneRows=done.length?('<details class="tasks-done"><summary>'+done.length+' completed</summary>'+done.map(function(t){return taskRow(t,d.id);}).join('')+'</details>'):'';
+    return rows+doneRows+'<button class="miniadd" onclick="DF.newTask(\''+d.id+'\')">+ Add task</button>';
+  }
+  function taskRow(t, dealId){
+    var over=(!t.done && t.due_date && daysUntil(t.due_date)<0);
+    return '<div class="task'+(t.done?' done':'')+'">'
+      + '<button class="taskchk'+(t.done?' on':'')+'" onclick="DF.toggleTask(\''+t.id+'\','+(t.done?'false':'true')+',\''+dealId+'\')" title="'+(t.done?'Reopen':'Mark done')+'"></button>'
+      + '<span class="task-l">'+esc(t.title)+'</span>'
+      + (t.priority==='high'&&!t.done?'<span class="task-pri">High</span>':'')
+      + (t.due_date?'<span class="task-due'+(over?' over':'')+'">'+fmtDate(t.due_date)+'</span>':'')
+      + '<button class="step-mini" onclick="DF.newTask(\''+dealId+'\',\''+t.id+'\')" title="Edit">✎</button>'
+      + '<button class="delx" onclick="DF.deleteTask(\''+t.id+'\',\''+dealId+'\')">remove</button>'
+      + '</div>';
+  }
+  function refreshTaskViews(dealId){
+    if($('dashboardView') && $('dashboardView').style.display!=='none') renderDashboard();
+    else if(dealId && $('dealView').style.display!=='none') reloadTasks(dealId);
+  }
+  async function reloadTasks(dealId){
+    var d=deals.filter(function(x){return x.id===dealId;})[0]; if(!d) return;
+    var tasks=[]; try{ tasks=await q(sb.from('deal_tasks').select('*').eq('deal_id',dealId).order('due_date',{ascending:true,nullsFirst:false})); }catch(e){}
+    var tb=$('tasksBody'); if(tb) tb.innerHTML=tasksSection(d,tasks);
+  }
+  async function toggleTask(id, done, dealId){
+    try{ await q(sb.from('deal_tasks').update({done:done, completed_at: done?new Date().toISOString():null}).eq('id',id)); refreshTaskViews(dealId); }
+    catch(e){ alert('Could not update task: '+(e.message||e)); }
+  }
+  async function deleteTask(id, dealId){
+    if(!confirm('Remove this task?')) return;
+    try{ await q(sb.from('deal_tasks').delete().eq('id',id)); refreshTaskViews(dealId); }
+    catch(e){ alert('Could not remove task: '+(e.message||e)); }
+  }
+  async function newTask(dealId, taskId){
+    var t={}; if(taskId){ try{ t=(await q(sb.from('deal_tasks').select('*').eq('id',taskId).limit(1)))[0]||{}; }catch(e){} }
+    var dealPicker='';
+    if(!dealId){
+      var opts=deals.filter(function(d){return d.stage!=='dead';}).map(function(d){ return '<option value="'+d.id+'"'+((t.deal_id===d.id)?' selected':'')+'>'+esc(d.client_name||'Untitled')+'</option>'; }).join('');
+      dealPicker=fld('Link to deal (optional)','<select id="t_deal"><option value="">— none —</option>'+opts+'</select>');
+    }
+    openSheet('<h3>'+(taskId?'Edit task':'New task')+'</h3>'
+      + fld('Task','<input id="t_title" value="'+esc(t.title||'')+'" placeholder="e.g. Follow up with landlord on TI" autofocus>')
+      + '<div class="grid2">'
+      +   fld('Due date','<input id="t_due" type="date" value="'+(t.due_date||'')+'">')
+      +   fld('Priority','<select id="t_pri">'+selOpts([['low','Low'],['normal','Normal'],['high','High']], t.priority||'normal')+'</select>')
+      + '</div>'
+      + dealPicker
+      + '<div class="formerr" id="f_err"></div>'
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button><button class="btn pri" id="f_save">'+(taskId?'Save':'Add task')+'</button></div>');
+    $('f_save').addEventListener('click',async function(){
+      var title=($('t_title').value||'').trim(); if(!title){ $('f_err').textContent='Enter a task.'; return; }
+      this.disabled=true; this.textContent='Saving…';
+      var linkDeal = dealId || ($('t_deal')?($('t_deal').value||null):null);
+      var patch={title:title, due_date:($('t_due').value||null), priority:$('t_pri').value, deal_id:linkDeal};
+      try{
+        if(taskId){ await q(sb.from('deal_tasks').update(patch).eq('id',taskId)); }
+        else{ patch.owner_id=me.id; await q(sb.from('deal_tasks').insert(patch)); }
+        closeSheet(); refreshTaskViews(dealId||linkDeal);
+      }catch(e){ $('f_err').textContent=/deal_tasks|does not exist/i.test(e.message||'')?'Run the deal-tasks SQL in Supabase first.':(e.message||''+e); this.disabled=false; this.textContent=taskId?'Save':'Add task'; }
+    });
+  }
+
   /* ---------- deal detail view ---------- */
   async function openDeal(id){
     var d=deals.filter(function(x){return x.id===id;})[0]; if(!d) return;
     $('pipelineView').style.display='none';
+    $('dashboardView').style.display='none';
+    setSubnav('deal');
     var v=$('dealView'); v.style.display='block';
     $('crumb').innerHTML='Deal flow <b>›</b> '+esc(d.client_name||'Deal');
     v.innerHTML='<div class="loading">Loading deal…</div>';
@@ -574,13 +805,14 @@ window.DF = (function(){
       var abstracts=await q(sb.from('lease_abstracts').select('*').eq('deal_id',id).order('created_at'));
       var events=[]; try{ events=await q(sb.from('deal_events').select('type,created_at').eq('deal_id',id).order('created_at',{ascending:false})); }catch(e){}
       var steps=[]; try{ steps=await q(sb.from('deal_steps').select('*').eq('deal_id',id).order('sort_order')); }catch(e){}
-      renderDeal(d,props,proposals,rounds,docs,tours,abstracts[0]||null,events,steps);
+      var tasks=[]; try{ tasks=await q(sb.from('deal_tasks').select('*').eq('deal_id',id).order('due_date',{ascending:true,nullsFirst:false})); }catch(e){}
+      renderDeal(d,props,proposals,rounds,docs,tours,abstracts[0]||null,events,steps,tasks);
     }catch(e){ v.innerHTML='<div class="loading">Could not load deal: '+esc(e.message)+'</div>'; }
   }
 
   function ago(iso){ if(!iso) return ''; var s=Math.floor((Date.now()-new Date(iso).getTime())/1000); if(s<60) return 'just now'; if(s<3600) return Math.floor(s/60)+'m ago'; if(s<86400) return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago'; }
-  function renderDeal(d,props,proposals,rounds,docs,tours,abstract,events,steps){
-    steps=steps||[];
+  function renderDeal(d,props,proposals,rounds,docs,tours,abstract,events,steps,tasks){
+    steps=steps||[]; tasks=tasks||[];
     var ev=events||[];
     var opens=ev.filter(function(e){return e.type==='open';}).length;
     var dls=ev.filter(function(e){return e.type==='download';}).length;
@@ -647,6 +879,7 @@ window.DF = (function(){
       +   '</div>'
       + '</div>'
       + '<div id="snapWrap">'+snapshotSection(d,steps)+'</div>'
+      + '<div class="sec"><div class="sec-h"><h2>Tasks &amp; next steps</h2><span class="hint">Your to-dos for this client</span></div><div id="tasksBody">'+tasksSection(d,tasks)+'</div></div>'
       + '<div class="sec"><div class="sec-h"><h2>Buildings</h2><span class="hint">The properties in play for this client</span></div>'+propsHtml2+'</div>'
       + '<div class="sec"><div class="sec-h"><h2>Tour schedule</h2><span class="hint">Building visits for this client</span></div>'+toursSection+'</div>'
       + '<div class="sec"><div class="sec-h"><h2>Proposals &amp; rounds</h2>'+addProposalBtn+'</div>'+propsHtmlList+'</div>'
@@ -1564,8 +1797,9 @@ window.DF = (function(){
   document.addEventListener('DOMContentLoaded',bindAuth);
 
   return {
-    showPipeline:showPipeline, setPipeView:setPipeView, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, toggleClosed:toggleClosed,
+    showDashboard:showDashboard, showPipeline:showPipeline, setPipeView:setPipeView, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, toggleClosed:toggleClosed,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
+    newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask,
     newDeal:newDeal, newProperty:newProperty, newProposal:newProposal, newRound:newRound,
     setStage:setStage, basisChange:basisChange, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
     proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead,
