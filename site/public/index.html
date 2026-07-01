@@ -2428,9 +2428,31 @@
       clSection('Questionnaires', '<button class="cl-secbtn" onclick="openQuestionnaire()">+ New</button>', qHtml)+
       clSection('Packages', '<button class="cl-secbtn" onclick="openShare()">+ New</button>', pHtml)+
       clSection('Comps', '<button class="cl-secbtn" onclick="marketSub(\'comps\')">Open Comps</button>', coHtml)+
-      clSection('Proposals &amp; leases', '<a class="cl-secbtn" href="deals.html">Open Deals ↗</a>', '<div class="cl-soon">Proposals and executed leases live in <b>Deals</b> today. They’ll appear here automatically once deals are linked to a client — the next step in this build.</div>')+
+      clSection('Proposals &amp; leases', '<a class="cl-secbtn" href="deals.html">Open Deals ↗</a>', '<div id="clDeals">'+(c.id?'<div class="q-empty small">Loading…</div>':'<div class="cl-soon">Link this client to HubSpot to pull their proposals and leases from Deals.</div>')+'</div>')+
       clSection('Financial analysis', '', '<div class="cl-soon">Per-client financial analysis is coming — it’ll pull from this client’s comps and lease terms, and feed the tenant portal.</div>')+
       '</div>';
+    if(c.id) clLoadDeals(c);
+  }
+  // Phase 2: pull a client's proposals & leases from the Deals section by HubSpot
+  // company id. The endpoint is owned by the Deals session (see the handoff doc); until
+  // it exists this degrades to a placeholder, so shipping this early is safe.
+  function clLoadDeals(c){
+    var box=document.getElementById('clDeals'); if(!box) return;
+    Promise.resolve(qToken()).then(function(tok){
+      return fetch('/.netlify/functions/deal-client-list',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:tok, hsCompanyId:c.id})});
+    }).then(function(r){ if(!r.ok) throw new Error('unavailable'); return r.json(); }).then(function(d){
+      var deals=(d&&d.deals)||[];
+      if(!deals.length){ box.innerHTML='<div class="q-empty small">No proposals or leases linked yet.</div>'; return; }
+      box.innerHTML=deals.map(function(dl){
+        var badge=dl.kind==='lease'?'Lease':(dl.kind==='proposal'?'Proposal':'Deal');
+        var meta=[]; if(dl.building)meta.push(cmEsc(dl.building)); if(dl.rsf)meta.push(Number(dl.rsf).toLocaleString()+' SF'); if(dl.stage)meta.push(cmEsc(dl.stage)); if(dl.execution_date)meta.push(String(dl.execution_date).slice(0,10));
+        return '<div class="q-row"'+(dl.url?' style="cursor:pointer" onclick="location.href=\''+cmEsc(dl.url)+'\'"':'')+'><div style="min-width:0"><div class="q-co">'+cmEsc(dl.name||badge)+'</div>'+
+          '<div class="q-meta">'+cmEsc(meta.join(' · ')||'—')+'</div></div><span class="q-badge'+(dl.kind==='lease'?'':' pend')+'">'+badge+'</span></div>';
+      }).join('');
+    }).catch(function(){
+      // endpoint not built yet (Deals session, Phase 2) → graceful placeholder
+      box.innerHTML='<div class="cl-soon">Proposals and executed leases live in <b>Deals</b> today. They’ll appear here automatically once the Deals section links deals to a client — that work is specced in the Phase 2 handoff.</div>';
+    });
   }
 
   window.clientsAddOpen=function(prefill){
