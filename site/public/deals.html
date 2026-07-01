@@ -165,6 +165,73 @@
   .cmp .bestbadge{display:inline-block;font:700 9px Inter;text-transform:uppercase;letter-spacing:.06em;color:#fff;background:var(--accent);border-radius:5px;padding:2px 6px;margin-left:6px;vertical-align:2px}
   .cmpnote{font:400 11.5px Inter;color:var(--ink-faint);line-height:1.55;margin-top:14px}
   .cmpnote b{color:var(--ink-soft)}
+
+  /* view toggle */
+  .vtoggle{display:inline-flex;border:1px solid var(--line-2);border-radius:9px;overflow:hidden;background:var(--paper)}
+  .vtoggle button{font:600 12px Inter;color:var(--ink-faint);background:none;border:0;padding:7px 15px;cursor:pointer}
+  .vtoggle button.on{background:var(--building);color:#fff}
+
+  /* deals table */
+  .tstats{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+  .tstat{background:var(--paper-2);border:1px solid var(--line);border-radius:12px;padding:10px 16px;min-width:132px}
+  .tstat .k{font:600 10px Inter;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-faint)}
+  .tstat .v{font:700 18px 'Bricolage Grotesque';color:var(--ink);margin-top:3px}
+  .dtable-wrap{border:1px solid var(--line);border-radius:12px;overflow:auto}
+  .dtable{width:100%;border-collapse:collapse;font-size:13px}
+  .dtable th{font:600 10px Inter;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-faint);text-align:left;padding:10px 12px;background:var(--paper);border-bottom:1px solid var(--line);white-space:nowrap}
+  .dtable td{padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+  .dtable tbody tr{cursor:pointer;transition:background .12s}
+  .dtable tbody tr:hover{background:var(--paper)}
+  .dtable tbody tr:last-child td,.dtable tr:last-child td{border-bottom:0}
+  .dtable .num{font-family:'JetBrains Mono';text-align:right;white-space:nowrap}
+  .dtable .cl b{font:700 13.5px 'Bricolage Grotesque'}
+  .dtable tr.deadhdr td{background:var(--paper);font:600 10px Inter;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-faint);cursor:default;padding:7px 12px}
+  .dtable tr.deadhdr:hover td{background:var(--paper)}
+  .stagechip{font:600 10px Inter;padding:3px 9px;border-radius:999px;white-space:nowrap;border:1px solid var(--line-2);color:var(--ink-soft);background:var(--paper)}
+  .stagechip.s-proposals{color:var(--accent)}
+  .stagechip.s-negotiation{color:#b5651d}
+  .stagechip.s-executed{color:#2e7d4f;border-color:#bfe3cd;background:rgba(46,140,90,.08)}
+  .stagechip.s-dead{color:var(--ink-faint)}
+  .cst{font:600 9px Inter;text-transform:uppercase;letter-spacing:.05em;padding:2px 6px;border-radius:5px;margin-left:5px;white-space:nowrap}
+  .cst.pending{background:#fbeecb;color:#9a6a00}
+  .cst.invoiced{background:rgba(45,110,126,.13);color:var(--accent)}
+  .cst.paid{background:rgba(46,140,90,.14);color:#2e7d4f}
+  .pgbar{height:7px;background:var(--line);border-radius:999px;overflow:hidden;display:inline-block;width:78px;vertical-align:middle}
+  .pgbar span{display:block;height:100%;background:var(--accent);border-radius:999px}
+  .pgbar.big{width:100%;height:9px;margin:7px 0 0;display:block}
+  .dtable .pg{white-space:nowrap}
+  .dtable .pg em{font:600 11px 'JetBrains Mono';color:var(--ink-faint);font-style:normal;margin-left:7px}
+
+  /* snapshot */
+  .snap{display:grid;grid-template-columns:1.7fr 1fr;gap:14px;margin:18px 0 2px}
+  .snap>div{background:var(--paper-2);border:1px solid var(--line);border-radius:13px;padding:13px 16px;position:relative}
+  .snap-k{font:600 10px Inter;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-faint)}
+  .snap-sub{font:500 11.5px Inter;color:var(--ink-faint);margin-top:5px}
+  .snap-commv{font:700 20px 'Bricolage Grotesque';color:var(--ink);margin-top:5px}
+  .snap-comm .rev{position:absolute;top:12px;right:14px}
+
+  /* transaction checklist */
+  .phase{margin-bottom:15px}
+  .phase-h{display:flex;align-items:center;gap:10px;margin:0 0 3px}
+  .phase-t{font:600 11px Inter;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft)}
+  .phase-c{font:600 10px 'JetBrains Mono';color:var(--ink-faint);background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:1px 8px}
+  .step{display:flex;align-items:center;gap:11px;padding:7px 3px;border-bottom:1px solid var(--line)}
+  .step:last-child{border-bottom:0}
+  .stepdot{flex:none;width:17px;height:17px;border-radius:999px;border:2px solid var(--line-2);background:var(--paper);cursor:pointer;padding:0}
+  .stepdot:hover{border-color:var(--accent)}
+  .stepdot.active{border-color:var(--accent);background:radial-gradient(circle at center,var(--accent) 0 42%,transparent 44%)}
+  .stepdot.done{border-color:var(--accent);background:var(--accent)}
+  .stepdot.na{border-style:dashed}
+  .step-l{flex:1;font:500 13px Inter;color:var(--ink);cursor:pointer}
+  .step.done .step-l{color:var(--ink-faint);text-decoration:line-through}
+  .step.na .step-l{color:var(--ink-faint);text-decoration:line-through;opacity:.7}
+  .step-note-txt{font:500 11.5px Inter;color:var(--ink-faint);font-style:italic;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .step-actions{display:flex;align-items:center;gap:6px;flex:none}
+  .step-due-in{font:500 11px Inter;padding:3px 6px;border:1px solid var(--line-2);border-radius:6px;background:var(--paper);color:var(--ink-soft)}
+  .step-mini{font-size:12px;line-height:1;background:none;border:1px solid var(--line-2);border-radius:6px;padding:5px 7px;cursor:pointer;color:var(--ink-faint)}
+  .step-mini:hover{border-color:var(--accent);color:var(--accent)}
+  .step-mini.has{color:var(--accent);border-color:var(--accent)}
+  @media(max-width:640px){ .snap{grid-template-columns:1fr} .step-note-txt{display:none} }
 </style>
 </head>
 <body>
@@ -217,12 +284,19 @@
         <h1>Deal pipeline</h1>
         <div class="sub">Your active client engagements, by stage.</div>
       </div>
-      <button class="share-btn" onclick="DF.newDeal()">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-        New deal
-      </button>
+      <div style="display:flex;gap:12px;align-items:center">
+        <div class="vtoggle" id="vtoggle">
+          <button data-v="board" onclick="DF.setPipeView('board')">Board</button>
+          <button data-v="table" onclick="DF.setPipeView('table')">Table</button>
+        </div>
+        <button class="share-btn" onclick="DF.newDeal()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          New deal
+        </button>
+      </div>
     </div>
     <div id="pipe" class="pipe"></div>
+    <div id="dealTable" style="display:none"></div>
     <div id="closed"></div>
   </section>
 
@@ -259,8 +333,40 @@ window.DF = (function(){
   // structures where the tenant pays opex ON TOP of base rent (so gross-equiv = base + opex)
   var NET_BASES = {NNN:1,NN:1,N:1,ABS:1};
   var PROP_STATUS = [['considering','Considering'],['touring','Touring'],['shortlisted','Shortlisted'],['proposing','Proposing'],['passed','Passed']];
+  var COMM_STATUS = [['pending','Pending'],['invoiced','Invoiced'],['paid','Paid']];
+  var STEP_STATUS = {pending:{t:'To do',cls:'pending'},active:{t:'In progress',cls:'active'},done:{t:'Done',cls:'done'},na:{t:'N/A',cls:'na'}};
+  var STEP_NEXT = {pending:'active',active:'done',done:'pending',na:'pending'};
+  // The full tenant-rep lease transaction, step by step, grouped by phase.
+  var STEP_TEMPLATE = [
+    ['Needs & Research','Representation agreement signed'],
+    ['Needs & Research','Requirements defined (size, budget, timing)'],
+    ['Needs & Research','Market survey completed'],
+    ['Needs & Research','Target options identified'],
+    ['Touring','Tours scheduled'],
+    ['Touring','Buildings toured'],
+    ['Touring','Shortlist finalized'],
+    ['Evaluating Options','RFPs / proposals requested'],
+    ['Evaluating Options','Initial proposals received'],
+    ['Evaluating Options','Financial comparison prepared'],
+    ['Evaluating Options','Client review & feedback'],
+    ['Proposals','Counter-proposals negotiated'],
+    ['Proposals','Building selected'],
+    ['Proposals','Letter of Intent drafted'],
+    ['Proposals','Letter of Intent executed'],
+    ['Negotiation','Lease draft received from landlord'],
+    ['Negotiation','Legal review (tenant counsel)'],
+    ['Negotiation','Lease redlined & negotiated'],
+    ['Negotiation','Business terms finalized'],
+    ['Executed','Lease executed (all signatures)'],
+    ['Executed','Security deposit & first rent paid'],
+    ['Executed','Premises delivered / possession'],
+    ['Closeout','Commission invoice sent'],
+    ['Closeout','Commission received'],
+    ['Closeout','Lease abstract completed'],
+    ['Closeout','Client move-in / handoff']
+  ];
 
-  var sb=null, me=null, deals=[], _rec=null, _aiTmpls=[], _showClosed=false, _curRound=null;
+  var sb=null, me=null, deals=[], _rec=null, _aiTmpls=[], _showClosed=false, _curRound=null, _view='board', _agg=null;
 
   /* ---------- tiny helpers ---------- */
   function $(id){ return document.getElementById(id); }
@@ -313,6 +419,7 @@ window.DF = (function(){
     $('authGate').style.display='none';
     me=session.user;
     var chip=$('userChip'); if(chip){ chip.style.display='inline-flex'; $('userEmail').textContent=me.email||''; }
+    try{ _view=localStorage.getItem('vantage_deal_view')||'board'; }catch(e){}
     loadDeals();
   }
   function showLogin(){ $('authGate').style.display='flex'; var c=$('userChip'); if(c) c.style.display='none'; }
@@ -341,15 +448,22 @@ window.DF = (function(){
   async function loadDeals(){
     try{
       deals=await q(sb.from('deals').select('*').order('created_at',{ascending:false}));
-      renderPipeline();
+      showPipeline();
     }catch(e){ $('pipe').innerHTML='<div class="loading">Could not load deals: '+esc(e.message)+'</div>'; }
   }
 
-  /* ---------- pipeline view ---------- */
-  function renderPipeline(){
+  /* ---------- pipeline view (board + table) ---------- */
+  function showPipeline(){
     $('dealView').style.display='none';
     $('pipelineView').style.display='block';
     $('crumb').innerHTML='Deal flow';
+    var t=$('vtoggle'); if(t){ [].forEach.call(t.children,function(b){ b.className=(b.getAttribute('data-v')===_view)?'on':''; }); }
+    if(_view==='table'){ $('pipe').style.display='none'; $('closed').style.display='none'; $('dealTable').style.display='block'; renderTable(); }
+    else { $('pipe').style.display=''; $('closed').style.display=''; $('dealTable').style.display='none'; renderBoard(); }
+  }
+  function setPipeView(v){ _view=v; try{ localStorage.setItem('vantage_deal_view',v); }catch(e){} showPipeline(); }
+
+  function renderBoard(){
     var live=deals.filter(function(d){ return d.stage!=='dead'; });
     var html=STAGES.map(function(s){
       var inStage=live.filter(function(d){ return d.stage===s[0]; });
@@ -364,12 +478,84 @@ window.DF = (function(){
         + (_showClosed?'<div class="closedlist">'+dead.map(dealCard).join('')+'</div>':'')+'</div>'
       : '';
   }
-  function toggleClosed(){ _showClosed=!_showClosed; renderPipeline(); }
+  function toggleClosed(){ _showClosed=!_showClosed; renderBoard(); }
   function dealCard(d){
+    var comm=d.commission_amount!=null?money(d.commission_amount):(num(d.commission_pct)!=null?d.commission_pct+'%':null);
     return '<div class="dcard" onclick="DF.openDeal(\''+d.id+'\')">'
       + '<div class="nm">'+esc(d.client_name||'Untitled client')+'</div>'
-      + '<div class="mt"><span>Created '+new Date(d.created_at).toLocaleDateString()+'</span></div>'
+      + '<div class="mt"><span>Created '+new Date(d.created_at).toLocaleDateString()+'</span>'+(comm?'<span>· <b>'+comm+'</b></span>':'')+'</div>'
       + '</div>';
+  }
+
+  /* Table view — every client, line by line, with stage, terms, commission, progress. */
+  async function renderTable(){
+    var el=$('dealTable');
+    if(!deals.length){ el.innerHTML='<div class="sub" style="color:var(--ink-faint);padding:26px 2px">No deals yet. Click <b>New deal</b> to start tracking a client.</div>'; return; }
+    el.innerHTML='<div class="loading">Loading deals…</div>';
+    var agg;
+    try{ agg=await loadAgg(); }catch(e){ el.innerHTML='<div class="loading">Could not load deals: '+esc(e.message)+'</div>'; return; }
+    var live=deals.filter(function(d){return d.stage!=='dead';});
+    var dead=deals.filter(function(d){return d.stage==='dead';});
+    var pipeComm=live.reduce(function(s,d){return s+(num(d.commission_amount)||0);},0);
+    var paidComm=deals.filter(function(d){return d.commission_status==='paid';}).reduce(function(s,d){return s+(num(d.commission_amount)||0);},0);
+    var head='<div class="tstats">'
+      +'<div class="tstat"><div class="k">Active deals</div><div class="v">'+live.length+'</div></div>'
+      +'<div class="tstat"><div class="k">Pipeline commission</div><div class="v">'+money(pipeComm)+'</div></div>'
+      +'<div class="tstat"><div class="k">Commission collected</div><div class="v">'+money(paidComm)+'</div></div>'
+      +'</div>';
+    function row(d){
+      var a=agg[d.id]||{};
+      var econ=a.round||{};
+      var size=econ.size_sf!=null?Number(econ.size_sf).toLocaleString():'—';
+      var rent=econ.base_rent_psf!=null?psf(econ.base_rent_psf):'—';
+      var term=econ.term_months!=null?(econ.term_months+'mo'):'—';
+      var comm=d.commission_amount!=null?money(d.commission_amount):(num(d.commission_pct)!=null?d.commission_pct+'%':'—');
+      var cstat=d.commission_status?'<span class="cst '+d.commission_status+'">'+(COMM_STATUS.filter(function(c){return c[0]===d.commission_status;})[0]||['','?'])[1]+'</span>':'';
+      var denom=(a.stepsTotal||0)-(a.stepsNa||0);
+      var prog=denom>0?Math.round(100*(a.stepsDone||0)/denom):0;
+      var pgcell=a.stepsTotal?('<div class="pgbar"><span style="width:'+prog+'%"></span></div><em>'+prog+'%</em>'):'<em style="color:var(--ink-faint)">—</em>';
+      return '<tr onclick="DF.openDeal(\''+d.id+'\')">'
+        +'<td class="cl"><b>'+esc(d.client_name||'Untitled')+'</b></td>'
+        +'<td><span class="stagechip s-'+d.stage+'">'+esc(STAGE_LABEL[d.stage]||d.stage)+'</span></td>'
+        +'<td>'+esc(a.building||'—')+'</td>'
+        +'<td class="num">'+size+'</td>'
+        +'<td class="num">'+rent+'</td>'
+        +'<td class="num">'+term+'</td>'
+        +'<td class="num">'+comm+cstat+'</td>'
+        +'<td class="pg">'+pgcell+'</td>'
+        +'</tr>';
+    }
+    var body=live.map(row).join('')
+      + (dead.length?('<tr class="deadhdr"><td colspan="8">Closed / dead ('+dead.length+')</td></tr>'+dead.map(row).join('')):'');
+    el.innerHTML=head+'<div class="dtable-wrap"><table class="dtable"><thead><tr>'
+      +'<th>Client</th><th>Stage</th><th>Building</th><th class="num">Size SF</th><th class="num">Base $/SF</th><th class="num">Term</th><th class="num">Commission</th><th>Progress</th>'
+      +'</tr></thead><tbody>'+body+'</tbody></table></div>';
+  }
+
+  // Bulk aggregate across all deals: primary building, latest final round economics, step progress.
+  async function loadAgg(){
+    var ids=deals.map(function(d){return d.id;});
+    var agg={}; deals.forEach(function(d){ agg[d.id]={}; });
+    if(!ids.length) return agg;
+    var props=[], proposals=[], rounds=[], steps=[];
+    try{ props=await q(sb.from('deal_properties').select('id,deal_id,name,sort_order').in('deal_id',ids)); }catch(e){}
+    try{ proposals=await q(sb.from('proposals').select('id,deal_id,property_id,created_at').in('deal_id',ids)); }catch(e){}
+    try{ rounds=await q(sb.from('proposal_rounds').select('deal_id,round_no,status,base_rent_psf,size_sf,term_months').eq('status','final').in('deal_id',ids)); }catch(e){}
+    try{ steps=await q(sb.from('deal_steps').select('deal_id,status').in('deal_id',ids)); }catch(e){}
+    var propName={}; props.forEach(function(p){ propName[p.id]=p.name; });
+    var propsByDeal={}; props.forEach(function(p){ (propsByDeal[p.deal_id]=propsByDeal[p.deal_id]||[]).push(p); });
+    var proposalsByDeal={}; proposals.forEach(function(pr){ (proposalsByDeal[pr.deal_id]=proposalsByDeal[pr.deal_id]||[]).push(pr); });
+    var bestRound={}; rounds.forEach(function(r){ var b=bestRound[r.deal_id]; if(!b||r.round_no>b.round_no) bestRound[r.deal_id]=r; });
+    var stepAgg={}; steps.forEach(function(s){ var a=stepAgg[s.deal_id]=stepAgg[s.deal_id]||{done:0,na:0,total:0}; a.total++; if(s.status==='done') a.done++; else if(s.status==='na') a.na++; });
+    deals.forEach(function(d){
+      var a=agg[d.id]; var bldg=null;
+      var prs=(proposalsByDeal[d.id]||[]).slice().sort(function(x,y){return (x.created_at||'').localeCompare(y.created_at||'');});
+      for(var i=0;i<prs.length;i++){ if(prs[i].property_id&&propName[prs[i].property_id]){ bldg=propName[prs[i].property_id]; break; } }
+      if(!bldg){ var dp=(propsByDeal[d.id]||[]).slice().sort(function(x,y){return (x.sort_order||0)-(y.sort_order||0);}); if(dp.length) bldg=dp[0].name; }
+      a.building=bldg; a.round=bestRound[d.id]||null;
+      var sa=stepAgg[d.id]||{done:0,na:0,total:0}; a.stepsDone=sa.done; a.stepsNa=sa.na; a.stepsTotal=sa.total;
+    });
+    return agg;
   }
 
   /* ---------- deal detail view ---------- */
@@ -387,12 +573,14 @@ window.DF = (function(){
       var tours=await q(sb.from('tour_stops').select('*').eq('deal_id',id).order('scheduled_at',{ascending:true,nullsFirst:false}));
       var abstracts=await q(sb.from('lease_abstracts').select('*').eq('deal_id',id).order('created_at'));
       var events=[]; try{ events=await q(sb.from('deal_events').select('type,created_at').eq('deal_id',id).order('created_at',{ascending:false})); }catch(e){}
-      renderDeal(d,props,proposals,rounds,docs,tours,abstracts[0]||null,events);
+      var steps=[]; try{ steps=await q(sb.from('deal_steps').select('*').eq('deal_id',id).order('sort_order')); }catch(e){}
+      renderDeal(d,props,proposals,rounds,docs,tours,abstracts[0]||null,events,steps);
     }catch(e){ v.innerHTML='<div class="loading">Could not load deal: '+esc(e.message)+'</div>'; }
   }
 
   function ago(iso){ if(!iso) return ''; var s=Math.floor((Date.now()-new Date(iso).getTime())/1000); if(s<60) return 'just now'; if(s<3600) return Math.floor(s/60)+'m ago'; if(s<86400) return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago'; }
-  function renderDeal(d,props,proposals,rounds,docs,tours,abstract,events){
+  function renderDeal(d,props,proposals,rounds,docs,tours,abstract,events,steps){
+    steps=steps||[];
     var ev=events||[];
     var opens=ev.filter(function(e){return e.type==='open';}).length;
     var dls=ev.filter(function(e){return e.type==='download';}).length;
@@ -458,14 +646,139 @@ window.DF = (function(){
       +     '<select class="fld" style="width:auto" onchange="DF.setStage(\''+d.id+'\',this.value)">'+stageOpts+'</select></div>'
       +   '</div>'
       + '</div>'
+      + '<div id="snapWrap">'+snapshotSection(d,steps)+'</div>'
       + '<div class="sec"><div class="sec-h"><h2>Buildings</h2><span class="hint">The properties in play for this client</span></div>'+propsHtml2+'</div>'
       + '<div class="sec"><div class="sec-h"><h2>Tour schedule</h2><span class="hint">Building visits for this client</span></div>'+toursSection+'</div>'
       + '<div class="sec"><div class="sec-h"><h2>Proposals &amp; rounds</h2>'+addProposalBtn+'</div>'+propsHtmlList+'</div>'
+      + '<div class="sec"><div class="sec-h"><h2>Transaction checklist</h2><span class="hint">Every step from engagement to move-in</span></div><div id="checklistBody">'+checklistSection(d,steps)+'</div></div>'
       + '<div class="sec"><div class="sec-h"><h2>Lease abstract</h2><span class="hint">The executed lease\'s key terms — your client\'s permanent record</span></div>'
       +   (abstract ? abstractCard(abstract, d.id)
                     : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No lease abstract yet.</div><button class="miniadd" onclick="DF.editAbstract(\''+d.id+'\')">+ Create lease abstract</button>')
       +   leaseDocsBlock(d.id, abstract?abstract.id:null, leaseDocs)
       + '</div>';
+  }
+
+  /* ---------- deal snapshot: progress + commission ---------- */
+  function snapshotSection(d, steps){
+    steps=steps||[];
+    var total=steps.length, na=0, done=0;
+    steps.forEach(function(s){ if(s.status==='done') done++; else if(s.status==='na') na++; });
+    var denom=total-na, prog=denom>0?Math.round(100*done/denom):0;
+    var commAmt = d.commission_amount!=null ? money(d.commission_amount)
+      : (num(d.commission_pct)!=null && num(d.deal_value)!=null ? money(num(d.deal_value)*num(d.commission_pct)/100) : null);
+    var cstat = d.commission_status ? (COMM_STATUS.filter(function(c){return c[0]===d.commission_status;})[0]||['','—'])[1] : null;
+    var sub=[]; if(d.deal_value!=null) sub.push('Deal value '+money(d.deal_value)); if(d.commission_pct!=null) sub.push(d.commission_pct+'%');
+    return '<div class="snap">'
+      + '<div class="snap-prog">'
+      +   '<div class="snap-k">Transaction progress</div>'
+      +   (total
+            ? '<div class="pgbar big"><span style="width:'+prog+'%"></span></div>'
+              + '<div class="snap-sub">'+done+' of '+denom+' steps complete'+(prog===100?' · complete 🎉':'')+'</div>'
+            : '<div class="snap-sub" style="margin-top:8px">Not set up yet.</div><button class="miniadd" onclick="DF.seedSteps(\''+d.id+'\')">+ Set up transaction checklist</button>')
+      + '</div>'
+      + '<div class="snap-comm">'
+      +   '<button class="rev" onclick="DF.editCommission(\''+d.id+'\')">edit</button>'
+      +   '<div class="snap-k">Commission</div>'
+      +   '<div class="snap-commv">'+(commAmt||'—')+(cstat?' <span class="cst '+d.commission_status+'">'+cstat+'</span>':'')+'</div>'
+      +   (sub.length?'<div class="snap-sub">'+sub.join(' · ')+'</div>':'<div class="snap-sub">Add deal value &amp; fee</div>')
+      + '</div>'
+      + '</div>';
+  }
+
+  /* ---------- transaction checklist ---------- */
+  function checklistSection(d, steps){
+    steps=steps||[];
+    if(!steps.length){
+      return '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No checklist yet — set up the full lease-transaction checklist to track every step from engagement to move-in.</div>'
+        + '<button class="miniadd" onclick="DF.seedSteps(\''+d.id+'\')">+ Set up transaction checklist</button>';
+    }
+    var phases=[], byPhase={};
+    steps.forEach(function(s){ var p=s.phase||'Other'; if(!byPhase[p]){ byPhase[p]=[]; phases.push(p); } byPhase[p].push(s); });
+    return phases.map(function(p){
+      var arr=byPhase[p], done=0, na=0;
+      arr.forEach(function(s){ if(s.status==='done') done++; else if(s.status==='na') na++; });
+      return '<div class="phase">'
+        + '<div class="phase-h"><span class="phase-t">'+esc(p)+'</span><span class="phase-c">'+done+'/'+(arr.length-na)+'</span></div>'
+        + arr.map(function(s){ return stepRow(s, d.id); }).join('')
+        + '</div>';
+    }).join('');
+  }
+  function stepRow(s, dealId){
+    var st=STEP_STATUS[s.status]||STEP_STATUS.pending;
+    return '<div class="step '+st.cls+'">'
+      + '<button class="stepdot '+st.cls+'" onclick="DF.cycleStep(\''+s.id+'\',\''+dealId+'\',\''+s.status+'\')" title="Click to advance: to-do → in progress → done"></button>'
+      + '<span class="step-l" onclick="DF.cycleStep(\''+s.id+'\',\''+dealId+'\',\''+s.status+'\')">'+esc(s.label)+'</span>'
+      + (s.notes?'<span class="step-note-txt" title="'+esc(s.notes)+'">'+esc(s.notes)+'</span>':'')
+      + '<span class="step-actions">'
+      +   '<input type="date" class="step-due-in" value="'+(s.due_date||'')+'" onchange="DF.stepDue(\''+s.id+'\',this.value,\''+dealId+'\')" title="Due date">'
+      +   '<button class="step-mini'+(s.notes?' has':'')+'" onclick="DF.stepNote(\''+s.id+'\',\''+dealId+'\')" title="'+(s.notes?'Edit note':'Add note')+'">✎</button>'
+      +   '<button class="step-mini" onclick="DF.stepNA(\''+s.id+'\',\''+dealId+'\','+(s.status==='na'?'true':'false')+')" title="'+(s.status==='na'?'Un-skip':'Mark not applicable')+'">'+(s.status==='na'?'↩':'∅')+'</button>'
+      + '</span>'
+      + '</div>';
+  }
+  async function reloadSteps(dealId){
+    var d=deals.filter(function(x){return x.id===dealId;})[0]; if(!d) return;
+    var steps=[]; try{ steps=await q(sb.from('deal_steps').select('*').eq('deal_id',dealId).order('sort_order')); }catch(e){}
+    var cb=$('checklistBody'); if(cb) cb.innerHTML=checklistSection(d,steps);
+    var sw=$('snapWrap'); if(sw) sw.innerHTML=snapshotSection(d,steps);
+  }
+  async function seedSteps(dealId){
+    try{
+      var rows=STEP_TEMPLATE.map(function(t,i){ return {deal_id:dealId, phase:t[0], label:t[1], sort_order:i}; });
+      await q(sb.from('deal_steps').insert(rows));
+      reloadSteps(dealId);
+    }catch(e){ alert('Could not set up the checklist.\nMake sure the deal-detail SQL has been run in Supabase.\n\n'+(e.message||e)); }
+  }
+  async function cycleStep(id, dealId, cur){
+    var next=STEP_NEXT[cur]||'active';
+    try{ await q(sb.from('deal_steps').update({status:next, completed_at: next==='done'?new Date().toISOString():null}).eq('id',id)); reloadSteps(dealId); }
+    catch(e){ alert('Could not update step: '+(e.message||e)); }
+  }
+  async function stepNA(id, dealId, isNA){
+    try{ await q(sb.from('deal_steps').update({status: isNA?'pending':'na', completed_at:null}).eq('id',id)); reloadSteps(dealId); }
+    catch(e){ alert('Could not update step: '+(e.message||e)); }
+  }
+  async function stepDue(id, val, dealId){
+    try{ await q(sb.from('deal_steps').update({due_date: val||null}).eq('id',id)); reloadSteps(dealId); }
+    catch(e){ alert('Could not set due date: '+(e.message||e)); }
+  }
+  async function stepNote(id, dealId){
+    var cur=''; try{ var r=(await q(sb.from('deal_steps').select('notes').eq('id',id).limit(1)))[0]; if(r&&r.notes) cur=r.notes; }catch(e){}
+    var note=prompt('Note for this step:', cur);
+    if(note===null) return;
+    try{ await q(sb.from('deal_steps').update({notes:(note||'').trim()||null}).eq('id',id)); reloadSteps(dealId); }
+    catch(e){ alert('Could not save note: '+(e.message||e)); }
+  }
+
+  /* ---------- commission editor ---------- */
+  function editCommission(dealId){
+    var d=deals.filter(function(x){return x.id===dealId;})[0]||{};
+    function v(x){ return x==null?'':x; }
+    openSheet('<h3>Commission &amp; deal value</h3><div class="ssub">Track the economics and where the fee stands.</div>'
+      + '<div class="grid2">'
+      + fld('Deal value','<input id="c_val" type="number" step="1000" inputmode="decimal" value="'+v(d.deal_value)+'" placeholder="0">','$ total')
+      + fld('Commission','<input id="c_pct" type="number" step="0.1" inputmode="decimal" value="'+v(d.commission_pct)+'" placeholder="0">','%')
+      + fld('Commission amount','<input id="c_amt" type="number" step="100" inputmode="decimal" value="'+v(d.commission_amount)+'" placeholder="auto from % if blank">','$')
+      + fld('Status','<select id="c_stat"><option value="">— not set —</option>'+selOpts(COMM_STATUS,d.commission_status||'')+'</select>')
+      + '</div>'
+      + fld('Notes','<textarea id="c_notes" placeholder="e.g. 4% of aggregate rent; split 50/50 with listing side; invoiced on execution">'+esc(d.commission_notes||'')+'</textarea>')
+      + '<div class="formerr" id="f_err"></div>'
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button><button class="btn pri" id="f_save">Save</button></div>');
+    $('f_save').addEventListener('click',async function(){
+      this.disabled=true; this.textContent='Saving…';
+      var val=num($('c_val').value), pct=num($('c_pct').value), amt=num($('c_amt').value);
+      if(amt==null && pct!=null && val!=null) amt=Math.round(val*pct/100);
+      var patch={deal_value:val, commission_pct:pct, commission_amount:amt, commission_status:($('c_stat').value||null), commission_notes:(($('c_notes').value||'').trim()||null)};
+      try{
+        await q(sb.from('deals').update(patch).eq('id',dealId).select().single());
+        var d2=deals.filter(function(x){return x.id===dealId;})[0]; if(d2) Object.keys(patch).forEach(function(k){ d2[k]=patch[k]; });
+        closeSheet(); openDeal(dealId);
+      }catch(e){
+        var m=e.message||''+e;
+        $('f_err').textContent=/column .* does not exist|commission_/i.test(m)?'Run the deal-detail SQL in Supabase first (it adds the commission fields).':m;
+        this.disabled=false; this.textContent='Save';
+      }
+    });
   }
 
   function fmtDate(d){ if(!d) return '—'; var dt=new Date(d+'T00:00:00'); return isNaN(dt)?esc(d):dt.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}); }
@@ -1251,7 +1564,8 @@ window.DF = (function(){
   document.addEventListener('DOMContentLoaded',bindAuth);
 
   return {
-    showPipeline:renderPipeline, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, toggleClosed:toggleClosed,
+    showPipeline:showPipeline, setPipeView:setPipeView, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, toggleClosed:toggleClosed,
+    editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newDeal:newDeal, newProperty:newProperty, newProposal:newProposal, newRound:newRound,
     setStage:setStage, basisChange:basisChange, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
     proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead,
