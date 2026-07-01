@@ -72,7 +72,10 @@ function normalizeComp(raw) {
     options: options,
     discount_rate: nn(raw.discount_rate),
     redaction: redaction,
-    notes: s(raw.notes, 1000)
+    notes: s(raw.notes, 1000),
+    source: ["manual", "import", "hubspot"].includes(raw.source) ? raw.source : "manual",
+    external_source: s(raw.external_source, 40),
+    external_id: s(raw.external_id, 80)
   };
 
   // Recompute the three metrics from the terms (authoritative).
@@ -220,6 +223,7 @@ async function handleImport(body, orgId, user) {
     const rec = normalizeComp(raw);
     rec.org_id = orgId;
     rec.created_by = user.id;
+    if (rec.source === "manual") rec.source = "import";
     return rec;
   });
   const ins = await rest("comps", {

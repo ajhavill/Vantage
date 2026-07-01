@@ -1425,13 +1425,15 @@
         flags='<span class="cmp-redtag" title="Hidden from clients: '+fl.join(', ')+'">🔒 '+fl.length+'</span>';
       }
       var ptag=c.product_type?'<span class="cmp-ptag cmp-pt-'+cmEsc(c.product_type)+'">'+cmEsc(c.product_type)+'</span>':'';
+      var srcTag=(!pitch && c.source==='hubspot')?'<span class="cmp-srctag" title="Auto-synced from a HubSpot deal">⚡ HubSpot</span>':'';
+      var draftPill=(!pitch && c.notes && c.notes.indexOf('[DRAFT')===0)?'<span class="cmp-draft" title="Missing lease economics — open to finish">Draft</span>':'';
       var rsf=c.rsf!=null?Number(c.rsf).toLocaleString():'—';
       var date=c.execution_date?String(c.execution_date).slice(0,10):'—';
       var term=c.term_months?c.term_months+' mo':'—';
       var struct=c.expense_structure||'—';
       var actions = pitch ? '' : '<td class="cmp-act"><button class="cmp-ic" data-edit="'+c.id+'" title="Edit">✎</button><button class="cmp-ic" data-del="'+c.id+'" title="Delete">×</button></td>';
       return '<tr>'+
-        '<td><div class="cmp-bldg">'+bldg+' '+ptag+' '+flags+'</div><div class="cmp-ten">'+tenant+(suite&&suite!=='—'?' · '+suite:'')+'</div></td>'+
+        '<td><div class="cmp-bldg">'+bldg+' '+ptag+' '+srcTag+' '+draftPill+' '+flags+'</div><div class="cmp-ten">'+tenant+(suite&&suite!=='—'?' · '+suite:'')+'</div></td>'+
         '<td class="cmp-num">'+rsf+'</td>'+
         '<td class="cmp-num">'+date+'</td>'+
         '<td class="cmp-num">'+term+'</td>'+
@@ -1530,6 +1532,7 @@
     var wrap=document.createElement('div'); wrap.innerHTML=html; document.body.appendChild(wrap.firstChild);
     var modal=document.getElementById('cmpModal');
     modal._editId=c.id||null;
+    modal._source=c.source; modal._extsrc=c.external_source; modal._extid=c.external_id;
     function close(){ modal.remove(); }
     document.getElementById('cmpFormX').onclick=close;
     document.getElementById('cmpFormCancel').onclick=close;
@@ -1550,8 +1553,9 @@
     var v=function(id){ var e=document.getElementById(id); return e?e.value:''; };
     var num=function(id){ var x=parseFloat(v(id)); return isFinite(x)?x:null; };
     var bname=v('cf_bname'), addr=v('cf_addr'); var match=compsMatchBuilding(bname,addr);
+    var modal=document.getElementById('cmpModal')||{};
     return {
-      id:(document.getElementById('cmpModal')||{})._editId||undefined,
+      id:modal._editId||undefined, source:modal._source, external_source:modal._extsrc, external_id:modal._extid,
       building_id: match?match.id:null, building_name:bname, address:addr, product_type:v('cf_ptype')||null,
       tenant:v('cf_tenant'), suite:v('cf_suite'), rsf:num('cf_rsf'),
       execution_date:v('cf_date')||null, term_months:num('cf_term'), face_rate:num('cf_face'),

@@ -60,9 +60,21 @@ create table if not exists public.comps (
 alter table public.comps add column if not exists product_type text
   check (product_type is null or product_type in ('retail','office','industrial','flex','lab'));
 
+-- Provenance + dedup: where a comp came from, and (for CRM-synced comps) the
+-- external record it mirrors, so re-firing a webhook UPDATES rather than
+-- duplicates. source: manual entry / CSV import / HubSpot deal sync.
+alter table public.comps add column if not exists source text not null default 'manual'
+  check (source in ('manual','import','hubspot'));
+alter table public.comps add column if not exists external_source text;   -- e.g. 'hubspot'
+alter table public.comps add column if not exists external_id text;       -- e.g. the HubSpot deal id
+
 create index if not exists comps_org_idx        on public.comps(org_id, execution_date desc);
 create index if not exists comps_org_bldg_idx    on public.comps(org_id, building_id);
 create index if not exists comps_org_ptype_idx   on public.comps(org_id, product_type);
+-- one comp per external record per firm (the CRM sync upserts on this)
+create unique index if not exists comps_org_ext_uidx
+  on public.comps(org_id, external_source, external_id)
+  where external_id is not null;
 
 -- Stamp org_id / created_by from the writer's profile if a direct client write omits
 -- them (the functions set org_id explicitly; this covers any authenticated browser write).

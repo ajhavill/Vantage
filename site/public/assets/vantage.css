@@ -827,6 +827,8 @@
   .cmp-pt-industrial{background:#5A6473}
   .cmp-pt-flex{background:#7B6194}
   .cmp-pt-lab{background:#2E8B6B}
+  .cmp-srctag{display:inline-block;font:700 9.5px Inter;color:var(--accent);background:rgba(45,110,126,.1);border:1px solid rgba(45,110,126,.25);border-radius:5px;padding:1px 6px;vertical-align:middle}
+  .cmp-draft{display:inline-block;font:700 9.5px Inter;text-transform:uppercase;letter-spacing:.04em;color:#8a6d3b;background:#f5ecd6;border-radius:5px;padding:2px 6px;vertical-align:middle}
   .cmp-btn{font:600 12.5px Inter;color:var(--ink);background:var(--paper);border:1px solid var(--line-2);border-radius:9px;padding:8px 14px;cursor:pointer}
   .cmp-btn:hover{border-color:var(--accent);color:var(--accent)}
   .cmp-btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
