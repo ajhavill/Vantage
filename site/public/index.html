@@ -977,9 +977,9 @@
 
     renderHero(); renderSpecs();
 
-    document.getElementById('dSuites').innerHTML=curB.suites.map(function(s){
+    document.getElementById('dSuites').innerHTML=(curB.suites&&curB.suites.length)?curB.suites.map(function(s){
       return '<div class="suite"><div class="r1"><span class="ste">'+s[0]+'</span><span class="sf">'+s[1]+'</span></div><div class="r2"><span class="meta">'+s[2]+'</span><span class="rent">'+s[3]+'</span></div></div>';
-    }).join('');
+    }).join(''):'<div class="tn-empty">Available suites not listed yet — add them from your own leasing info.</div>';
 
     var sc=document.getElementById('dScores');
     sc.innerHTML=weightedCats().map(function(c){
