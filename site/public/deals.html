@@ -69,6 +69,16 @@
   .ge{font:500 11.5px Inter;color:var(--ink-faint);margin-top:8px}
   .ge b{color:var(--ink-soft);font-family:'JetBrains Mono'}
 
+  /* portal building autocomplete */
+  .sugg{display:none;margin:-6px 0 12px;border:1px solid var(--line-2);border-radius:10px;overflow:hidden;max-height:230px;overflow-y:auto;background:var(--paper)}
+  .sugg.on{display:block}
+  .sugg-i{display:flex;flex-direction:column;gap:1px;padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--line)}
+  .sugg-i:last-child{border-bottom:0}
+  .sugg-i:hover{background:var(--paper-2)}
+  .sugg-n{font:600 13px Inter;color:var(--ink)}
+  .sugg-a{font:500 11.5px Inter;color:var(--ink-faint)}
+  .sugg-none{padding:9px 12px;font:500 11.5px Inter;color:var(--ink-faint)}
+
   .miniadd{font:600 11.5px Inter;color:var(--accent);background:none;border:0;cursor:pointer;padding:6px 0;display:inline-flex;align-items:center;gap:5px}
   .miniadd:hover{text-decoration:underline}
 
@@ -1188,11 +1198,33 @@ window.DF = (function(){
     });
   }
 
-  /* ---------- create: property ---------- */
+  /* ---------- create: property (with portal building search) ---------- */
+  var _portalBuildings=null, _portalLoading=null, _suggList=[];
+  function loadPortalBuildings(){
+    if(_portalBuildings) return Promise.resolve(_portalBuildings);
+    if(_portalLoading) return _portalLoading;
+    _portalLoading = fetch('vantage-data.json').then(function(r){ return r.ok?r.json():{}; })
+      .then(function(d){ _portalBuildings=(d&&d.buildings)||[]; return _portalBuildings; })
+      .catch(function(){ _portalBuildings=[]; return _portalBuildings; });
+    return _portalLoading;
+  }
+  function propSuggest(val){
+    var el=$('f_sugg'); if(!el) return;
+    val=(val||'').trim().toLowerCase();
+    if(val.length<2){ el.innerHTML=''; el.classList.remove('on'); return; }
+    if(!_portalBuildings){ loadPortalBuildings().then(function(){ propSuggest(val); }); return; }
+    _suggList=_portalBuildings.filter(function(b){ return ((b.name||'').toLowerCase().indexOf(val)>=0) || ((b.addr||'').toLowerCase().indexOf(val)>=0); }).slice(0,8);
+    if(!_suggList.length){ el.innerHTML='<div class="sugg-none">No portal match — your entry will be added as-is.</div>'; el.classList.add('on'); return; }
+    el.innerHTML=_suggList.map(function(b,i){ return '<div class="sugg-i" onclick="DF.propPick('+i+')"><span class="sugg-n">'+esc(b.name)+'</span><span class="sugg-a">'+esc(b.addr||'')+(b.submarket?' · '+esc(b.submarket):'')+'</span></div>'; }).join('');
+    el.classList.add('on');
+  }
+  function propPick(i){ var b=_suggList[i]; if(!b) return; if($('f_name')) $('f_name').value=b.name||''; if($('f_addr')) $('f_addr').value=b.addr||''; var el=$('f_sugg'); if(el){ el.innerHTML=''; el.classList.remove('on'); } }
   function newProperty(dealId){
-    openSheet('<h3>Add building</h3><div class="ssub">A property in play for this client.</div>'
-      + fld('Building name','<input id="f_name" placeholder="e.g. The Water Garden" autofocus>')
-      + fld('Address','<input id="f_addr" placeholder="2425 Olympic Blvd, Santa Monica">')
+    loadPortalBuildings();
+    openSheet('<h3>Add building</h3><div class="ssub">Search your portal\'s buildings, or type a new address.</div>'
+      + fld('Building name','<input id="f_name" placeholder="Search or type — e.g. The Water Garden" autocomplete="off" oninput="DF.propSuggest(this.value)" autofocus>')
+      + fld('Address','<input id="f_addr" placeholder="1620 26th St, Santa Monica" autocomplete="off" oninput="DF.propSuggest(this.value)">')
+      + '<div id="f_sugg" class="sugg"></div>'
       + fld('Status','<select id="f_status">'+selOpts(PROP_STATUS,'considering')+'</select>')
       + '<div class="formerr" id="f_err"></div>'
       + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button><button class="btn pri" id="f_save">Add building</button></div>');
@@ -2196,7 +2228,7 @@ window.DF = (function(){
     showDashboard:showDashboard, showPipeline:showPipeline, setPipeView:setPipeView, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, toggleClosed:toggleClosed,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask,
-    newDeal:newDeal, newProperty:newProperty, newProposal:newProposal, newRound:newRound,
+    newDeal:newDeal, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, newProposal:newProposal, newRound:newRound,
     setStage:setStage, basisChange:basisChange, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
     proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead,
     shareDeal:shareDeal, toggleProposalVisible:toggleProposalVisible,
