@@ -220,7 +220,7 @@
 <!-- COMPETITION VIEW -->
 <section class="competition" id="competitionView">
   <div class="compctrl">
-    <span class="lbl">I'm a&hellip;</span>
+    <span class="lbl">Business type</span>
     <div class="inds" id="cInds"></div>
     <div class="strat" id="cStrat">
       <button data-m="near" class="on">Cluster near peers</button>
@@ -1188,6 +1188,7 @@
   }
   function cRender(){
     if(!cIndustry||!IND[cIndustry]) cIndustry=cDefaultIndustry();
+    var selEl=document.getElementById('cIndSel'); if(selEl && selEl.value!==cIndustry) selEl.value=cIndustry;
     var r=cRanked(), lab=indOf(cIndustry).label, c=indOf(cIndustry).color;
     document.getElementById('cAskT').innerHTML = cMode==='near'
       ? 'Where do <em style="color:'+c+'">'+lab.toLowerCase()+'</em> cluster?'
@@ -1251,19 +1252,16 @@
     if(cWired)return; cWired=true;
     if(!cIndustry||!IND[cIndustry]) cIndustry=cDefaultIndustry();
     var el=document.getElementById('cInds');
+    var sel=document.createElement('select');
+    sel.className='ind-select'; sel.id='cIndSel';
     IORDER.forEach(function(k){
-      var btn=document.createElement('button');
-      btn.className='ind'+(k===cIndustry?' on':''); btn.dataset.k=k;
-      btn.innerHTML='<span class="sw" style="background:'+indOf(k).color+'"></span>'+indOf(k).label;
-      if(k===cIndustry) btn.style.background=indOf(k).color;
-      btn.onclick=function(){
-        cIndustry=k;
-        document.querySelectorAll('#cInds .ind').forEach(function(x){x.classList.remove('on');x.style.background='';});
-        btn.classList.add('on'); btn.style.background=indOf(k).color;
-        cSel=null; cRender();
-      };
-      el.appendChild(btn);
+      var o=document.createElement('option');
+      o.value=k; o.textContent=indOf(k).label;
+      if(k===cIndustry) o.selected=true;
+      sel.appendChild(o);
     });
+    sel.onchange=function(){ cIndustry=sel.value; cSel=null; cRender(); };
+    el.appendChild(sel);
     document.getElementById('cStrat').addEventListener('click',function(e){
       var b=e.target.closest('button'); if(!b)return;
       cMode=b.dataset.m;
@@ -1278,7 +1276,7 @@
     document.getElementById('portfolioView').style.display='none';
     document.getElementById('detailView').classList.remove('show');
     document.getElementById('competitionView').classList.add('show');
-    setNav('competition'); setPriobar(true);
+    setNav('competition'); setPriobar(false);
     document.getElementById('crumb').innerHTML='Santa Monica · <b>Tenants</b>';
     cInitChips();
     if(!compMap) cInitMap();
