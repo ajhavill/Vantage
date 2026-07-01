@@ -78,6 +78,11 @@
   .sugg-n{font:600 13px Inter;color:var(--ink)}
   .sugg-a{font:500 11.5px Inter;color:var(--ink-faint)}
   .sugg-none{padding:9px 12px;font:500 11.5px Inter;color:var(--ink-faint)}
+  .pcard .pactions{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:10px}
+  .pstat{font:500 11.5px Inter;padding:5px 9px;border:1px solid var(--line-2);border-radius:7px;background:var(--paper);color:var(--ink-soft);cursor:pointer;white-space:nowrap}
+  .pstat:focus{outline:none;border-color:var(--accent)}
+  .ptag-in{font:600 11px Inter;color:#2e7d4f}
+  .te-ta{width:100%;min-height:230px;font:400 13px Inter;line-height:1.5;padding:12px;border:1px solid var(--line-2);border-radius:9px;background:var(--paper);color:var(--ink);resize:vertical;margin-bottom:12px}
 
   .miniadd{font:600 11.5px Inter;color:var(--accent);background:none;border:0;cursor:pointer;padding:6px 0;display:inline-flex;align-items:center;gap:5px}
   .miniadd:hover{text-decoration:underline}
@@ -561,6 +566,7 @@ window.DF = (function(){
     me=session.user;
     var chip=$('userChip'); if(chip){ chip.style.display='inline-flex'; $('userEmail').textContent=me.email||''; }
     try{ _view=localStorage.getItem('vantage_deal_view')||'board'; }catch(e){}
+    try{ loadPortalBuildings(); }catch(e){}
     loadDeals();
   }
   function showLogin(){ $('authGate').style.display='flex'; var c=$('userChip'); if(c) c.style.display='none'; if(window.Van) Van.close(); }
@@ -913,13 +919,10 @@ window.DF = (function(){
 
     var toursHtml = (tours&&tours.length) ? tours.map(function(s){ return tourCard(s, propById, d.id); }).join('')
       : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No tour stops scheduled yet.</div>';
-    var toursSection = toursHtml + '<button class="miniadd" onclick="DF.newTourStop(\''+d.id+'\')">+ Add tour stop</button>';
+    var toursSection = toursHtml + '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap"><button class="miniadd" onclick="DF.newTourStop(\''+d.id+'\')">+ Add tour stop</button><button class="miniadd" onclick="DF.buildTourFromTouring(\''+d.id+'\')">↻ Build from “touring” buildings</button></div>';
 
-    var propsHtml = props.length ? props.map(function(p){
-      return '<div class="pcard"><div class="top"><div><div class="nm">'+esc(p.name||'Untitled building')+'</div>'
-        + (p.address?'<div class="ad">'+esc(p.address)+'</div>':'')
-        + '</div><span class="tag">'+esc((PROP_STATUS.filter(function(s){return s[0]===p.status;})[0]||['','—'])[1])+'</span></div></div>';
-    }).join('') : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No buildings yet.</div>';
+    var tourPropIds={}; (tours||[]).forEach(function(t){ if(t.property_id) tourPropIds[t.property_id]=true; });
+    var propsHtml = props.length ? props.map(function(p){ return propCard(p, d.id, tourPropIds[p.id]); }).join('') : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No buildings yet.</div>';
 
     var propsHtml2 = propsHtml + '<button class="miniadd" onclick="DF.newProperty(\''+d.id+'\')">+ Add building</button>';
 
@@ -1199,7 +1202,7 @@ window.DF = (function(){
   }
 
   /* ---------- create: property (with portal building search) ---------- */
-  var _portalBuildings=null, _portalLoading=null, _suggList=[];
+  var _portalBuildings=null, _portalLoading=null, _suggList=[], _pickedBuildingId=null;
   function loadPortalBuildings(){
     if(_portalBuildings) return Promise.resolve(_portalBuildings);
     if(_portalLoading) return _portalLoading;
@@ -1210,6 +1213,7 @@ window.DF = (function(){
   }
   function propSuggest(val){
     var el=$('f_sugg'); if(!el) return;
+    _pickedBuildingId=null;
     val=(val||'').trim().toLowerCase();
     if(val.length<2){ el.innerHTML=''; el.classList.remove('on'); return; }
     if(!_portalBuildings){ loadPortalBuildings().then(function(){ propSuggest(val); }); return; }
@@ -1218,9 +1222,9 @@ window.DF = (function(){
     el.innerHTML=_suggList.map(function(b,i){ return '<div class="sugg-i" onclick="DF.propPick('+i+')"><span class="sugg-n">'+esc(b.name)+'</span><span class="sugg-a">'+esc(b.addr||'')+(b.submarket?' · '+esc(b.submarket):'')+'</span></div>'; }).join('');
     el.classList.add('on');
   }
-  function propPick(i){ var b=_suggList[i]; if(!b) return; if($('f_name')) $('f_name').value=b.name||''; if($('f_addr')) $('f_addr').value=b.addr||''; var el=$('f_sugg'); if(el){ el.innerHTML=''; el.classList.remove('on'); } }
+  function propPick(i){ var b=_suggList[i]; if(!b) return; _pickedBuildingId=b.id||null; if($('f_name')) $('f_name').value=b.name||''; if($('f_addr')) $('f_addr').value=b.addr||''; var el=$('f_sugg'); if(el){ el.innerHTML=''; el.classList.remove('on'); } }
   function newProperty(dealId){
-    loadPortalBuildings();
+    loadPortalBuildings(); _pickedBuildingId=null;
     openSheet('<h3>Add building</h3><div class="ssub">Search your portal\'s buildings, or type a new address.</div>'
       + fld('Building name','<input id="f_name" placeholder="Search or type — e.g. The Water Garden" autocomplete="off" oninput="DF.propSuggest(this.value)" autofocus>')
       + fld('Address','<input id="f_addr" placeholder="1620 26th St, Santa Monica" autocomplete="off" oninput="DF.propSuggest(this.value)">')
@@ -1233,11 +1237,74 @@ window.DF = (function(){
       if(!name){ $('f_err').textContent='Enter a building name.'; return; }
       this.disabled=true; this.textContent='Saving…';
       try{
-        await q(sb.from('deal_properties').insert({deal_id:dealId, name:name, address:($('f_addr').value||'').trim()||null, status:$('f_status').value}).select().single());
+        await q(sb.from('deal_properties').insert({deal_id:dealId, name:name, address:($('f_addr').value||'').trim()||null, status:$('f_status').value, building_id:_pickedBuildingId||null}).select().single());
         closeSheet(); openDeal(dealId);
       }catch(e){ $('f_err').textContent=e.message; this.disabled=false; this.textContent='Add building'; }
     });
   }
+
+  /* ---------- building cards: status, tour, listing-broker email ---------- */
+  function propCard(p, dealId, inTour){
+    var statusSel='<select class="pstat" onchange="DF.setPropStatus(\''+p.id+'\',this.value,\''+dealId+'\')">'+PROP_STATUS.map(function(s){return '<option value="'+s[0]+'"'+(p.status===s[0]?' selected':'')+'>'+s[1]+'</option>';}).join('')+'</select>';
+    var contact=null; if(p.building_id && _portalBuildings){ var pb=_portalBuildings.filter(function(b){return b.id===p.building_id;})[0]; if(pb) contact=pb.leasingContact; }
+    var acts=(inTour?'<span class="ptag-in">✓ in tour</span>':'<button class="miniadd" onclick="DF.addToTour(\''+p.id+'\',\''+dealId+'\')">+ Add to tour</button>')
+      + '<button class="miniadd" onclick="DF.draftTourEmail(\''+p.id+'\',\''+dealId+'\')">✉ Draft tour email</button>';
+    return '<div class="pcard"><div class="top"><div><div class="nm">'+esc(p.name||'Untitled building')+'</div>'
+      + (p.address?'<div class="ad">'+esc(p.address)+'</div>':'')
+      + (contact?'<div class="ad" style="color:var(--ink-faint)">Listing: '+esc(contact.name||'')+(contact.company?', '+esc(contact.company):'')+(contact.email?' · '+esc(contact.email):'')+'</div>':'')
+      + '</div>'+statusSel+'</div>'
+      + '<div class="pactions">'+acts+'</div></div>';
+  }
+  async function setPropStatus(propId, status, dealId){
+    try{
+      await q(sb.from('deal_properties').update({status:status}).eq('id',propId));
+      if(status==='touring') await ensureTourStop(propId, dealId);
+      openDeal(dealId);
+    }catch(e){ alert('Could not update status: '+(e.message||e)); }
+  }
+  async function ensureTourStop(propId, dealId){
+    try{
+      var ex=await q(sb.from('tour_stops').select('id').eq('deal_id',dealId).eq('property_id',propId).limit(1));
+      if(ex&&ex.length) return false;
+      var pr=(await q(sb.from('deal_properties').select('name,building_id').eq('id',propId).limit(1)))[0]||{};
+      await q(sb.from('tour_stops').insert({deal_id:dealId, property_id:propId, building_id:pr.building_id||null, label:pr.name||null, status:'proposed'}));
+      return true;
+    }catch(e){ return false; }
+  }
+  async function addToTour(propId, dealId){ await ensureTourStop(propId, dealId); openDeal(dealId); }
+  async function buildTourFromTouring(dealId){
+    try{
+      var props=await q(sb.from('deal_properties').select('id,status').eq('deal_id',dealId));
+      var touring=(props||[]).filter(function(p){return p.status==='touring';});
+      if(!touring.length){ alert('No buildings are marked “Touring” yet. Set a building’s status to Touring, then build the tour.'); return; }
+      for(var i=0;i<touring.length;i++){ await ensureTourStop(touring[i].id, dealId); }
+      openDeal(dealId);
+    }catch(e){ alert('Could not build the tour: '+(e.message||e)); }
+  }
+  async function draftTourEmail(propId, dealId){
+    await loadPortalBuildings();
+    var p=(await q(sb.from('deal_properties').select('*').eq('id',propId).limit(1)))[0]; if(!p) return;
+    var d=deals.filter(function(x){return x.id===dealId;})[0]||{};
+    var pb=p.building_id?_portalBuildings.filter(function(b){return b.id===p.building_id;})[0]:null;
+    var contact=pb&&pb.leasingContact;
+    openSheet('<h3>Draft tour email</h3><div class="ssub">'+esc(p.name||'Building')+(contact&&contact.name?' — '+esc(contact.name)+(contact.company?', '+esc(contact.company):''):'')+'</div><div id="te_body"><div class="loading" style="padding:26px">✨ Van is drafting the email…</div></div>');
+    var ask='Draft a short, warm, professional email from me — the tenant\'s broker at Havill & Co. — to '
+      + (contact&&contact.name?contact.name:'the listing broker')+(contact&&contact.company?' at '+contact.company:'')
+      + ', requesting to schedule a tour of '+(p.name||'the building')+(p.address?' ('+p.address+')':'')
+      + ' for my client'+(d.client_name?' '+d.client_name:'')+'. Propose two or three specific time windows over the next week, keep it concise (about 5-7 sentences), and include a subject line. Sign off as the Havill & Co. broker. Output ONLY the email — a "Subject:" line then the body, with no preamble or commentary.';
+    try{
+      var s=await sb.auth.getSession(); var token=s&&s.data&&s.data.session?s.data.session.access_token:null;
+      var res=await fetch('/.netlify/functions/deal-ai-assist',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token, dealId:dealId, question:ask})});
+      var data=await res.json().catch(function(){return null;});
+      var text=data&&data.text?data.text:(data&&data.error?('⚠️ '+data.error):'Could not draft. Please try again.');
+      var mailto=contact&&contact.email?('mailto:'+encodeURIComponent(contact.email)+'?subject='+encodeURIComponent('Tour request — '+(p.name||''))+'&body='+encodeURIComponent(text)):null;
+      var body=$('te_body'); if(body){ body.innerHTML='<textarea id="te_text" class="te-ta">'+esc(text)+'</textarea>'
+        + '<div class="srow" style="justify-content:space-between;align-items:center"><button class="btn" onclick="DF.copyTourEmail()">Copy</button>'
+        + (mailto?'<a class="btn pri" href="'+mailto+'" style="text-decoration:none">Open in email →</a>':'<span class="hint">No listing-broker email on file — copy &amp; send from your inbox.</span>')
+        + '</div>'; }
+    }catch(e){ var b=$('te_body'); if(b) b.innerHTML='<div class="formerr">Could not draft: '+esc(e.message||e)+'</div>'; }
+  }
+  function copyTourEmail(){ var t=$('te_text'); if(t){ t.select(); try{ document.execCommand('copy'); if(typeof aiToast==='function') aiToast('Email copied to clipboard.'); }catch(e){} } }
 
   /* ---------- create: proposal ---------- */
   async function newProposal(dealId){
@@ -2228,7 +2295,7 @@ window.DF = (function(){
     showDashboard:showDashboard, showPipeline:showPipeline, setPipeView:setPipeView, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, toggleClosed:toggleClosed,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask,
-    newDeal:newDeal, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, newProposal:newProposal, newRound:newRound,
+    newDeal:newDeal, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, buildTourFromTouring:buildTourFromTouring, draftTourEmail:draftTourEmail, copyTourEmail:copyTourEmail, newProposal:newProposal, newRound:newRound,
     setStage:setStage, basisChange:basisChange, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
     proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead,
     shareDeal:shareDeal, toggleProposalVisible:toggleProposalVisible,
