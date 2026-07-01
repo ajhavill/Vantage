@@ -114,7 +114,7 @@ const SYSTEM =
   "risks, give a short prioritized list. Use ONLY the facts in the provided context; never invent specific figures that aren't given — if a " +
   "number is unknown, say so or mark [TBD]. Prefer clean markdown (short paragraphs, bold labels, tight bullets). If the context is thin, say what you'd need.";
 
-const ALLOWED = ["add_task", "complete_task", "set_step_status", "set_stage", "update_commission", "add_round"];
+const ALLOWED = ["add_task", "complete_task", "set_step_status", "set_stage", "update_commission", "add_round", "open_model"];
 const ACTIONS_DOC =
   "\n\nACTIONS — you CAN take actions for the broker (you are not just an advisor). They CONFIRM each one before it runs, so propose freely when asked. " +
   "When the broker asks you to do one of the things below, write a brief natural reply, THEN append an actions block on its own lines, exactly:\n" +
@@ -127,7 +127,8 @@ const ACTIONS_DOC =
   "- set_step_status: params {step_id, status 'done'|'active'|'pending'|'na'}  (use 'done' to check a step off)\n" +
   "- set_stage: params {stage 'needs'|'touring'|'evaluating'|'proposals'|'negotiation'|'executed'|'dead'}\n" +
   "- update_commission: params {commission_amount, commission_pct, commission_status 'pending'|'invoiced'|'paid', deal_value}  (include only the fields being set)\n" +
-  "- add_round: params {proposal_id, from_party 'tenant'|'landlord', rent_basis 'FSG'|'MG'|'IG'|'NNN'|'NN'|'N'|'GROSS'|'ABS'|'OTHER', base_rent_psf, opex_psf, size_sf, term_months, annual_escalation_pct, free_rent_months, ti_psf, summary}  (include the numbers the broker gave; omit unknowns)";
+  "- add_round: params {proposal_id, from_party 'tenant'|'landlord', rent_basis 'FSG'|'MG'|'IG'|'NNN'|'NN'|'N'|'GROSS'|'ABS'|'OTHER', base_rent_psf, opex_psf, size_sf, term_months, annual_escalation_pct, free_rent_months, ti_psf, summary}  (include the numbers the broker gave; omit unknowns)\n" +
+  "- open_model: params {} — opens the interactive occupancy/financial model for the current deal (it is already auto-populated from the deal's proposals + lease abstract, so you don't need to fill anything). Propose this when the broker asks to model, run the numbers, compare the options, see the financial analysis, or 'model stay-vs-go'.";
 
 function okJSON(obj) { return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) }; }
 function parseActions(text) {

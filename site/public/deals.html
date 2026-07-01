@@ -325,6 +325,8 @@
   .mname:hover{border-color:var(--line-2)} .mname:focus{outline:none;border-color:var(--accent);background:var(--paper-2)}
   .mside{font:700 8.5px Inter;letter-spacing:.06em;padding:2px 6px;border-radius:5px;margin-left:5px;vertical-align:1px}
   .mside.stay{background:rgba(45,110,126,.13);color:var(--accent)} .mside.go{background:rgba(201,84,63,.13);color:var(--dining)}
+  .mlink{font-size:11px;margin-left:5px;cursor:pointer;opacity:.75}
+  .mlink:hover{opacity:1}
   .mrmv{font-size:11px;color:var(--ink-faint);background:none;border:0;cursor:pointer;margin-left:6px}
   .mrmv:hover{color:var(--dining)}
   .maddcol{min-width:70px}
@@ -577,8 +579,8 @@ window.DF = (function(){
   async function loadDeals(){
     try{
       deals=await q(sb.from('deals').select('*').order('created_at',{ascending:false}));
-      var dl=null; try{ dl=new URLSearchParams(location.search).get('deal'); }catch(e){}
-      if(dl && deals.some(function(d){return d.id===dl;})) openDeal(dl);
+      var dl=null, wantModel=false; try{ var qp=new URLSearchParams(location.search); dl=qp.get('deal'); wantModel=qp.get('model')==='1'; }catch(e){}
+      if(dl && deals.some(function(d){return d.id===dl;})){ openDeal(dl); if(wantModel) setTimeout(function(){ openModel(dl); }, 90); }
       else showDashboard();
     }catch(e){ $('pipe').innerHTML='<div class="loading">Could not load deals: '+esc(e.message)+'</div>'; }
   }
@@ -881,6 +883,7 @@ window.DF = (function(){
       var events=[]; try{ events=await q(sb.from('deal_events').select('type,created_at').eq('deal_id',id).order('created_at',{ascending:false})); }catch(e){}
       var steps=[]; try{ steps=await q(sb.from('deal_steps').select('*').eq('deal_id',id).order('sort_order')); }catch(e){}
       var tasks=[]; try{ tasks=await q(sb.from('deal_tasks').select('*').eq('deal_id',id).order('due_date',{ascending:true,nullsFirst:false})); }catch(e){}
+      try{ syncDealModel(id, proposals, rounds, abstracts[0]||null); }catch(e){}
       renderDeal(d,props,proposals,rounds,docs,tours,abstracts[0]||null,events,steps,tasks);
     }catch(e){ v.innerHTML='<div class="loading">Could not load deal: '+esc(e.message)+'</div>'; }
   }
@@ -1884,6 +1887,9 @@ window.DF = (function(){
     else if($('pipelineView').style.display!=='none'){ if(_view==='table') renderTable(); else renderBoard(); }
   }
   window.addEventListener('van:acted', function(ev){ refreshCurrent(ev&&ev.detail&&ev.detail.dealId); });
+  // Van can open the occupancy model for a deal (same-page navigation)
+  window.__vantageDeals = true;
+  window.addEventListener('van:navigate', function(ev){ var d=(ev&&ev.detail)||{}; if(d.view==='model' && d.dealId && deals.some(function(x){return x.id===d.dealId;})) openModel(d.dealId); });
 
   /* ============ Occupancy Modeler (Phase 2 — interactive) ============ */
   var _model=null, _modelDeal=null, _optSeq=0;
@@ -1915,7 +1921,7 @@ window.DF = (function(){
   function mGet(o,path){ var p=path.split('.'), c=o; for(var i=0;i<p.length;i++){ if(c==null) return undefined; c=c[p[i]]; } return c; }
   function mSet(o,path,v){ var p=path.split('.'), c=o; for(var i=0;i<p.length-1;i++){ if(c[p[i]]==null) c[p[i]]={}; c=c[p[i]]; } c[p[p.length-1]]=v; }
   function optSeed(name,side,structure){ return { id:'o'+(++_optSeq)+'_'+Math.floor(Math.random()*1e6), name:name, side:side, structure:structure, sizeMode:'fixed', rsf:10000, termMonths:60, baseRentPSFmo:0, rentEscalationPct:3, opexBasePSFmo:0, opexGrowthPct:3, freeRentMonths:0, tiPSF:0, parking:{ratioPer1000:0,monthlyRate:0,escalationPct:3}, oneTime:{movingPSF:0,cablingPSF:0,ffnePSF:0}, makeGood:{on:false,psf:0} }; }
-  function defaultModel(){ return { discountRatePct:8, headcountStart:0, densityUsfPerEmp:200, loadFactor:1.15, growth:{low:5,base:10,high:15}, options:[ optSeed('Renew in place','stay','FSG'), optSeed('Relocate option','go','NNN') ] }; }
+  function defaultModel(){ var a=optSeed('Renew in place','stay','FSG'); a._default=true; var b=optSeed('Relocate option','go','NNN'); b._default=true; return { discountRatePct:8, headcountStart:0, densityUsfPerEmp:200, loadFactor:1.15, growth:{low:5,base:10,high:15}, options:[a,b] }; }
   function modelKey(dealId){ return 'vantage_model_'+dealId; }
   function migrateOpt(o){ // upgrade old annual/RSF-year models to monthly ($/SF/mo, term in months)
     if(!o.id) o.id='o'+(++_optSeq)+'_'+Math.floor(Math.random()*1e6);
@@ -1925,6 +1931,46 @@ window.DF = (function(){
     delete o.termYears; delete o.baseRentPSF; delete o.opexBasePSF; return o;
   }
   function loadModel(dealId){ try{ var raw=localStorage.getItem(modelKey(dealId)); if(raw){ var m=JSON.parse(raw); if(m&&m.options&&m.options.length){ m.options.forEach(migrateOpt); return m; } } }catch(e){} return defaultModel(); }
+  // Auto-flow: keep the deal's financial model in sync with its proposals + lease abstract.
+  // Runs silently whenever a deal is opened (so saving a round flows straight into the analysis).
+  // Options LINKED to a proposal (o.proposalId) or the abstract (o.fromAbstract) auto-refresh from
+  // that source; manually-added or unlinked options are never touched. Broker-set parking / one-time /
+  // make-good on a linked option are preserved (rounds don't carry those).
+  function syncDealModel(dealId, proposals, rounds, abstract){
+    var key=modelKey(dealId), model;
+    try{ var raw=localStorage.getItem(key); model = raw? JSON.parse(raw) : defaultModel(); }catch(e){ model=defaultModel(); }
+    if(!model.options) model.options=[];
+    model.options.forEach(migrateOpt);
+    var bestRound={}; (rounds||[]).forEach(function(r){ if(r.status!=='final') return; var b=bestRound[r.proposal_id]; if(!b||r.round_no>b.round_no) bestRound[r.proposal_id]=r; });
+    var propById={}; (proposals||[]).forEach(function(p){ propById[p.id]=p; });
+    var byProp={}, abstractOpt=null;
+    model.options.forEach(function(o){ if(o.proposalId) byProp[o.proposalId]=o; if(o.fromAbstract) abstractOpt=o; });
+    // drop linked options whose proposal no longer has a final round
+    model.options=model.options.filter(function(o){ return !(o.proposalId && !bestRound[o.proposalId]); });
+    // refresh / create a "go" option per proposal from its latest final round
+    Object.keys(bestRound).forEach(function(pid){
+      var r=bestRound[pid], pr=propById[pid], nnn=['NNN','NN','N','ABS'].indexOf(r.rent_basis)>=0;
+      var econ={ rsf:num(r.size_sf)||10000, termMonths:num(r.term_months)||60,
+        baseRentPSFmo:Math.round(((num(r.base_rent_psf)||0)/12)*100)/100, opexBasePSFmo:Math.round(((num(r.opex_psf)||0)/12)*100)/100,
+        structure:nnn?'NNN':'FSG', rentEscalationPct:num(r.annual_escalation_pct)||3, freeRentMonths:num(r.free_rent_months)||0, tiPSF:num(r.ti_psf)||0 };
+      var ex=byProp[pid];
+      if(ex){ Object.assign(ex, econ); if(pr&&pr.title) ex.name=pr.title; }
+      else model.options.push(Object.assign(optSeed((pr&&pr.title)||'Proposal','go',econ.structure), econ, {proposalId:pid}));
+    });
+    // refresh / create a "stay" option from the lease abstract
+    if(abstract){
+      var termY=5; if(abstract.commencement_date&&abstract.expiration_date){ var c=new Date(abstract.commencement_date),e=new Date(abstract.expiration_date); var yy=Math.round((e-c)/(365.25*86400000)); if(yy>0) termY=yy; }
+      var aecon={ rsf:num(abstract.size_sf)||10000, baseRentPSFmo:Math.round(((num(abstract.base_rent_psf)||0)/12)*100)/100, termMonths:termY*12 };
+      if(abstractOpt) Object.assign(abstractOpt, aecon);
+      else model.options.unshift(Object.assign(optSeed('Renew in place','stay','FSG'), aecon, {fromAbstract:true}));
+    }
+    // once real linked options exist, drop the pristine default blanks
+    var hasLinked=model.options.some(function(o){ return o.proposalId||o.fromAbstract; });
+    if(hasLinked) model.options=model.options.filter(function(o){ return !o._default; });
+    if(model.options.length){ try{ localStorage.setItem(key, JSON.stringify(model)); }catch(e){} }
+    // if the model view is open on this deal, re-render live
+    if(_modelDeal===dealId && $('modelView') && $('modelView').style.display!=='none'){ _model=model; renderModel(); }
+  }
   function saveModel(){ try{ localStorage.setItem(modelKey(_modelDeal), JSON.stringify(_model)); }catch(e){} }
   function mergeDeal(o){ return Object.assign({}, o, { discountRatePct:_model.discountRatePct, headcountStart:_model.headcountStart, densityUsfPerEmp:_model.densityUsfPerEmp, loadFactor:_model.loadFactor, growth:_model.growth }); }
 
@@ -1952,7 +1998,7 @@ window.DF = (function(){
   }
   function renderModel(){
     var m=_model, opts=m.options, el=$('modelView');
-    var head='<th class="mlabel"></th>'+opts.map(function(o){ return '<th class="mopt"><input class="mname" value="'+esc(o.name)+'" oninput="DF.modelInput(\''+o.id+'\',\'name\',this.value,false)"><span class="mside '+o.side+'">'+(o.side==='stay'?'STAY':'GO')+'</span>'+(opts.length>1?'<button class="mrmv" onclick="DF.modelRemove(\''+o.id+'\')" title="Remove">✕</button>':'')+'</th>'; }).join('')+'<th class="maddcol"><button class="miniadd" onclick="DF.modelAdd()">+ Option</button></th>';
+    var head='<th class="mlabel"></th>'+opts.map(function(o){ return '<th class="mopt"><input class="mname" value="'+esc(o.name)+'" oninput="DF.modelInput(\''+o.id+'\',\'name\',this.value,false)"><span class="mside '+o.side+'">'+(o.side==='stay'?'STAY':'GO')+'</span>'+((o.proposalId||o.fromAbstract)?'<span class="mlink" onclick="DF.modelUnlink(\''+o.id+'\')" title="Auto-synced from the deal — refreshes when you save a proposal round or lease abstract. Click to unlink and edit freely.">🔗</span>':'')+(opts.length>1?'<button class="mrmv" onclick="DF.modelRemove(\''+o.id+'\')" title="Remove">✕</button>':'')+'</th>'; }).join('')+'<th class="maddcol"><button class="miniadd" onclick="DF.modelAdd()">+ Option</button></th>';
     var outRows=outputRow('Net effective ($/SF/mo)','neteff')+outputRow('All-in ($, whole term)','allin','big')+outputRow('NPV ($)','npv','big npv')+outputRow('NPV band (low–high)','band','muted')+outputRow('Modeled size','size','muted');
     var inRows=MODEL_ROWS.map(modelRow).join('');
     el.innerHTML=
@@ -2001,6 +2047,7 @@ window.DF = (function(){
   function modelDeal(path,value){ mSet(_model,path, value===''?0:Number(value)); saveModel(); refreshOutputs(); }
   function modelAdd(){ _model.options.push(optSeed('New option','go','NNN')); saveModel(); renderModel(); }
   function modelRemove(id){ if(_model.options.length<=1) return; _model.options=_model.options.filter(function(o){return o.id!==id;}); saveModel(); renderModel(); }
+  function modelUnlink(id){ var o=_model.options.filter(function(x){return x.id===id;})[0]; if(!o) return; delete o.proposalId; delete o.fromAbstract; saveModel(); renderModel(); }
   function modelPrint(){ window.print(); }
 
   /* ---- Phase 4: scenario presets ---- */
@@ -2145,7 +2192,7 @@ window.DF = (function(){
   }
 
   return {
-    openModel:openModel, modelInput:modelInput, modelToggle:modelToggle, modelDeal:modelDeal, modelAdd:modelAdd, modelRemove:modelRemove, modelPrint:modelPrint, modelPdf:modelPdf, modelExcel:modelExcel, modelScenario:modelScenario, modelPull:modelPull,
+    openModel:openModel, modelInput:modelInput, modelToggle:modelToggle, modelDeal:modelDeal, modelAdd:modelAdd, modelRemove:modelRemove, modelUnlink:modelUnlink, modelPrint:modelPrint, modelPdf:modelPdf, modelExcel:modelExcel, modelScenario:modelScenario, modelPull:modelPull,
     showDashboard:showDashboard, showPipeline:showPipeline, setPipeView:setPipeView, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, toggleClosed:toggleClosed,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask,

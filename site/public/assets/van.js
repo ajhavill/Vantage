@@ -142,6 +142,11 @@
   }
   function greet() { push("assistant", "Hi, I'm **Van** — your tenant-rep specialist. Ask me anything about " + (ctx.dealId ? ("**" + ctx.label + "**") : "your pipeline") + ", or tap a suggestion. I can summarize, draft emails, compare proposals, flag what needs attention" + (ctx.dealId ? ", and take actions (add tasks, check off steps, log rounds — you confirm each one)" : "") + "."); }
 
+  function vanOpenModel() {
+    if (!ctx.dealId) { push("assistant", "Open a deal first, then I can pull up its financial model.", true); return; }
+    if (window.__vantageDeals) { try { window.dispatchEvent(new CustomEvent("van:navigate", { detail: { view: "model", dealId: ctx.dealId } })); } catch (e) {} close(); }
+    else { location.href = "deals.html?deal=" + encodeURIComponent(ctx.dealId) + "&model=1"; }
+  }
   function renderActions(actions) {
     var m = $("vanMsgs"); if (!m) return;
     var wrap = document.createElement("div"); wrap.className = "van-acts";
@@ -191,7 +196,15 @@
       var data = await res.json().catch(function () { return null; });
       if (thinking) thinking.remove();
       if (!data || data.error) { push("assistant", "⚠️ " + esc((data && data.error) || "Something went wrong. Please try again."), true); }
-      else { push("assistant", data.text || "(no response)"); history.push({ role: "assistant", content: data.text || "" }); if (Array.isArray(data.actions) && data.actions.length) renderActions(data.actions); }
+      else {
+        push("assistant", data.text || "(no response)"); history.push({ role: "assistant", content: data.text || "" });
+        if (Array.isArray(data.actions) && data.actions.length) {
+          var nav = data.actions.filter(function (a) { return a.type === "open_model"; });
+          var mut = data.actions.filter(function (a) { return a.type !== "open_model"; });
+          nav.forEach(vanOpenModel);
+          if (mut.length) renderActions(mut);
+        }
+      }
     } catch (e) {
       if (thinking) thinking.remove();
       push("assistant", (e && e.name === "AbortError") ? "⚠️ That took too long — try a shorter question." : "⚠️ " + esc((e && e.message) || "Network error."), true);
