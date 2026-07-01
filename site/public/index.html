@@ -2300,53 +2300,162 @@
       }).join('');
     }catch(e){ if(att) att.innerHTML='<div class="home-att"><span class="empty">New responses appear here once you’re signed in on the live site.</span></div>'; }
   }
+  // ============ CLIENTS HUB ============
+  // HubSpot Companies are the source of truth for the client roster; this view
+  // unifies them with the Vantage-native artifacts each client has (questionnaires,
+  // packages, comps) into one searchable list + a per-client detail hub. Proposals,
+  // leases, and financials get their own sections once the client-id spine reaches
+  // the Deals side (Phase 2/3). Everything a client accumulates lives here for good.
+  var clientsState={ view:'list', selectedKey:null, q:'' };
+  var chHs=null, chIntakes=null, chPkgs=null, chComps=null, chRoster=[], chLoaded=false, chLoading=false, chHsConfigured=true;
+  var CLIENT_LOCAL_KEY='vantage_local_clients';
+
+  function clientsCallFn(payload){
+    var tokP; try{ tokP=Promise.resolve(qToken()); }catch(e){ tokP=Promise.resolve(null); }
+    return tokP.catch(function(){return null;}).then(function(tok){
+      if(!tok) throw new Error('Please sign in to load your clients.');
+      return fetch('/.netlify/functions/clients',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({token:tok},payload))});
+    }).then(function(res){ return res.text().then(function(txt){ var d=null; try{d=JSON.parse(txt);}catch(e){} if(!res.ok) throw new Error((d&&d.error)||('Server error '+res.status)); return d; }); });
+  }
+  function cnorm(s){ return String(s==null?'':s).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); }
+  function clInitials(name){ var w=String(name||'?').trim().split(/\s+/); return ((w[0]||'')[0]||'')+((w[1]||'')[0]||''); }
+  function clLoadLocal(){ try{ return JSON.parse(localStorage.getItem(CLIENT_LOCAL_KEY)||'[]'); }catch(e){ return []; } }
+  function clSaveLocal(c){ var a=clLoadLocal().filter(function(x){return cnorm(x.name)!==cnorm(c.name);}); a.unshift(c); localStorage.setItem(CLIENT_LOCAL_KEY, JSON.stringify(a.slice(0,300))); }
+  function clActivity(c){ return c.questionnaires.length+c.packages.length+c.comps.length; }
+
+  function clBuildRoster(){
+    var map={};
+    function ensureByName(name){
+      var nn=cnorm(name);
+      for(var k in map){ if(map[k]._nn===nn) return map[k]; }
+      var c={key:'name:'+nn,_nn:nn,id:null,name:name||'Client',industry:null,inHubspot:false,source:'inferred',questionnaires:[],packages:[],comps:[]};
+      map[c.key]=c; return c;
+    }
+    (chHs||[]).forEach(function(co){ map['hs:'+co.id]={key:'hs:'+co.id,_nn:cnorm(co.name),id:co.id,name:co.name,industry:co.industry,city:co.city,domain:co.domain,employees:co.employees,inHubspot:true,source:'hubspot',questionnaires:[],packages:[],comps:[]}; });
+    clLoadLocal().forEach(function(lc){ var nn=cnorm(lc.name),hit=false; for(var k in map){ if(map[k]._nn===nn) hit=true; } if(!hit) map['local:'+nn]={key:'local:'+nn,_nn:nn,id:null,name:lc.name,industry:lc.industry||null,inHubspot:false,source:'local',questionnaires:[],packages:[],comps:[]}; });
+    (chIntakes||[]).forEach(function(it){ ensureByName(it.company_name||'Client').questionnaires.push(it); });
+    (chPkgs||[]).forEach(function(p){ ensureByName(p.clientName||'Client').packages.push(p); });
+    (chComps||[]).forEach(function(cm){ if(cm.tenant) ensureByName(cm.tenant).comps.push(cm); });
+    return Object.keys(map).map(function(k){return map[k];}).sort(function(a,b){ return (clActivity(b)-clActivity(a)) || a.name.localeCompare(b.name); });
+  }
+
   function renderClients(){
     var el=document.getElementById('clientsView'); if(!el) return;
-    el.innerHTML='<div class="mod-wrap"><h1 class="mod-h">Clients</h1>'+
-      '<div class="mod-sub">Your prospects — questionnaires sent, packages shared, and how they’re engaging.</div>'+
-      '<div class="home-qa"><button class="primary" onclick="openQuestionnaire()">+ New questionnaire</button>'+
-        '<button onclick="openShare()">+ Client package</button>'+
-        '<button onclick="openActivity()">Engagement detail</button></div>'+
-      '<div class="cw-sec"><div class="cw-h">Questionnaires</div><div id="cwQList"><div class="q-empty">Loading…</div></div></div>'+
-      '<div class="cw-sec"><div class="cw-h">Client packages</div><div id="cwPList"><div class="q-empty">Loading…</div></div></div>'+
-      '</div>';
-    cwLoadQuestionnaires(); cwLoadPackages();
+    if(!chLoaded && !chLoading) clientsLoadAll();
+    chRoster = chLoaded ? clBuildRoster() : [];
+    if(clientsState.view==='detail' && clientsState.selectedKey) renderClientDetail(); else renderClientList();
   }
-  async function cwLoadQuestionnaires(){
-    var el=document.getElementById('cwQList'); if(!el) return;
-    try{
-      var token=await qToken();
-      var res=await fetch('/.netlify/functions/list-intakes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token})});
-      var d=await res.json(); var list=d.intakes||[];
-      if(!list.length){ el.innerHTML='<div class="q-empty">No questionnaires yet — click “New questionnaire” to send one.</div>'; return; }
-      el.innerHTML=list.map(function(it){
-        var done=it.status==='completed';
-        return '<div class="q-row'+(done?' done':'')+'"'+(done?' onclick="openIntakeFromLink(\''+cmEsc(it.slug)+'\')"':'')+'>'+
-          '<div style="min-width:0"><div class="q-co">'+cmEsc(it.company_name||'Client')+'</div>'+
-          '<div class="q-meta">'+(done?'Responded '+timeAgo(it.completed_at):'Sent '+timeAgo(it.created_at)+' · awaiting response')+'</div></div>'+
-          '<span class="q-badge'+(done?'':' pend')+'">'+(done?'✓ View results':'Awaiting')+'</span></div>';
-      }).join('');
-    }catch(e){ el.innerHTML='<div class="q-empty">Sign in on the live site to see your questionnaires.</div>'; }
+  function clientsLoadAll(){
+    chLoading=true;
+    Promise.resolve(qToken()).catch(function(){return null;}).then(function(tok){
+      var pHs=clientsCallFn({action:'list'}).then(function(d){ chHsConfigured=(d.configured!==false); return d.companies||[]; }).catch(function(){ chHsConfigured=false; return []; });
+      var pIn=fetch('/.netlify/functions/list-intakes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:tok})}).then(function(r){return r.json();}).then(function(d){return d.intakes||[];}).catch(function(){return [];});
+      var pPk=Promise.resolve((typeof shLoadPackages==='function')?shLoadPackages():[]);
+      var pCo=(typeof compsCallFn==='function')?compsCallFn({action:'list',mode:'broker'}).then(function(d){return (d&&d.comps)||[];}).catch(function(){return [];}):Promise.resolve([]);
+      return Promise.all([pHs,pIn,pPk,pCo]);
+    }).then(function(r){ chHs=r[0]; chIntakes=r[1]; chPkgs=r[2]; chComps=r[3]; chLoaded=true; chLoading=false; renderClients(); })
+     .catch(function(){ chLoaded=true; chLoading=false; renderClients(); });
   }
-  async function cwLoadPackages(){
-    var el=document.getElementById('cwPList'); if(!el) return;
-    var pkgs=(typeof shLoadPackages==='function')?shLoadPackages():[];
-    if(!pkgs.length){ el.innerHTML='<div class="q-empty">No client packages yet — click “Client package” to create one.</div>'; return; }
-    el.innerHTML=pkgs.map(function(p,i){
-      return '<div class="q-row" style="cursor:pointer" onclick="openActivity()"><div style="min-width:0"><div class="q-co">'+cmEsc(p.clientName||'Client')+'</div>'+
-        '<div class="q-meta">'+(p.buildingIds?p.buildingIds.length:0)+' buildings · created '+timeAgo(p.createdAt)+'</div></div>'+
-        '<span class="q-badge pend" id="cwEng'+i+'">—</span></div>';
+
+  function renderClientList(){
+    var el=document.getElementById('clientsView');
+    var banner = chHsConfigured ? '' : '<div class="cl-banner"><b>HubSpot isn’t connected yet.</b> This roster is built from your questionnaires, packages, and comps for now — connect HubSpot and every company becomes a client here automatically.</div>';
+    el.innerHTML='<div class="mod-wrap"><div class="cl-head"><div><h1 class="mod-h">Clients</h1>'+
+      '<div class="mod-sub">Everyone you’re working with — questionnaires, packages, comps, and (soon) proposals &amp; leases, all in one place.</div></div>'+
+      '<div class="cl-headbtns"><button onclick="openQuestionnaire()">+ Questionnaire</button><button onclick="openShare()">+ Package</button><button class="cl-add" onclick="clientsAddOpen()">+ Add client</button></div></div>'+
+      '<div class="cl-searchwrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>'+
+        '<input id="clSearch" class="cl-search" type="text" autocomplete="off" placeholder="Search clients by name or industry…" value="'+cmEsc(clientsState.q)+'"></div>'+
+      banner+'<div id="clientsGrid" class="cl-grid"></div></div>';
+    var inp=document.getElementById('clSearch');
+    if(inp){ inp.oninput=function(){ clientsState.q=inp.value; renderClientGrid(); }; if(clientsState.q){ inp.focus(); inp.setSelectionRange(inp.value.length,inp.value.length); } }
+    renderClientGrid();
+  }
+  function renderClientGrid(){
+    var grid=document.getElementById('clientsGrid'); if(!grid) return;
+    if(!chLoaded){ grid.innerHTML='<div class="q-empty">Loading your clients…</div>'; return; }
+    var q=cnorm(clientsState.q);
+    var list=chRoster.filter(function(c){ return !q || cnorm(c.name).indexOf(q)>=0 || cnorm(c.industry||'').indexOf(q)>=0; });
+    if(!list.length){ grid.innerHTML='<div class="q-empty">'+(chRoster.length?('No clients match “'+cmEsc(clientsState.q)+'”.'):'No clients yet — click “Add client”, or send a questionnaire / create a package to start.')+'</div>'; return; }
+    grid.innerHTML=list.map(function(c){
+      var chips=[]; if(c.questionnaires.length)chips.push(c.questionnaires.length+' questionnaire'+(c.questionnaires.length>1?'s':''));
+      if(c.packages.length)chips.push(c.packages.length+' package'+(c.packages.length>1?'s':''));
+      if(c.comps.length)chips.push(c.comps.length+' comp'+(c.comps.length>1?'s':''));
+      var badge=c.inHubspot?'<span class="cl-hs">HubSpot</span>':'<span class="cl-off">Not in HubSpot</span>';
+      return '<div class="cl-card" onclick="openClient(\''+cmEsc(c.key)+'\')"><div class="cl-card-top"><span class="cl-avatar">'+cmEsc(clInitials(c.name).toUpperCase())+'</span>'+badge+'</div>'+
+        '<div class="cl-name">'+cmEsc(c.name)+'</div><div class="cl-ind">'+cmEsc(c.industry||'—')+'</div>'+
+        '<div class="cl-chips">'+(chips.length?chips.map(function(x){return '<span class="cl-chip">'+cmEsc(x)+'</span>';}).join(''):'<span class="cl-chip muted">No activity yet</span>')+'</div></div>';
     }).join('');
-    try{
-      var secret=localStorage.getItem('vantage_broker_secret')||''; if(!secret) return;
-      var res=await fetch('/.netlify/functions/get-stats',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brokerSecret:secret, slugs:pkgs.map(function(p){return p.slug;})})});
-      var d=await res.json(); var stats=d.stats||{};
-      pkgs.forEach(function(p,i){ var s=stats[p.slug], b=document.getElementById('cwEng'+i); if(!b) return;
-        if(s&&s.opens>0){ b.className='q-badge'; b.textContent=s.opens+' open'+(s.opens>1?'s':'')+' · '+timeAgo(s.lastSeen); }
-        else { b.className='q-badge pend'; b.textContent='Not opened yet'; }
-      });
-    }catch(e){}
   }
+
+  window.openClient=function(key){ clientsState.view='detail'; clientsState.selectedKey=key; renderClients(); };
+  window.clientsBack=function(){ clientsState.view='list'; clientsState.selectedKey=null; renderClients(); };
+
+  function clSection(title, extra, inner){
+    return '<div class="cl-sec"><div class="cl-sec-h"><span>'+title+'</span>'+(extra||'')+'</div>'+inner+'</div>';
+  }
+  function renderClientDetail(){
+    var el=document.getElementById('clientsView');
+    var c=(chRoster||[]).filter(function(x){return x.key===clientsState.selectedKey;})[0];
+    if(!c){ clientsState.view='list'; renderClientList(); return; }
+    var meta=[]; if(c.industry)meta.push(cmEsc(c.industry)); if(c.city)meta.push(cmEsc(c.city)); if(c.employees)meta.push(cmEsc(c.employees)+' employees');
+    var hsTag=c.inHubspot?'<span class="cl-hs">HubSpot'+(c.id?' · '+cmEsc(c.id):'')+'</span>':'<span class="cl-off">Not in HubSpot</span>';
+
+    // Questionnaires
+    var qHtml = c.questionnaires.length ? c.questionnaires.map(function(it){ var done=it.status==='completed';
+      return '<div class="q-row'+(done?' done':'')+'"'+(done?' onclick="openIntakeFromLink(\''+cmEsc(it.slug)+'\')"':'')+'><div style="min-width:0"><div class="q-co">'+cmEsc(it.company_name||c.name)+'</div>'+
+        '<div class="q-meta">'+(done?'Responded '+timeAgo(it.completed_at):'Sent '+timeAgo(it.created_at)+' · awaiting response')+'</div></div>'+
+        '<span class="q-badge'+(done?'':' pend')+'">'+(done?'✓ View results':'Awaiting')+'</span></div>'; }).join('')
+      : '<div class="q-empty small">No questionnaires yet.</div>';
+
+    // Packages
+    var pHtml = c.packages.length ? c.packages.map(function(p){
+      return '<div class="q-row" onclick="openActivity()"><div style="min-width:0"><div class="q-co">'+cmEsc(p.clientName||c.name)+'</div>'+
+        '<div class="q-meta">'+(p.buildingIds?p.buildingIds.length:0)+' buildings · created '+timeAgo(p.createdAt)+'</div></div><span class="q-badge pend">View</span></div>'; }).join('')
+      : '<div class="q-empty small">No packages shared yet.</div>';
+
+    // Comps
+    var coHtml = c.comps.length ? c.comps.map(function(cm){
+      var ner=(cm.net_effective_rent_psf!=null)?('$'+Number(cm.net_effective_rent_psf).toFixed(2)+' NER'):'—';
+      return '<div class="q-row"><div style="min-width:0"><div class="q-co">'+cmEsc(cm.building_name||cm.address||'—')+'</div>'+
+        '<div class="q-meta">'+(cm.rsf?Number(cm.rsf).toLocaleString()+' SF':'—')+(cm.execution_date?(' · '+String(cm.execution_date).slice(0,10)):'')+'</div></div><span class="q-badge">'+ner+'</span></div>'; }).join('')
+      : '<div class="q-empty small">No comps recorded for this client.</div>';
+
+    el.innerHTML='<div class="mod-wrap"><button class="cl-back" onclick="clientsBack()">← All clients</button>'+
+      '<div class="cl-dhead"><span class="cl-avatar big">'+cmEsc(clInitials(c.name).toUpperCase())+'</span>'+
+        '<div class="cl-dheadmeta"><div class="cl-dtop"><h1 class="cl-dname">'+cmEsc(c.name)+'</h1>'+hsTag+'</div>'+
+        '<div class="cl-dsub">'+(meta.length?meta.join(' · '):'—')+'</div></div>'+
+        (c.inHubspot?'':'<button class="cl-add" onclick="clientsAddOpen(\''+cmEsc(c.name)+'\')">Add to HubSpot</button>')+'</div>'+
+      clSection('Questionnaires', '<button class="cl-secbtn" onclick="openQuestionnaire()">+ New</button>', qHtml)+
+      clSection('Packages', '<button class="cl-secbtn" onclick="openShare()">+ New</button>', pHtml)+
+      clSection('Comps', '<button class="cl-secbtn" onclick="marketSub(\'comps\')">Open Comps</button>', coHtml)+
+      clSection('Proposals &amp; leases', '<a class="cl-secbtn" href="deals.html">Open Deals ↗</a>', '<div class="cl-soon">Proposals and executed leases live in <b>Deals</b> today. They’ll appear here automatically once deals are linked to a client — the next step in this build.</div>')+
+      clSection('Financial analysis', '', '<div class="cl-soon">Per-client financial analysis is coming — it’ll pull from this client’s comps and lease terms, and feed the tenant portal.</div>')+
+      '</div>';
+  }
+
+  window.clientsAddOpen=function(prefill){
+    var html='<div class="cmp-modal" id="clModal"><div class="cmp-mbox cmp-mbox-sm"><div class="cmp-mhead"><h2>Add client</h2><button class="cmp-mx" id="clAddX">×</button></div>'+
+      '<div class="cmp-mbody"><p class="cmp-imp-p">This creates the company in <b>HubSpot</b> so your CRM and Vantage stay in sync. If HubSpot isn’t connected yet, it’s saved locally and will sync later.</p>'+
+      '<label class="cmp-f cmp-f-wide"><span>Client / company name</span><input id="clName" type="text" value="'+cmEsc(prefill||'')+'" placeholder="e.g. Brightwork Software"></label>'+
+      '<label class="cmp-f cmp-f-wide" style="margin-top:10px"><span>Industry (optional)</span><input id="clIndustry" type="text" placeholder="e.g. Technology"></label></div>'+
+      '<div class="cmp-mfoot"><div></div><div class="cmp-mfootbtns"><button class="cmp-btn" id="clAddCancel">Cancel</button><button class="cmp-btn primary" id="clAddSave">Add client</button></div></div></div></div>';
+    var wrap=document.createElement('div'); wrap.innerHTML=html; document.body.appendChild(wrap.firstChild);
+    var modal=document.getElementById('clModal');
+    function close(){ modal.remove(); }
+    document.getElementById('clAddX').onclick=close; document.getElementById('clAddCancel').onclick=close;
+    modal.addEventListener('mousedown',function(e){ if(e.target===modal) close(); });
+    document.getElementById('clName').focus();
+    document.getElementById('clAddSave').onclick=function(){
+      var name=document.getElementById('clName').value.trim();
+      if(!name){ document.getElementById('clName').focus(); return; }
+      var industry=document.getElementById('clIndustry').value.trim();
+      var btn=this; btn.disabled=true; btn.textContent='Adding…';
+      clientsCallFn({action:'create', client:{name:name, industry:industry||undefined}}).then(function(d){
+        if(d && d.configured===false){ clSaveLocal({name:name, industry:industry||null, at:new Date().toISOString()}); }
+        close(); chLoaded=false; renderClients();
+      }).catch(function(e){ btn.disabled=false; btn.textContent='Add client'; alert('Could not add client: '+(e.message||e)); });
+    };
+  };
   function renderSettings(){
     var el=document.getElementById('settingsView'); if(!el) return;
     var email=(document.getElementById('userEmail')||{}).textContent||'—';
