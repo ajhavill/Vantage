@@ -288,6 +288,56 @@
   @media(max-width:760px){ .dstats{grid-template-columns:repeat(2,1fr)} .dgrid{grid-template-columns:1fr} }
 
   /* Van AI assistant styles live in assets/van.js (injected, prefixed .van-) */
+
+  /* occupancy model */
+  .modelcta{display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,var(--paper-2),var(--paper));padding:16px 18px}
+  .modelcta-t{font:700 15px 'Bricolage Grotesque';color:var(--ink)}
+  .modelcta-s{font:400 12.5px Inter;color:var(--ink-faint);margin-top:3px;max-width:560px;line-height:1.5}
+  .mhead{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:12px}
+  .mhead h1{font-size:22px}
+  .mhead .sub{font:500 12.5px Inter;color:var(--ink-faint);margin-top:3px}
+  .msum{border:1px solid var(--line-2);border-left:3px solid var(--accent);border-radius:10px;background:var(--paper-2);padding:11px 14px;font:500 13px Inter;color:var(--ink-soft);margin-bottom:14px}
+  .msum b{color:var(--ink);font-weight:700}
+  .msum.go{border-left-color:var(--dining)} .msum.stay{border-left-color:var(--accent)}
+  .dsetbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+  .dset{display:flex;flex-direction:column;gap:4px}
+  .dset label{font:600 9.5px Inter;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint)}
+  .dset label span{color:var(--ink-faint);text-transform:none;letter-spacing:0;font-weight:500}
+  .dset input{font:600 13px 'JetBrains Mono';padding:7px 9px;border:1px solid var(--line-2);border-radius:8px;background:var(--paper);color:var(--ink);width:104px}
+  .dset input:focus{outline:none;border-color:var(--accent)}
+  .mgrid-wrap{border:1px solid var(--line);border-radius:12px;overflow:auto}
+  .mgrid{border-collapse:collapse;font-size:12.5px;min-width:100%}
+  .mgrid td,.mgrid th{border-bottom:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:middle}
+  .mgrid .mlabel{position:sticky;left:0;background:var(--paper-2);z-index:1;font:500 12px Inter;color:var(--ink-soft);white-space:nowrap;min-width:150px;border-right:1px solid var(--line)}
+  .mgrid .mu{color:var(--ink-faint);font-size:10.5px}
+  .mgrid .mpad{min-width:60px;border-bottom:0}
+  .mgrid thead th{background:var(--paper);position:sticky;top:0;z-index:2}
+  .mgrid thead .mlabel{z-index:3}
+  .mopt{min-width:172px}
+  .mname{font:700 13px 'Bricolage Grotesque';color:var(--ink);border:1px solid transparent;background:none;border-radius:6px;padding:3px 5px;width:118px}
+  .mname:hover{border-color:var(--line-2)} .mname:focus{outline:none;border-color:var(--accent);background:var(--paper-2)}
+  .mside{font:700 8.5px Inter;letter-spacing:.06em;padding:2px 6px;border-radius:5px;margin-left:5px;vertical-align:1px}
+  .mside.stay{background:rgba(45,110,126,.13);color:var(--accent)} .mside.go{background:rgba(201,84,63,.13);color:var(--dining)}
+  .mrmv{font-size:11px;color:var(--ink-faint);background:none;border:0;cursor:pointer;margin-left:6px}
+  .mrmv:hover{color:var(--dining)}
+  .maddcol{min-width:70px}
+  .mgrid tbody tr.msec td{background:var(--paper);font:600 9.5px Inter;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-faint);padding:7px 10px}
+  .mgrid tbody tr.msec .mlabel{background:var(--paper)}
+  .mgrid tr.mout td{background:var(--paper-2)}
+  .mgrid tr.mout .mval{font:700 13px 'JetBrains Mono';color:var(--ink);white-space:nowrap}
+  .mgrid tr.mout.big .mval{font-size:15px}
+  .mgrid tr.mout.npv .mval{color:var(--ink)}
+  .mgrid tr.mout .mval.best{color:#fff;background:var(--accent);border-radius:6px;text-align:center}
+  .mgrid tr.mout.muted .mval{font:500 11px 'JetBrains Mono';color:var(--ink-faint)}
+  .mgrid tr.mout .mlabel{font-weight:700;color:var(--ink)}
+  .mgrid input[type=number],.mgrid select{font:500 12.5px Inter;padding:5px 7px;border:1px solid var(--line-2);border-radius:7px;background:var(--paper);color:var(--ink);width:104px}
+  .mgrid input[type=number]{font-family:'JetBrains Mono';width:92px}
+  .mgrid input:focus,.mgrid select:focus{outline:none;border-color:var(--accent)}
+  .mmg{display:flex;align-items:center;gap:6px}
+  .mmg input[type=checkbox]{width:auto;cursor:pointer}
+  .mmg input[type=number]{width:66px}
+  .mnote{font:400 11px Inter;color:var(--ink-faint);line-height:1.6;margin-top:12px;max-width:900px}
+  @media print{ .topbar,.subnav,.vnav,.app-shell>.vnav,.dsr-back,.mexport,.van-fab,.van-panel{display:none!important} .app-main,.app-shell{display:block!important} #modelView{display:block!important} .mgrid-wrap{overflow:visible;border:0} .mgrid{font-size:10px} }
 </style>
 </head>
 <body>
@@ -366,6 +416,9 @@
 
   <!-- DETAIL -->
   <section id="dealView" class="wrap" style="display:none"></section>
+
+  <!-- OCCUPANCY MODEL -->
+  <section id="modelView" class="wrap" style="display:none"></section>
 </main>
 
 <!-- generic modal -->
@@ -383,6 +436,7 @@
 <script src="https://cdn.jsdelivr.net/npm/pizzip@3.1.7/dist/pizzip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.50.0/build/docxtemplater.js"></script>
 <script src="assets/van.js"></script>
+<script src="assets/model-engine.js"></script>
 <script>
 window.DF = (function(){
   "use strict";
@@ -525,6 +579,7 @@ window.DF = (function(){
   function showPipeline(){
     $('dealView').style.display='none';
     $('dashboardView').style.display='none';
+    var mv1=$('modelView'); if(mv1) mv1.style.display='none';
     $('pipelineView').style.display='block';
     $('crumb').innerHTML='Deal flow';
     setSubnav('pipeline');
@@ -637,6 +692,7 @@ window.DF = (function(){
   async function showDashboard(){
     $('pipelineView').style.display='none';
     $('dealView').style.display='none';
+    var mv2=$('modelView'); if(mv2) mv2.style.display='none';
     $('dashboardView').style.display='block';
     $('crumb').innerHTML='Deal flow';
     setSubnav('dashboard');
@@ -801,6 +857,7 @@ window.DF = (function(){
     var d=deals.filter(function(x){return x.id===id;})[0]; if(!d) return;
     $('pipelineView').style.display='none';
     $('dashboardView').style.display='none';
+    var mv3=$('modelView'); if(mv3) mv3.style.display='none';
     setSubnav('deal');
     if(window.Van) Van.setContext({dealId:id, label:(d.client_name||'this deal')});
     var v=$('dealView'); v.style.display='block';
@@ -890,6 +947,10 @@ window.DF = (function(){
       + '</div>'
       + '<div id="snapWrap">'+snapshotSection(d,steps)+'</div>'
       + '<div class="sec"><div class="sec-h"><h2>Tasks &amp; next steps</h2><span class="hint">Your to-dos for this client</span></div><div id="tasksBody">'+tasksSection(d,tasks)+'</div></div>'
+      + '<div class="sec"><div class="sec-h"><h2>Occupancy model</h2><span class="hint">Compare options side-by-side — net effective, all-in &amp; NPV</span></div>'
+      +   '<div class="modelcta"><div><div class="modelcta-t">Build the financial case</div><div class="modelcta-s">Model stay-vs-go and every option with full opex, parking, concessions, one-time costs, and headcount-growth bands — the numbers that justify your fee.</div></div>'
+      +   '<button class="share-btn" onclick="DF.openModel(\''+d.id+'\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg> Open occupancy model</button></div>'
+      + '</div>'
       + '<div class="sec"><div class="sec-h"><h2>Buildings</h2><span class="hint">The properties in play for this client</span></div>'+propsHtml2+'</div>'
       + '<div class="sec"><div class="sec-h"><h2>Tour schedule</h2><span class="hint">Building visits for this client</span></div>'+toursSection+'</div>'
       + '<div class="sec"><div class="sec-h"><h2>Proposals &amp; rounds</h2>'+addProposalBtn+'</div>'+propsHtmlList+'</div>'
@@ -1816,7 +1877,115 @@ window.DF = (function(){
   }
   window.addEventListener('van:acted', function(ev){ refreshCurrent(ev&&ev.detail&&ev.detail.dealId); });
 
+  /* ============ Occupancy Modeler (Phase 2 — interactive) ============ */
+  var _model=null, _modelDeal=null, _optSeq=0;
+  var MODEL_ROWS=[
+    {sec:'Lease terms'},
+    {k:'side',label:'Side',type:'select',opts:[['stay','Stay / renew'],['go','Go / relocate']]},
+    {k:'structure',label:'Rent structure',type:'select',opts:[['FSG','Full Service (FSG)'],['NNN','Triple Net (NNN)']]},
+    {k:'termYears',label:'Term',type:'num',unit:'yrs',step:1},
+    {k:'sizeMode',label:'Sizing',type:'select',opts:[['fixed','Fixed RSF'],['byHeadcount','Size to team']]},
+    {k:'rsf',label:'Size',type:'num',unit:'RSF',step:100},
+    {k:'baseRentPSF',label:'Base rent',type:'num',unit:'$/RSF',step:0.25},
+    {k:'rentEscalationPct',label:'Escalation',type:'num',unit:'%/yr',step:0.25},
+    {sec:'Operating expenses'},
+    {k:'opexBasePSF',label:'Opex (base yr)',type:'num',unit:'$/RSF',step:0.25},
+    {k:'opexGrowthPct',label:'Opex growth',type:'num',unit:'%/yr',step:0.25},
+    {sec:'Concessions'},
+    {k:'freeRentMonths',label:'Free rent',type:'num',unit:'months',step:1},
+    {k:'tiPSF',label:'TI allowance',type:'num',unit:'$/RSF',step:1},
+    {sec:'Parking'},
+    {k:'parking.ratioPer1000',label:'Ratio',type:'num',unit:'/1,000 RSF',step:0.1},
+    {k:'parking.monthlyRate',label:'Rate',type:'num',unit:'$/space/mo',step:5},
+    {k:'parking.escalationPct',label:'Parking esc',type:'num',unit:'%/yr',step:0.25},
+    {sec:'One-time costs (relocate)'},
+    {k:'oneTime.movingPSF',label:'Moving',type:'num',unit:'$/RSF',step:0.5},
+    {k:'oneTime.cablingPSF',label:'Cabling / IT',type:'num',unit:'$/RSF',step:0.5},
+    {k:'oneTime.ffnePSF',label:'FF&E',type:'num',unit:'$/RSF',step:1},
+    {k:'makeGood',label:'Make-good',type:'makegood',unit:'$/RSF',step:1}
+  ];
+  function mGet(o,path){ var p=path.split('.'), c=o; for(var i=0;i<p.length;i++){ if(c==null) return undefined; c=c[p[i]]; } return c; }
+  function mSet(o,path,v){ var p=path.split('.'), c=o; for(var i=0;i<p.length-1;i++){ if(c[p[i]]==null) c[p[i]]={}; c=c[p[i]]; } c[p[p.length-1]]=v; }
+  function optSeed(name,side,structure){ return { id:'o'+(++_optSeq)+'_'+Math.floor(Math.random()*1e6), name:name, side:side, structure:structure, sizeMode:'fixed', rsf:10000, termYears:5, baseRentPSF:0, rentEscalationPct:3, opexBasePSF:0, opexGrowthPct:3, freeRentMonths:0, tiPSF:0, parking:{ratioPer1000:0,monthlyRate:0,escalationPct:3}, oneTime:{movingPSF:0,cablingPSF:0,ffnePSF:0}, makeGood:{on:false,psf:0} }; }
+  function defaultModel(){ return { discountRatePct:8, headcountStart:0, densityUsfPerEmp:200, loadFactor:1.15, growth:{low:5,base:10,high:15}, options:[ optSeed('Renew in place','stay','FSG'), optSeed('Relocate option','go','NNN') ] }; }
+  function modelKey(dealId){ return 'vantage_model_'+dealId; }
+  function loadModel(dealId){ try{ var raw=localStorage.getItem(modelKey(dealId)); if(raw){ var m=JSON.parse(raw); if(m&&m.options&&m.options.length){ m.options.forEach(function(o){ if(!o.id) o.id='o'+(++_optSeq); }); return m; } } }catch(e){} return defaultModel(); }
+  function saveModel(){ try{ localStorage.setItem(modelKey(_modelDeal), JSON.stringify(_model)); }catch(e){} }
+  function mergeDeal(o){ return Object.assign({}, o, { discountRatePct:_model.discountRatePct, headcountStart:_model.headcountStart, densityUsfPerEmp:_model.densityUsfPerEmp, loadFactor:_model.loadFactor, growth:_model.growth }); }
+
+  async function openModel(dealId){
+    if(!window.VModel){ alert('The modeling engine failed to load. Refresh and try again.'); return; }
+    _modelDeal=dealId; _model=loadModel(dealId);
+    $('pipelineView').style.display='none'; $('dashboardView').style.display='none'; $('dealView').style.display='none';
+    $('modelView').style.display='block';
+    var d=deals.filter(function(x){return x.id===dealId;})[0];
+    $('crumb').innerHTML='Deal flow <b>›</b> '+esc(d?(d.client_name||'Deal'):'Deal')+' <b>›</b> Model';
+    setSubnav('deal');
+    renderModel();
+  }
+
+  function dfld(label,path,step,unit){ return '<div class="dset"><label>'+label+(unit?' <span>'+unit+'</span>':'')+'</label><input type="number" step="'+step+'" value="'+esc(mGet(_model,path))+'" oninput="DF.modelDeal(\''+path+'\',this.value)"></div>'; }
+  function outputRow(label,key,cls){ var opts=_model.options; return '<tr class="mout '+(cls||'')+'"><td class="mlabel">'+label+'</td>'+opts.map(function(o){ return '<td class="mval" id="mo_'+o.id+'_'+key+'">—</td>'; }).join('')+'<td class="mpad"></td></tr>'; }
+  function inputCell(r,o){
+    if(r.type==='select'){ return '<select onchange="DF.modelInput(\''+o.id+'\',\''+r.k+'\',this.value,false)">'+r.opts.map(function(op){ return '<option value="'+op[0]+'"'+(mGet(o,r.k)===op[0]?' selected':'')+'>'+op[1]+'</option>'; }).join('')+'</select>'; }
+    if(r.type==='makegood'){ var on=o.makeGood&&o.makeGood.on; return '<div class="mmg"><input type="checkbox"'+(on?' checked':'')+' onchange="DF.modelToggle(\''+o.id+'\',\'makeGood.on\',this.checked)"><input type="number" step="'+r.step+'" value="'+esc(mGet(o,'makeGood.psf'))+'" oninput="DF.modelInput(\''+o.id+'\',\'makeGood.psf\',this.value,true)"'+(on?'':' disabled')+'></div>'; }
+    return '<input type="number" step="'+r.step+'" value="'+esc(mGet(o,r.k))+'" oninput="DF.modelInput(\''+o.id+'\',\''+r.k+'\',this.value,true)">';
+  }
+  function modelRow(r){ var opts=_model.options;
+    if(r.sec) return '<tr class="msec"><td class="mlabel">'+r.sec+'</td>'+opts.map(function(){return '<td></td>';}).join('')+'<td class="mpad"></td></tr>';
+    return '<tr><td class="mlabel">'+r.label+(r.unit?' <span class="mu">'+r.unit+'</span>':'')+'</td>'+opts.map(function(o){ return '<td>'+inputCell(r,o)+'</td>'; }).join('')+'<td class="mpad"></td></tr>';
+  }
+  function renderModel(){
+    var m=_model, opts=m.options, el=$('modelView');
+    var head='<th class="mlabel"></th>'+opts.map(function(o){ return '<th class="mopt"><input class="mname" value="'+esc(o.name)+'" oninput="DF.modelInput(\''+o.id+'\',\'name\',this.value,false)"><span class="mside '+o.side+'">'+(o.side==='stay'?'STAY':'GO')+'</span>'+(opts.length>1?'<button class="mrmv" onclick="DF.modelRemove(\''+o.id+'\')" title="Remove">✕</button>':'')+'</th>'; }).join('')+'<th class="maddcol"><button class="miniadd" onclick="DF.modelAdd()">+ Option</button></th>';
+    var outRows=outputRow('Net effective','neteff')+outputRow('All-in ($, term)','allin','big')+outputRow('NPV','npv','big npv')+outputRow('NPV band (low–high)','band','muted')+outputRow('Modeled size','size','muted');
+    var inRows=MODEL_ROWS.map(modelRow).join('');
+    el.innerHTML=
+      '<button class="dsr-back" onclick="DF.openDeal(\''+_modelDeal+'\')">‹ Back to deal</button>'
+      + '<div class="mhead"><div><h1>Occupancy model</h1><div class="sub">Every assumption is live-editable — toggle during a pitch. Autosaves.</div></div>'
+      +   '<div class="mexport"><button class="btn" onclick="DF.modelPrint()">🖨 Print / PDF</button></div></div>'
+      + '<div id="modelSummary"></div>'
+      + '<div class="dsetbar">'
+      +   dfld('Discount rate','discountRatePct',0.25,'%')
+      +   dfld('Team headcount','headcountStart',1,'people')
+      +   dfld('Density','densityUsfPerEmp',5,'usf/emp')
+      +   dfld('Load factor','loadFactor',0.01,'rsf/usf')
+      +   dfld('Growth · low','growth.low',0.5,'%')
+      +   dfld('Growth · base','growth.base',0.5,'%')
+      +   dfld('Growth · high','growth.high',0.5,'%')
+      + '</div>'
+      + '<div class="mgrid-wrap"><table class="mgrid"><thead><tr>'+head+'</tr></thead><tbody>'+outRows+inRows+'</tbody></table></div>'
+      + '<div class="mnote">Net effective = gross-equivalent rent net of free rent &amp; TI, spread over term (excludes parking &amp; one-time). All-in = every dollar over the term. NPV discounts all-in at the deal rate (rent-in-advance convention). Bands reflect low/base/high hiring against your density assumption.</div>';
+    refreshOutputs();
+  }
+  function refreshOutputs(){
+    if(!_model||!window.VModel) return;
+    var runs=_model.options.map(function(o){ return VModel.runOption(mergeDeal(o)); });
+    var bestNpv=null, bestIdx=-1;
+    runs.forEach(function(r,i){ if(bestNpv==null||r.base.npv<bestNpv){ bestNpv=r.base.npv; bestIdx=i; } });
+    runs.forEach(function(r,i){
+      var o=_model.options[i];
+      setTxt('mo_'+o.id+'_neteff', psf(r.base.netEffectivePSF)+'/RSF');
+      setTxt('mo_'+o.id+'_allin', money(r.base.allIn));
+      var npvCell=$('mo_'+o.id+'_npv'); if(npvCell){ npvCell.textContent=money(r.base.npv); npvCell.className='mval big npv'+(i===bestIdx&&runs.length>1?' best':''); }
+      setTxt('mo_'+o.id+'_band', money(r.bands.low.npv)+' – '+money(r.bands.high.npv));
+      var sz=r.base.rsf.toLocaleString()+' RSF'+(o.sizeMode==='byHeadcount'?' (sized)':'')+(r.base.shortfallSF>0?(' · ⚠ short '+r.base.shortfallSF.toLocaleString()+' SF'):'');
+      setTxt('mo_'+o.id+'_size', sz);
+    });
+    var stay=null, go=null; runs.forEach(function(r){ if(r.side==='stay'&&!stay)stay=r; if(r.side==='go'&&!go)go=r; });
+    var sum=$('modelSummary');
+    if(sum){ if(stay&&go){ var dN=go.base.npv-stay.base.npv; sum.innerHTML='<div class="msum '+(dN<0?'go':'stay')+'"><b>'+(dN<0?'Relocating':'Renewing in place')+'</b> is the lower-NPV path by <b>'+money(Math.abs(dN))+'</b> over the term (base case) — Stay '+money(stay.base.npv)+' vs Go '+money(go.base.npv)+'.</div>'; } else sum.innerHTML=''; }
+  }
+  function setTxt(id,t){ var e=$(id); if(e) e.textContent=t; }
+  function modelInput(optId,path,value,isNum){ var o=_model.options.filter(function(x){return x.id===optId;})[0]; if(!o) return; mSet(o,path, isNum?(value===''?0:Number(value)):value); saveModel(); if(path==='side'){ renderModel(); return; } refreshOutputs(); }
+  function modelToggle(optId,path,checked){ var o=_model.options.filter(function(x){return x.id===optId;})[0]; if(!o) return; mSet(o,path,!!checked); saveModel(); renderModel(); }
+  function modelDeal(path,value){ mSet(_model,path, value===''?0:Number(value)); saveModel(); refreshOutputs(); }
+  function modelAdd(){ _model.options.push(optSeed('New option','go','NNN')); saveModel(); renderModel(); }
+  function modelRemove(id){ if(_model.options.length<=1) return; _model.options=_model.options.filter(function(o){return o.id!==id;}); saveModel(); renderModel(); }
+  function modelPrint(){ window.print(); }
+
   return {
+    openModel:openModel, modelInput:modelInput, modelToggle:modelToggle, modelDeal:modelDeal, modelAdd:modelAdd, modelRemove:modelRemove, modelPrint:modelPrint,
     showDashboard:showDashboard, showPipeline:showPipeline, setPipeView:setPipeView, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, toggleClosed:toggleClosed,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask,
