@@ -299,6 +299,13 @@
   .msum{border:1px solid var(--line-2);border-left:3px solid var(--accent);border-radius:10px;background:var(--paper-2);padding:11px 14px;font:500 13px Inter;color:var(--ink-soft);margin-bottom:14px}
   .msum b{color:var(--ink);font-weight:700}
   .msum.go{border-left-color:var(--dining)} .msum.stay{border-left-color:var(--accent)}
+  .mscen{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .mscen-l{font:600 10px Inter;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-faint);margin-right:2px}
+  .mscen-b{font:600 12px Inter;color:var(--ink-soft);background:var(--paper);border:1px solid var(--line-2);border-radius:999px;padding:6px 13px;cursor:pointer}
+  .mscen-b:hover{border-color:var(--accent);color:var(--accent)}
+  .mscen-b.on{background:var(--building);color:#fff;border-color:var(--building)}
+  .mscen-pull{font:600 12px Inter;color:var(--accent);background:none;border:1px solid var(--accent);border-radius:999px;padding:6px 13px;cursor:pointer;margin-left:auto}
+  .mscen-pull:hover{background:var(--accent);color:#fff}
   .dsetbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
   .dset{display:flex;flex-direction:column;gap:4px}
   .dset label{font:600 9.5px Inter;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint)}
@@ -1946,6 +1953,10 @@ window.DF = (function(){
       + '<div class="mhead"><div><h1>Occupancy model</h1><div class="sub">Every assumption is live-editable — toggle during a pitch. Autosaves.</div></div>'
       +   '<div class="mexport"><button class="btn" onclick="DF.modelPdf()">📄 Branded PDF</button><button class="btn" onclick="DF.modelExcel()">⤓ Excel</button></div></div>'
       + '<div id="modelSummary"></div>'
+      + '<div class="mscen"><span class="mscen-l">Scenario</span>'
+      +   SCENARIOS.map(function(s){ return '<button class="mscen-b'+(m.scenario===s.key?' on':'')+'" onclick="DF.modelScenario(\''+s.key+'\')">'+s.label+'</button>'; }).join('')
+      +   '<button class="mscen-pull" onclick="DF.modelPull()" title="Fill options from this deal\'s proposals and lease abstract">⟲ Pull from deal</button>'
+      + '</div>'
       + '<div class="dsetbar">'
       +   dfld('Discount rate','discountRatePct',0.25,'%')
       +   dfld('Team headcount','headcountStart',1,'people')
@@ -1984,6 +1995,53 @@ window.DF = (function(){
   function modelAdd(){ _model.options.push(optSeed('New option','go','NNN')); saveModel(); renderModel(); }
   function modelRemove(id){ if(_model.options.length<=1) return; _model.options=_model.options.filter(function(o){return o.id!==id;}); saveModel(); renderModel(); }
   function modelPrint(){ window.print(); }
+
+  /* ---- Phase 4: scenario presets ---- */
+  var SCENARIOS=[{key:'stayvsgo',label:'Stay vs Go'},{key:'expansion',label:'Expansion / contraction'},{key:'blendextend',label:'Blend & extend'},{key:'restack',label:'Restack / densify'}];
+  function scenarioTemplate(key){
+    function o(name,side,structure,over){ return Object.assign(optSeed(name,side,structure), over||{}); }
+    if(key==='expansion') return [ o('Downsize & renew','stay','FSG',{rsf:8000}), o('Renew as-is','stay','FSG',{rsf:10000}), o('Expand — relocate','go','NNN',{rsf:14000,sizeMode:'byHeadcount',oneTime:{movingPSF:8,cablingPSF:6,ffnePSF:20}}) ];
+    if(key==='blendextend') return [ o('Ride out current lease','stay','FSG',{termYears:2}), o('Blend & extend','stay','FSG',{termYears:7,tiPSF:20}) ];
+    if(key==='restack') return [ o('Densify in place','stay','FSG',{rsf:10000,oneTime:{movingPSF:0,cablingPSF:2,ffnePSF:25}}), o('Relocate to grow','go','NNN',{rsf:14000,sizeMode:'byHeadcount',oneTime:{movingPSF:8,cablingPSF:6,ffnePSF:20}}) ];
+    return [ o('Renew in place','stay','FSG',{}), o('Relocate option','go','NNN',{}) ];
+  }
+  function modelScenario(key){
+    var lab=(SCENARIOS.filter(function(s){return s.key===key;})[0]||{label:key}).label;
+    if(!confirm('Load the "'+lab+'" template? This replaces the current options (assumptions bar is kept).')) return;
+    _model.options=scenarioTemplate(key); _model.scenario=key; saveModel(); renderModel();
+  }
+
+  /* ---- Phase 5: pre-populate from the deal's proposals + lease abstract ---- */
+  async function modelPull(){
+    var dealId=_modelDeal;
+    var proposals=[], rounds=[], props=[], abst=null;
+    try{ proposals=await q(sb.from('proposals').select('id,title,property_id,status').eq('deal_id',dealId).order('created_at')); }catch(e){}
+    try{ rounds=await q(sb.from('proposal_rounds').select('*').eq('deal_id',dealId).eq('status','final').order('round_no')); }catch(e){}
+    try{ props=await q(sb.from('deal_properties').select('id,name').eq('deal_id',dealId)); }catch(e){}
+    try{ var a=await q(sb.from('lease_abstracts').select('*').eq('deal_id',dealId).limit(1)); abst=a&&a[0]; }catch(e){}
+    var propName={}; props.forEach(function(p){ propName[p.id]=p.name; });
+    var opts=[];
+    if(abst){
+      var termY=5;
+      if(abst.commencement_date&&abst.expiration_date){ var c=new Date(abst.commencement_date), e=new Date(abst.expiration_date); var yr=Math.round((e-c)/(365.25*86400000)); if(yr>0) termY=yr; }
+      opts.push(Object.assign(optSeed('Renew in place','stay','FSG'), { rsf:num(abst.size_sf)||10000, baseRentPSF:num(abst.base_rent_psf)||0, termYears:termY }));
+    }
+    var best={}; rounds.forEach(function(r){ var b=best[r.proposal_id]; if(!b||r.round_no>b.round_no) best[r.proposal_id]=r; });
+    proposals.forEach(function(pr){
+      var r=best[pr.id]; if(!r) return;
+      var name=(pr.property_id&&propName[pr.property_id])||pr.title||'Proposal';
+      var nnn=['NNN','NN','N','ABS'].indexOf(r.rent_basis)>=0;
+      opts.push(Object.assign(optSeed(name,'go',nnn?'NNN':'FSG'), {
+        rsf:num(r.size_sf)||10000, termYears:r.term_months?Math.max(1,Math.round(r.term_months/12)):5,
+        baseRentPSF:num(r.base_rent_psf)||0, opexBasePSF:num(r.opex_psf)||0,
+        rentEscalationPct:num(r.annual_escalation_pct)||3, freeRentMonths:num(r.free_rent_months)||0, tiPSF:num(r.ti_psf)||0
+      }));
+    });
+    if(!opts.length){ alert('Nothing to pull yet. Add a lease abstract or some proposal rounds to this deal, then pull.'); return; }
+    if(!confirm('Pull '+opts.length+' option'+(opts.length>1?'s':'')+' from '+(abst?'the lease abstract + ':'')+'this deal\'s proposals? This replaces the current options.')) return;
+    _model.options=opts; saveModel(); renderModel();
+  }
+
   function computeRuns(){ return _model.options.map(function(o){ return VModel.runOption(mergeDeal(o)); }); }
   function round4(v){ return Math.round((v+Number.EPSILON)*10000)/10000; }
 
@@ -2080,7 +2138,7 @@ window.DF = (function(){
   }
 
   return {
-    openModel:openModel, modelInput:modelInput, modelToggle:modelToggle, modelDeal:modelDeal, modelAdd:modelAdd, modelRemove:modelRemove, modelPrint:modelPrint, modelPdf:modelPdf, modelExcel:modelExcel,
+    openModel:openModel, modelInput:modelInput, modelToggle:modelToggle, modelDeal:modelDeal, modelAdd:modelAdd, modelRemove:modelRemove, modelPrint:modelPrint, modelPdf:modelPdf, modelExcel:modelExcel, modelScenario:modelScenario, modelPull:modelPull,
     showDashboard:showDashboard, showPipeline:showPipeline, setPipeView:setPipeView, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, toggleClosed:toggleClosed,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask,
