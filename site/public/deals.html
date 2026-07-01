@@ -1891,33 +1891,40 @@ window.DF = (function(){
     {sec:'Lease terms'},
     {k:'side',label:'Side',type:'select',opts:[['stay','Stay / renew'],['go','Go / relocate']]},
     {k:'structure',label:'Rent structure',type:'select',opts:[['FSG','Full Service (FSG)'],['NNN','Triple Net (NNN)']]},
-    {k:'termYears',label:'Term',type:'num',unit:'yrs',step:1},
+    {k:'termMonths',label:'Term',type:'num',unit:'months',step:1},
     {k:'sizeMode',label:'Sizing',type:'select',opts:[['fixed','Fixed RSF'],['byHeadcount','Size to team']]},
     {k:'rsf',label:'Size',type:'num',unit:'RSF',step:100},
-    {k:'baseRentPSF',label:'Base rent',type:'num',unit:'$/RSF',step:0.25},
-    {k:'rentEscalationPct',label:'Escalation',type:'num',unit:'%/yr',step:0.25},
+    {k:'baseRentPSFmo',label:'Base rent',type:'num',unit:'$/SF/mo',step:0.05},
+    {k:'rentEscalationPct',label:'Escalation',type:'num',unit:'% / yr',step:0.25},
     {sec:'Operating expenses'},
-    {k:'opexBasePSF',label:'Opex (base yr)',type:'num',unit:'$/RSF',step:0.25},
-    {k:'opexGrowthPct',label:'Opex growth',type:'num',unit:'%/yr',step:0.25},
+    {k:'opexBasePSFmo',label:'Opex (base yr)',type:'num',unit:'$/SF/mo',step:0.05},
+    {k:'opexGrowthPct',label:'Opex growth',type:'num',unit:'% / yr',step:0.25},
     {sec:'Concessions'},
     {k:'freeRentMonths',label:'Free rent',type:'num',unit:'months',step:1},
-    {k:'tiPSF',label:'TI allowance',type:'num',unit:'$/RSF',step:1},
+    {k:'tiPSF',label:'TI allowance',type:'num',unit:'$/SF · one-time',step:1},
     {sec:'Parking'},
     {k:'parking.ratioPer1000',label:'Ratio',type:'num',unit:'/1,000 RSF',step:0.1},
     {k:'parking.monthlyRate',label:'Rate',type:'num',unit:'$/space/mo',step:5},
-    {k:'parking.escalationPct',label:'Parking esc',type:'num',unit:'%/yr',step:0.25},
+    {k:'parking.escalationPct',label:'Parking esc',type:'num',unit:'% / yr',step:0.25},
     {sec:'One-time costs (relocate)'},
-    {k:'oneTime.movingPSF',label:'Moving',type:'num',unit:'$/RSF',step:0.5},
-    {k:'oneTime.cablingPSF',label:'Cabling / IT',type:'num',unit:'$/RSF',step:0.5},
-    {k:'oneTime.ffnePSF',label:'FF&E',type:'num',unit:'$/RSF',step:1},
-    {k:'makeGood',label:'Make-good',type:'makegood',unit:'$/RSF',step:1}
+    {k:'oneTime.movingPSF',label:'Moving',type:'num',unit:'$/SF · one-time',step:0.5},
+    {k:'oneTime.cablingPSF',label:'Cabling / IT',type:'num',unit:'$/SF · one-time',step:0.5},
+    {k:'oneTime.ffnePSF',label:'FF&E',type:'num',unit:'$/SF · one-time',step:1},
+    {k:'makeGood',label:'Make-good',type:'makegood',unit:'$/SF · one-time',step:1}
   ];
   function mGet(o,path){ var p=path.split('.'), c=o; for(var i=0;i<p.length;i++){ if(c==null) return undefined; c=c[p[i]]; } return c; }
   function mSet(o,path,v){ var p=path.split('.'), c=o; for(var i=0;i<p.length-1;i++){ if(c[p[i]]==null) c[p[i]]={}; c=c[p[i]]; } c[p[p.length-1]]=v; }
-  function optSeed(name,side,structure){ return { id:'o'+(++_optSeq)+'_'+Math.floor(Math.random()*1e6), name:name, side:side, structure:structure, sizeMode:'fixed', rsf:10000, termYears:5, baseRentPSF:0, rentEscalationPct:3, opexBasePSF:0, opexGrowthPct:3, freeRentMonths:0, tiPSF:0, parking:{ratioPer1000:0,monthlyRate:0,escalationPct:3}, oneTime:{movingPSF:0,cablingPSF:0,ffnePSF:0}, makeGood:{on:false,psf:0} }; }
+  function optSeed(name,side,structure){ return { id:'o'+(++_optSeq)+'_'+Math.floor(Math.random()*1e6), name:name, side:side, structure:structure, sizeMode:'fixed', rsf:10000, termMonths:60, baseRentPSFmo:0, rentEscalationPct:3, opexBasePSFmo:0, opexGrowthPct:3, freeRentMonths:0, tiPSF:0, parking:{ratioPer1000:0,monthlyRate:0,escalationPct:3}, oneTime:{movingPSF:0,cablingPSF:0,ffnePSF:0}, makeGood:{on:false,psf:0} }; }
   function defaultModel(){ return { discountRatePct:8, headcountStart:0, densityUsfPerEmp:200, loadFactor:1.15, growth:{low:5,base:10,high:15}, options:[ optSeed('Renew in place','stay','FSG'), optSeed('Relocate option','go','NNN') ] }; }
   function modelKey(dealId){ return 'vantage_model_'+dealId; }
-  function loadModel(dealId){ try{ var raw=localStorage.getItem(modelKey(dealId)); if(raw){ var m=JSON.parse(raw); if(m&&m.options&&m.options.length){ m.options.forEach(function(o){ if(!o.id) o.id='o'+(++_optSeq); }); return m; } } }catch(e){} return defaultModel(); }
+  function migrateOpt(o){ // upgrade old annual/RSF-year models to monthly ($/SF/mo, term in months)
+    if(!o.id) o.id='o'+(++_optSeq)+'_'+Math.floor(Math.random()*1e6);
+    if(o.termMonths==null) o.termMonths = o.termYears!=null ? Math.round(o.termYears*12) : 60;
+    if(o.baseRentPSFmo==null) o.baseRentPSFmo = o.baseRentPSF!=null ? Math.round((o.baseRentPSF/12)*100)/100 : 0;
+    if(o.opexBasePSFmo==null) o.opexBasePSFmo = o.opexBasePSF!=null ? Math.round((o.opexBasePSF/12)*100)/100 : 0;
+    delete o.termYears; delete o.baseRentPSF; delete o.opexBasePSF; return o;
+  }
+  function loadModel(dealId){ try{ var raw=localStorage.getItem(modelKey(dealId)); if(raw){ var m=JSON.parse(raw); if(m&&m.options&&m.options.length){ m.options.forEach(migrateOpt); return m; } } }catch(e){} return defaultModel(); }
   function saveModel(){ try{ localStorage.setItem(modelKey(_modelDeal), JSON.stringify(_model)); }catch(e){} }
   function mergeDeal(o){ return Object.assign({}, o, { discountRatePct:_model.discountRatePct, headcountStart:_model.headcountStart, densityUsfPerEmp:_model.densityUsfPerEmp, loadFactor:_model.loadFactor, growth:_model.growth }); }
 
@@ -1946,7 +1953,7 @@ window.DF = (function(){
   function renderModel(){
     var m=_model, opts=m.options, el=$('modelView');
     var head='<th class="mlabel"></th>'+opts.map(function(o){ return '<th class="mopt"><input class="mname" value="'+esc(o.name)+'" oninput="DF.modelInput(\''+o.id+'\',\'name\',this.value,false)"><span class="mside '+o.side+'">'+(o.side==='stay'?'STAY':'GO')+'</span>'+(opts.length>1?'<button class="mrmv" onclick="DF.modelRemove(\''+o.id+'\')" title="Remove">✕</button>':'')+'</th>'; }).join('')+'<th class="maddcol"><button class="miniadd" onclick="DF.modelAdd()">+ Option</button></th>';
-    var outRows=outputRow('Net effective','neteff')+outputRow('All-in ($, term)','allin','big')+outputRow('NPV','npv','big npv')+outputRow('NPV band (low–high)','band','muted')+outputRow('Modeled size','size','muted');
+    var outRows=outputRow('Net effective ($/SF/mo)','neteff')+outputRow('All-in ($, whole term)','allin','big')+outputRow('NPV ($)','npv','big npv')+outputRow('NPV band (low–high)','band','muted')+outputRow('Modeled size','size','muted');
     var inRows=MODEL_ROWS.map(modelRow).join('');
     el.innerHTML=
       '<button class="dsr-back" onclick="DF.openDeal(\''+_modelDeal+'\')">‹ Back to deal</button>'
@@ -1967,7 +1974,7 @@ window.DF = (function(){
       +   dfld('Growth · high','growth.high',0.5,'%')
       + '</div>'
       + '<div class="mgrid-wrap"><table class="mgrid"><thead><tr>'+head+'</tr></thead><tbody>'+outRows+inRows+'</tbody></table></div>'
-      + '<div class="mnote">Net effective = gross-equivalent rent net of free rent &amp; TI, spread over term (excludes parking &amp; one-time). All-in = every dollar over the term. NPV discounts all-in at the deal rate (rent-in-advance convention). Bands reflect low/base/high hiring against your density assumption.</div>';
+      + '<div class="mnote"><b>Units (LA convention):</b> term in <b>months</b>; base rent &amp; opex in <b>$/SF per month</b>; escalations are <b>annual %</b> (rent steps every 12 months); parking is <b>$/space per month</b>; TI &amp; one-time costs are <b>$/SF</b>. &nbsp;<b>Net effective</b> = gross-equivalent rent net of free rent &amp; TI, in $/SF/mo (excludes parking &amp; one-time). <b>All-in</b> = every dollar over the whole term. <b>NPV</b> discounts cash monthly at the deal rate (rent paid in advance). Bands reflect low/base/high hiring vs. your density.</div>';
     refreshOutputs();
   }
   function refreshOutputs(){
@@ -1977,7 +1984,7 @@ window.DF = (function(){
     runs.forEach(function(r,i){ if(bestNpv==null||r.base.npv<bestNpv){ bestNpv=r.base.npv; bestIdx=i; } });
     runs.forEach(function(r,i){
       var o=_model.options[i];
-      setTxt('mo_'+o.id+'_neteff', psf(r.base.netEffectivePSF)+'/RSF');
+      setTxt('mo_'+o.id+'_neteff', psf(r.base.netEffectivePSFmo)+'/SF/mo');
       setTxt('mo_'+o.id+'_allin', money(r.base.allIn));
       var npvCell=$('mo_'+o.id+'_npv'); if(npvCell){ npvCell.textContent=money(r.base.npv); npvCell.className='mval big npv'+(i===bestIdx&&runs.length>1?' best':''); }
       setTxt('mo_'+o.id+'_band', money(r.bands.low.npv)+' – '+money(r.bands.high.npv));
@@ -2001,7 +2008,7 @@ window.DF = (function(){
   function scenarioTemplate(key){
     function o(name,side,structure,over){ return Object.assign(optSeed(name,side,structure), over||{}); }
     if(key==='expansion') return [ o('Downsize & renew','stay','FSG',{rsf:8000}), o('Renew as-is','stay','FSG',{rsf:10000}), o('Expand — relocate','go','NNN',{rsf:14000,sizeMode:'byHeadcount',oneTime:{movingPSF:8,cablingPSF:6,ffnePSF:20}}) ];
-    if(key==='blendextend') return [ o('Ride out current lease','stay','FSG',{termYears:2}), o('Blend & extend','stay','FSG',{termYears:7,tiPSF:20}) ];
+    if(key==='blendextend') return [ o('Ride out current lease','stay','FSG',{termMonths:24}), o('Blend & extend','stay','FSG',{termMonths:84,tiPSF:20}) ];
     if(key==='restack') return [ o('Densify in place','stay','FSG',{rsf:10000,oneTime:{movingPSF:0,cablingPSF:2,ffnePSF:25}}), o('Relocate to grow','go','NNN',{rsf:14000,sizeMode:'byHeadcount',oneTime:{movingPSF:8,cablingPSF:6,ffnePSF:20}}) ];
     return [ o('Renew in place','stay','FSG',{}), o('Relocate option','go','NNN',{}) ];
   }
@@ -2024,7 +2031,7 @@ window.DF = (function(){
     if(abst){
       var termY=5;
       if(abst.commencement_date&&abst.expiration_date){ var c=new Date(abst.commencement_date), e=new Date(abst.expiration_date); var yr=Math.round((e-c)/(365.25*86400000)); if(yr>0) termY=yr; }
-      opts.push(Object.assign(optSeed('Renew in place','stay','FSG'), { rsf:num(abst.size_sf)||10000, baseRentPSF:num(abst.base_rent_psf)||0, termYears:termY }));
+      opts.push(Object.assign(optSeed('Renew in place','stay','FSG'), { rsf:num(abst.size_sf)||10000, baseRentPSFmo:Math.round(((num(abst.base_rent_psf)||0)/12)*100)/100, termMonths:termY*12 }));
     }
     var best={}; rounds.forEach(function(r){ var b=best[r.proposal_id]; if(!b||r.round_no>b.round_no) best[r.proposal_id]=r; });
     proposals.forEach(function(pr){
@@ -2032,8 +2039,8 @@ window.DF = (function(){
       var name=(pr.property_id&&propName[pr.property_id])||pr.title||'Proposal';
       var nnn=['NNN','NN','N','ABS'].indexOf(r.rent_basis)>=0;
       opts.push(Object.assign(optSeed(name,'go',nnn?'NNN':'FSG'), {
-        rsf:num(r.size_sf)||10000, termYears:r.term_months?Math.max(1,Math.round(r.term_months/12)):5,
-        baseRentPSF:num(r.base_rent_psf)||0, opexBasePSF:num(r.opex_psf)||0,
+        rsf:num(r.size_sf)||10000, termMonths:num(r.term_months)||60,
+        baseRentPSFmo:Math.round(((num(r.base_rent_psf)||0)/12)*100)/100, opexBasePSFmo:Math.round(((num(r.opex_psf)||0)/12)*100)/100,
         rentEscalationPct:num(r.annual_escalation_pct)||3, freeRentMonths:num(r.free_rent_months)||0, tiPSF:num(r.ti_psf)||0
       }));
     });
@@ -2057,12 +2064,12 @@ window.DF = (function(){
     function cell(v,best){ return '<td'+(best?' class="best"':'')+'>'+v+'</td>'; }
     var head='<th></th>'+runs.map(function(r){return '<th>'+esc(r.input.name)+'<div class="s">'+(r.side==='stay'?'Stay':'Go')+' · '+r.structure+'</div></th>';}).join('');
     var rows=''
-      +'<tr><td class="l">Net effective</td>'+runs.map(function(r){return cell(psf(r.base.netEffectivePSF)+'/RSF');}).join('')+'</tr>'
-      +'<tr class="b"><td class="l">All-in ($, term)</td>'+runs.map(function(r){return cell(money(r.base.allIn));}).join('')+'</tr>'
-      +'<tr class="b"><td class="l">NPV</td>'+runs.map(function(r){return cell(money(r.base.npv), r.base.npv===bestNpv&&runs.length>1);}).join('')+'</tr>'
+      +'<tr><td class="l">Net effective ($/SF/mo)</td>'+runs.map(function(r){return cell(psf(r.base.netEffectivePSFmo)+'/SF/mo');}).join('')+'</tr>'
+      +'<tr class="b"><td class="l">All-in ($, whole term)</td>'+runs.map(function(r){return cell(money(r.base.allIn));}).join('')+'</tr>'
+      +'<tr class="b"><td class="l">NPV ($)</td>'+runs.map(function(r){return cell(money(r.base.npv), r.base.npv===bestNpv&&runs.length>1);}).join('')+'</tr>'
       +'<tr><td class="l">NPV band (low–high)</td>'+runs.map(function(r){return cell(money(r.bands.low.npv)+' – '+money(r.bands.high.npv));}).join('')+'</tr>'
       +'<tr><td class="l">Size</td>'+runs.map(function(r){return cell(r.base.rsf.toLocaleString()+' RSF');}).join('')+'</tr>'
-      +'<tr><td class="l">Term</td>'+runs.map(function(r){return cell(r.termYears+' yrs');}).join('')+'</tr>';
+      +'<tr><td class="l">Term</td>'+runs.map(function(r){return cell(r.termMonths+' months');}).join('')+'</tr>';
     var arows=MODEL_ROWS.filter(function(x){return !x.sec;}).map(function(rw){
       return '<tr><td class="l">'+rw.label+(rw.unit?' <span class="u">'+rw.unit+'</span>':'')+'</td>'+_model.options.map(function(o){
         var v = rw.type==='makegood' ? ((o.makeGood&&o.makeGood.on)?('$'+mGet(o,'makeGood.psf')+' on'):'—') : mGet(o,rw.k);
@@ -2070,9 +2077,9 @@ window.DF = (function(){
       }).join('')+'</tr>';
     }).join('');
     var scheds=runs.map(function(r){
-      var yr=r.base.years.map(function(y){ return '<tr><td>'+y.t+'</td><td>'+psf(y.baseAfterFreePSF)+'</td><td>'+psf(y.opexTenantPSF)+'</td><td>'+money(y.tenantPays)+'</td><td>'+money(y.parking)+'</td><td>'+money(y.recurring)+'</td><td>'+y.df.toFixed(4)+'</td><td>'+money(y.recurring*y.df)+'</td></tr>'; }).join('');
-      return '<div class="sched"><h3>'+esc(r.input.name)+' — year-by-year</h3><table class="yr"><thead><tr><th>Yr</th><th>Base $/RSF</th><th>Opex $/RSF</th><th>Tenant $</th><th>Parking $</th><th>Recurring $</th><th>DF</th><th>PV $</th></tr></thead><tbody>'+yr
-        +'<tr class="tot"><td colspan="5">Upfront (one-time + make-good − TI) · All-in · NPV</td><td>'+money(r.base.upfront)+'</td><td></td><td>'+money(r.base.npv)+'</td></tr></tbody></table></div>';
+      var yr=r.base.byYear.map(function(y){ return '<tr><td>'+y.year+'</td><td>'+psf(y.baseStartPSFmo)+'</td><td>'+money(y.tenantPays)+'</td><td>'+money(y.parking)+'</td><td>'+money(y.recurring)+'</td><td>'+money(y.pv)+'</td></tr>'; }).join('');
+      return '<div class="sched"><h3>'+esc(r.input.name)+' — by lease year</h3><table class="yr"><thead><tr><th>Yr</th><th>Base $/SF/mo</th><th>Tenant $ (yr)</th><th>Parking $ (yr)</th><th>Recurring $ (yr)</th><th>PV $</th></tr></thead><tbody>'+yr
+        +'<tr class="tot"><td colspan="4">Upfront (one-time + make-good − TI) · NPV</td><td>'+money(r.base.upfront)+'</td><td>'+money(r.base.npv)+'</td></tr></tbody></table></div>';
     }).join('');
     var dr=_model.discountRatePct;
     var html='<!doctype html><html><head><meta charset="utf-8"><title>Occupancy Analysis — '+client+'</title><style>'
@@ -2114,8 +2121,8 @@ window.DF = (function(){
     var runs=computeRuns();
     var wb=XLSX.utils.book_new();
     var sum=[['Occupancy Cost Analysis — '+client],['Prepared '+new Date().toLocaleDateString()+' · Havill & Co.'],[],
-      ['Option','Side','Structure','Size (RSF)','Term (yrs)','Net Effective $/RSF','All-in $ (term)','NPV','NPV low','NPV high']];
-    runs.forEach(function(r){ var o=r.input; sum.push([o.name,o.side,r.structure,r.base.rsf,r.termYears, VModel.round2(r.base.netEffectivePSF), Math.round(r.base.allIn), Math.round(r.base.npv), Math.round(r.bands.low.npv), Math.round(r.bands.high.npv)]); });
+      ['Option','Side','Structure','Size (RSF)','Term (months)','Net Eff $/SF/mo','Net Eff $/SF/yr','All-in $ (term)','NPV','NPV low','NPV high']];
+    runs.forEach(function(r){ var o=r.input; sum.push([o.name,o.side,r.structure,r.base.rsf,r.termMonths, VModel.round2(r.base.netEffectivePSFmo), VModel.round2(r.base.netEffectivePSFyr), Math.round(r.base.allIn), Math.round(r.base.npv), Math.round(r.bands.low.npv), Math.round(r.bands.high.npv)]); });
     sum.push([]); sum.push(['Discount rate (%)',_model.discountRatePct,'Headcount',_model.headcountStart,'Density (usf/emp)',_model.densityUsfPerEmp,'Load',_model.loadFactor,'Growth L/B/H (%)',_model.growth.low+'/'+_model.growth.base+'/'+_model.growth.high]);
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sum), 'Summary');
 
@@ -2124,13 +2131,13 @@ window.DF = (function(){
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(asRows), 'Assumptions');
 
     runs.forEach(function(r,i){
-      var rows=[['Year','Base $/RSF','Opex $/RSF','Tenant $','Parking $','Recurring $','Discount factor','PV $']];
-      r.base.years.forEach(function(y){ rows.push([y.t, VModel.round2(y.baseAfterFreePSF), VModel.round2(y.opexTenantPSF), Math.round(y.tenantPays), Math.round(y.parking), Math.round(y.recurring), round4(y.df), Math.round(y.recurring*y.df)]); });
+      var rows=[['Month','Lease yr','Base $/SF/mo','Opex $/SF/mo','Tenant $','Parking $','Recurring $','Discount factor','PV $']];
+      r.base.months.forEach(function(y){ rows.push([y.m, y.ly+1, VModel.round2(y.baseAfterFreePSFmo), VModel.round2(y.opexTenantPSFmo), Math.round(y.tenantPays), Math.round(y.parking), Math.round(y.recurring), round4(y.df), Math.round(y.recurring*y.df)]); });
       rows.push([]);
-      rows.push(['Upfront (one-time + make-good − TI)','','','','','','', Math.round(r.base.upfront)]);
-      rows.push(['All-in (nominal)','','','','','','', Math.round(r.base.allIn)]);
-      rows.push(['NPV','','','','','','', Math.round(r.base.npv)]);
-      rows.push(['Net effective $/RSF/yr','','','','','','', VModel.round2(r.base.netEffectivePSF)]);
+      rows.push(['Upfront (one-time + make-good − TI)','','','','','','','', Math.round(r.base.upfront)]);
+      rows.push(['All-in (nominal)','','','','','','','', Math.round(r.base.allIn)]);
+      rows.push(['NPV','','','','','','','', Math.round(r.base.npv)]);
+      rows.push(['Net effective $/SF/mo','','','','','','','', VModel.round2(r.base.netEffectivePSFmo)]);
       var nm=((r.input.name||('Option'+(i+1))).replace(/[\\/?*\[\]:]/g,' ').trim().slice(0,26))+' '+(i+1);
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), nm.slice(0,31));
     });
