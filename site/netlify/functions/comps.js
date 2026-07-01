@@ -22,6 +22,7 @@ const json = (statusCode, obj) => ({ statusCode, headers: { "Content-Type": "app
 
 const STRUCTURES = ["FSG", "NNN", "MG"];
 const ESC_TYPES = ["none", "percent", "fixed", "schedule"];
+const PRODUCT_TYPES = ["retail", "office", "industrial", "flex", "lab"];
 
 function n(v) { const x = typeof v === "number" ? v : parseFloat(v); return isFinite(x) ? x : null; }
 function nn(v) { const x = n(v); return x == null ? null : x; } // numeric-or-null
@@ -54,6 +55,7 @@ function normalizeComp(raw) {
     building_id: s(raw.building_id, 80),
     building_name: s(raw.building_name, 200),
     address: s(raw.address, 300),
+    product_type: PRODUCT_TYPES.includes(String(raw.product_type || "").toLowerCase()) ? String(raw.product_type).toLowerCase() : null,
     tenant: s(raw.tenant, 200),
     suite: s(raw.suite, 80),
     rsf: nn(raw.rsf),
@@ -105,6 +107,7 @@ function redactForClient(row) {
     building_id: row.building_id,
     building_name: row.building_name,
     address: row.address,
+    product_type: row.product_type,
     rsf: row.rsf,
     execution_date: row.execution_date,
     term_months: row.term_months,

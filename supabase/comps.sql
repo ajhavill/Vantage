@@ -54,8 +54,15 @@ create table if not exists public.comps (
   updated_at timestamptz not null default now()
 );
 
+-- Product type (retail / office / industrial / flex / lab) so comps can be pulled
+-- per asset class. Added via ALTER so re-running this file on an existing table
+-- applies it (create table if not exists won't add a column to an existing table).
+alter table public.comps add column if not exists product_type text
+  check (product_type is null or product_type in ('retail','office','industrial','flex','lab'));
+
 create index if not exists comps_org_idx        on public.comps(org_id, execution_date desc);
 create index if not exists comps_org_bldg_idx    on public.comps(org_id, building_id);
+create index if not exists comps_org_ptype_idx   on public.comps(org_id, product_type);
 
 -- Stamp org_id / created_by from the writer's profile if a direct client write omits
 -- them (the functions set org_id explicitly; this covers any authenticated browser write).

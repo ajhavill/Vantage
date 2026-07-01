@@ -1311,13 +1311,15 @@
   var compsData=[];               // rows currently shown (broker rows, or server-redacted client rows in pitch mode)
   var compsMetric='net';          // 'net' | 'face' | 'toc'
   var compsPitch=false;           // pitch mode = show exactly what a client would see
+  var compsProdFilter='all';      // 'all' | retail | office | industrial | flex | lab
   var compsLoaded=false, compsErr='';
+  var COMPS_PRODUCT_TYPES=[['retail','Retail'],['office','Office'],['industrial','Industrial'],['flex','Flex'],['lab','Lab']];
   var COMPS_METRICS={
     net:{key:'net_effective_rent_psf', label:'Net effective', short:'Net eff.'},
     face:{key:'face_rate_psf',          label:'Face rate',      short:'Face'},
     toc:{key:'total_occupancy_cost_psf',label:'Total occupancy',short:'Total occ.'}
   };
-  var COMPS_TEMPLATE_COLS=['building_name','address','tenant','suite','rsf','execution_date','term_months','face_rate','escalation_type','escalation_value','free_rent_months','ti_allowance_psf','expense_structure','base_year','opex_psf','parking_ratio','parking_rate','discount_rate','expansion','renewal','notes','redact_exclude','redact_tenant','redact_suite','redact_economics'];
+  var COMPS_TEMPLATE_COLS=['building_name','address','product_type','tenant','suite','rsf','execution_date','term_months','face_rate','escalation_type','escalation_value','free_rent_months','ti_allowance_psf','expense_structure','base_year','opex_psf','parking_ratio','parking_rate','discount_rate','expansion','renewal','notes','redact_exclude','redact_tenant','redact_suite','redact_economics'];
 
   function compsCallFn(payload){
     var tokP; try{ tokP=Promise.resolve(qToken()); }catch(e){ tokP=Promise.resolve(null); }
@@ -1357,9 +1359,11 @@
   function compsMetricVal(c){ return c[COMPS_METRICS[compsMetric].key]; }
   function compsFlagged(c){ var r=c.redaction||{}; return r.exclude||r.tenant||r.suite||r.economics; }
 
+  function compsFiltered(){ return compsProdFilter==='all'?compsData.slice():compsData.filter(function(c){return c.product_type===compsProdFilter;}); }
+  function compsProdCount(t){ return compsData.filter(function(c){return c.product_type===t;}).length; }
   function compsSorted(){
     var mk=COMPS_METRICS[compsMetric].key;
-    return compsData.slice().sort(function(a,b){
+    return compsFiltered().sort(function(a,b){
       var av=a[mk], bv=b[mk];
       if(av==null&&bv==null) return 0; if(av==null) return 1; if(bv==null) return -1;
       return bv-av; // high to low
@@ -1380,7 +1384,9 @@
     var head='<div class="cmp-head"><div class="cmp-headL"><h1 class="cmp-h">Comparable transactions</h1>'+
       '<div class="cmp-sub">Signed deals, normalized to one comparable rate. Sorted by <b>'+M[compsMetric].label.toLowerCase()+'</b>.</div></div>'+
       '<div class="cmp-headR">'+pitch+'</div></div>';
-    var bar='<div class="cmp-bar"><div class="cmp-barL">'+toggle+'</div><div class="cmp-barR">'+actions+'</div></div>';
+    var prodSel='<select class="cmp-prodsel" id="cmpProd"><option value="all">All product types'+(compsData.length?' ('+compsData.length+')':'')+'</option>'+
+      COMPS_PRODUCT_TYPES.map(function(p){ var n=compsProdCount(p[0]); return '<option value="'+p[0]+'"'+(compsProdFilter===p[0]?' selected':'')+'>'+p[1]+(n?' ('+n+')':'')+'</option>'; }).join('')+'</select>';
+    var bar='<div class="cmp-bar"><div class="cmp-barL">'+toggle+prodSel+'</div><div class="cmp-barR">'+actions+'</div></div>';
 
     var body='';
     if(compsErr){ body='<div class="cmp-empty"><b>Couldn’t load comps.</b><div class="cmp-emptysub">'+cmEsc(compsErr)+'</div></div>'; }
@@ -1388,7 +1394,13 @@
     else if(!compsData.length){ body=compsPitch
         ? '<div class="cmp-empty"><b>Nothing to show a client yet.</b><div class="cmp-emptysub">Add comps in broker mode, then flip to pitch mode to preview what they’ll see.</div></div>'
         : '<div class="cmp-empty"><b>No comps yet.</b><div class="cmp-emptysub">Add your first closed deal, or import your back-catalog from CSV. The value here is normalization — even a handful of your own deals beats a big unnormalized list.</div><div class="cmp-emptycta"><button class="cmp-btn primary" id="cmpAdd2">+ Add comp</button><button class="cmp-btn" id="cmpImport2">Import CSV</button></div></div>'; }
-    else { body=compsTableHtml(compsSorted()); }
+    else {
+      var shown=compsSorted();
+      if(!shown.length){
+        var lbl=(COMPS_PRODUCT_TYPES.filter(function(p){return p[0]===compsProdFilter;})[0]||['','matching'])[1];
+        body='<div class="cmp-empty"><b>No '+cmEsc(lbl.toLowerCase())+' comps yet.</b><div class="cmp-emptysub">Switch product type above, or add one and tag it '+cmEsc(lbl.toLowerCase())+'.</div></div>';
+      } else body=compsTableHtml(shown);
+    }
 
     var note = compsPitch
       ? '<div class="cmp-mode client"><span class="cmp-dot"></span>Pitch mode — this is exactly what a client sees. Redacted comps are hidden and withheld fields are stripped on the server before they reach this screen.</div>'
@@ -1412,13 +1424,14 @@
         var fl=[]; if(r.exclude)fl.push('excluded'); if(r.tenant)fl.push('tenant'); if(r.suite)fl.push('suite'); if(r.economics)fl.push('economics');
         flags='<span class="cmp-redtag" title="Hidden from clients: '+fl.join(', ')+'">🔒 '+fl.length+'</span>';
       }
+      var ptag=c.product_type?'<span class="cmp-ptag cmp-pt-'+cmEsc(c.product_type)+'">'+cmEsc(c.product_type)+'</span>':'';
       var rsf=c.rsf!=null?Number(c.rsf).toLocaleString():'—';
       var date=c.execution_date?String(c.execution_date).slice(0,10):'—';
       var term=c.term_months?c.term_months+' mo':'—';
       var struct=c.expense_structure||'—';
       var actions = pitch ? '' : '<td class="cmp-act"><button class="cmp-ic" data-edit="'+c.id+'" title="Edit">✎</button><button class="cmp-ic" data-del="'+c.id+'" title="Delete">×</button></td>';
       return '<tr>'+
-        '<td><div class="cmp-bldg">'+bldg+' '+flags+'</div><div class="cmp-ten">'+tenant+(suite&&suite!=='—'?' · '+suite:'')+'</div></td>'+
+        '<td><div class="cmp-bldg">'+bldg+' '+ptag+' '+flags+'</div><div class="cmp-ten">'+tenant+(suite&&suite!=='—'?' · '+suite:'')+'</div></td>'+
         '<td class="cmp-num">'+rsf+'</td>'+
         '<td class="cmp-num">'+date+'</td>'+
         '<td class="cmp-num">'+term+'</td>'+
@@ -1436,6 +1449,7 @@
   function wireComps(){
     var el=document.getElementById('compsBody'); if(!el) return;
     el.querySelectorAll('.cmp-segbtn').forEach(function(b){ b.onclick=function(){ compsMetric=b.getAttribute('data-metric'); renderComps(); }; });
+    var ps=document.getElementById('cmpProd'); if(ps) ps.onchange=function(){ compsProdFilter=ps.value; renderComps(); };
     var pt=document.getElementById('cmpPitch'); if(pt) pt.onchange=function(){ compsPitch=pt.checked; compsLoaded=false; compsData=[]; renderComps(); compsLoad(); };
     ['cmpAdd','cmpAdd2'].forEach(function(id){ var b=document.getElementById(id); if(b) b.onclick=function(){ compsOpenForm(null); }; });
     ['cmpImport','cmpImport2'].forEach(function(id){ var b=document.getElementById(id); if(b) b.onclick=function(){ compsOpenImport(); }; });
@@ -1466,6 +1480,7 @@
     c=c||{}; var esc=c.escalation||{type:'none'}, pk=c.parking||{}, op=c.options||{}, rd=c.redaction||{};
     var isEdit=!!c.id;
     var structOpts=['','FSG','NNN','MG'].map(function(s){return '<option value="'+s+'"'+(c.expense_structure===s?' selected':'')+'>'+(s||'—')+'</option>';}).join('');
+    var ptypeOpts=[['','—']].concat(COMPS_PRODUCT_TYPES).map(function(o){return '<option value="'+o[0]+'"'+(c.product_type===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('');
     var escOpts=[['none','None (flat)'],['percent','Percent / yr'],['fixed','Fixed $/SF step / yr'],['schedule','Custom schedule']].map(function(o){return '<option value="'+o[0]+'"'+(esc.type===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('');
     var html=''+
       '<div class="cmp-modal" id="cmpModal"><div class="cmp-mbox"><div class="cmp-mhead"><h2>'+(isEdit?'Edit comp':'Add comp')+'</h2><button class="cmp-mx" id="cmpFormX">×</button></div>'+
@@ -1474,6 +1489,7 @@
         '<div class="cmp-grid">'+
           compsField('Building name','cf_bname',c.building_name,'text','e.g. The Water Garden')+
           compsField('Address','cf_addr',c.address,'text','2425 Olympic Blvd')+
+          '<label class="cmp-f"><span>Product type</span><select id="cf_ptype">'+ptypeOpts+'</select></label>'+
           compsField('Tenant','cf_tenant',c.tenant)+
           compsField('Suite','cf_suite',c.suite,'text','Ste 300')+
           compsField('RSF','cf_rsf',c.rsf,'number','10000')+
@@ -1536,7 +1552,7 @@
     var bname=v('cf_bname'), addr=v('cf_addr'); var match=compsMatchBuilding(bname,addr);
     return {
       id:(document.getElementById('cmpModal')||{})._editId||undefined,
-      building_id: match?match.id:null, building_name:bname, address:addr,
+      building_id: match?match.id:null, building_name:bname, address:addr, product_type:v('cf_ptype')||null,
       tenant:v('cf_tenant'), suite:v('cf_suite'), rsf:num('cf_rsf'),
       execution_date:v('cf_date')||null, term_months:num('cf_term'), face_rate:num('cf_face'),
       escalation:esc, free_rent_months:num('cf_free'), ti_allowance_psf:num('cf_ti'),
@@ -1588,7 +1604,7 @@
       var escType=(get(r,'escalation_type')||'none').toLowerCase(); if(['none','percent','fixed','schedule'].indexOf(escType)<0) escType='none';
       var bname=get(r,'building_name'), addr=get(r,'address'), match=compsMatchBuilding(bname,addr);
       return {
-        building_id:match?match.id:null, building_name:bname, address:addr,
+        building_id:match?match.id:null, building_name:bname, address:addr, product_type:get(r,'product_type').toLowerCase()||null,
         tenant:get(r,'tenant'), suite:get(r,'suite'), rsf:nu(r,'rsf'),
         execution_date:get(r,'execution_date')||null, term_months:nu(r,'term_months'), face_rate:nu(r,'face_rate'),
         escalation:{type:escType, value:nu(r,'escalation_value')||0},
@@ -1647,8 +1663,8 @@
   function compsExport(){
     var list=compsSorted();
     var cols=compsPitch
-      ? ['building_name','address','tenant','suite','rsf','execution_date','term_months','expense_structure','net_effective_rent_psf','face_rate_psf','total_occupancy_cost_psf']
-      : ['building_name','address','tenant','suite','rsf','execution_date','term_months','face_rate','free_rent_months','ti_allowance_psf','expense_structure','base_year','opex_psf','net_effective_rent_psf','face_rate_psf','total_occupancy_cost_psf'];
+      ? ['building_name','address','product_type','tenant','suite','rsf','execution_date','term_months','expense_structure','net_effective_rent_psf','face_rate_psf','total_occupancy_cost_psf']
+      : ['building_name','address','product_type','tenant','suite','rsf','execution_date','term_months','face_rate','free_rent_months','ti_allowance_psf','expense_structure','base_year','opex_psf','net_effective_rent_psf','face_rate_psf','total_occupancy_cost_psf'];
     var lines=[cols.join(',')];
     list.forEach(function(c){ lines.push(cols.map(function(k){ return compsCsvCell(c[k]); }).join(',')); });
     compsDownload(compsPitch?'vantage-comps-client.csv':'vantage-comps.csv', lines.join('\n')+'\n');
