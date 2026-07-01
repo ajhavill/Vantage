@@ -293,8 +293,9 @@
   .ai-panel{position:fixed;top:0;right:0;height:100vh;width:min(420px,100%);background:var(--paper-2);border-left:1px solid var(--line);box-shadow:-8px 0 30px rgba(20,26,38,.16);z-index:2400;display:flex;flex-direction:column;transform:translateX(102%);transition:transform .22s ease}
   .ai-panel.open{transform:translateX(0)}
   .ai-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 18px;border-bottom:1px solid var(--line)}
-  .ai-title{font:800 16px 'Bricolage Grotesque';color:var(--ink)}
-  .ai-ctx{font:600 11px Inter;color:var(--accent);margin-top:2px}
+  .ai-title{font:800 17px 'Bricolage Grotesque';color:var(--ink);line-height:1.1}
+  .ai-tag{font:500 10.5px Inter;color:var(--ink-faint);margin-top:1px}
+  .ai-ctx{font:600 11px Inter;color:var(--accent);margin-top:3px}
   .ai-headbtns{display:flex;gap:12px;align-items:center}
   .ai-clear{font:600 11px Inter;color:var(--ink-faint);background:none;border:0;cursor:pointer}
   .ai-clear:hover{color:var(--ink-soft)}
@@ -405,13 +406,13 @@
 <div class="ov" id="ov"><div class="sheet" id="sheet"></div></div>
 
 <!-- AI assistant -->
-<button class="ai-fab" id="aiFab" onclick="DF.aiPanelToggle()" title="Vantage AI assistant" style="display:none">
+<button class="ai-fab" id="aiFab" onclick="DF.aiPanelToggle()" title="Van — your AI tenant-rep specialist" style="display:none">
   <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.9 5.1L19 9l-5.1 1.9L12 16l-1.9-5.1L5 9l5.1-1.9L12 2z"/></svg>
-  Assistant
+  Ask Van
 </button>
 <div class="ai-panel" id="aiPanel">
   <div class="ai-head">
-    <div><div class="ai-title">Vantage AI</div><div class="ai-ctx" id="aiCtx">Your pipeline</div></div>
+    <div><div class="ai-title">Van</div><div class="ai-tag">Your AI tenant-rep specialist</div><div class="ai-ctx" id="aiCtx">Your pipeline</div></div>
     <div class="ai-headbtns"><button class="ai-clear" onclick="DF.aiClear()">Clear</button><button class="ai-x" onclick="DF.aiPanelToggle()" aria-label="Close">✕</button></div>
   </div>
   <div class="ai-quick" id="aiQuick"></div>
@@ -1865,7 +1866,7 @@ window.DF = (function(){
   function aiUpdateContext(){
     var d=_activeDealId?deals.filter(function(x){return x.id===_activeDealId;})[0]:null;
     var ctx=$('aiCtx'); if(ctx) ctx.textContent = d?('Deal · '+(d.client_name||'Untitled')) : 'Your pipeline';
-    var ta=$('aiText'); if(ta) ta.placeholder = d?('Ask about '+(d.client_name||'this deal')+'…') : 'Ask about your pipeline…';
+    var ta=$('aiText'); if(ta) ta.placeholder = d?('Ask Van about '+(d.client_name||'this deal')+'…') : 'Ask Van about your pipeline…';
     _aiChips = d
       ? [['Summarize this deal','Give me a 3-sentence summary of where this deal stands and what matters most right now.'],
          ['Next step & risks','What are my top 3 next steps on this deal, and what risks should I be watching? Be specific.'],
@@ -1880,7 +1881,7 @@ window.DF = (function(){
   function aiQuick(i){ var c=_aiChips[i]; if(c) aiSend(c[1]); }
   function aiGreet(){
     var d=_activeDealId?deals.filter(function(x){return x.id===_activeDealId;})[0]:null;
-    aiPush('assistant', "Hi — I'm your Vantage assistant. Ask me anything about "+(d?('**'+esc(d.client_name||'this deal')+'**'):'your pipeline')+", or tap a suggestion. I can summarize, draft emails, compare proposals, and flag what needs attention.");
+    aiPush('assistant', "Hi, I'm **Van** — your tenant-rep specialist. Ask me anything about "+(d?('**'+esc(d.client_name||'this deal')+'**'):'your pipeline')+", or tap a suggestion. I can summarize, draft emails, compare proposals, and flag what needs attention.");
   }
   function aiPush(role, html){
     var m=$('aiMsgs'); if(!m) return null;
