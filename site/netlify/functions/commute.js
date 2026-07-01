@@ -61,7 +61,8 @@ exports.handler = async (event) => {
   try {
     if (body.action === "geocode") return await handleGeocode(body);
     if (body.action === "matrix")  return await handleMatrix(body);
-    return json(400, { error: "Unknown action. Use 'geocode' or 'matrix'." });
+    if (body.action === "places")  return await handlePlaces(body);
+    return json(400, { error: "Unknown action. Use 'geocode', 'matrix', or 'places'." });
   } catch (e) {
     return json(502, { error: (e && e.message) ? e.message : "Upstream request failed." });
   }
@@ -100,6 +101,37 @@ async function geocodeOne(raw) {
     throw new Error("Geocoding request denied — check the API key and that the Geocoding API is enabled.");
   }
   return { ok: false, reason: data.status || "failed" };
+}
+
+// ---- places (New) nearby search — one-time amenity enrichment ------------
+async function handlePlaces(body) {
+  const types = Array.isArray(body.includedTypes) ? body.includedTypes.slice(0, 10) : [];
+  const c = body.center || {};
+  const radius = Math.min(2000, Math.max(50, parseInt(body.radius, 10) || 1200));
+  if (!types.length || typeof c.lat !== "number" || typeof c.lng !== "number") {
+    return json(400, { error: "Need includedTypes[] and center {lat,lng}." });
+  }
+  const r = await fetch("https://places.googleapis.com/v1/places:searchNearby", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": KEY,
+      "X-Goog-FieldMask": "places.displayName,places.location,places.rating,places.userRatingCount,places.primaryTypeDisplayName,places.editorialSummary"
+    },
+    body: JSON.stringify({
+      includedTypes: types,
+      maxResultCount: 20,
+      rankPreference: "POPULARITY",
+      locationRestriction: { circle: { center: { latitude: c.lat, longitude: c.lng }, radius: radius } }
+    })
+  });
+  if (!r.ok) {
+    const txt = await r.text().catch(() => "");
+    if (r.status === 403) throw new Error("Places API denied — enable 'Places API (New)' on the key and allow it in the key's API restrictions. " + txt.slice(0, 160));
+    throw new Error("Places API error " + r.status + (txt ? (": " + txt.slice(0, 180)) : ""));
+  }
+  const data = await r.json();
+  return json(200, { places: Array.isArray(data.places) ? data.places : [] });
 }
 
 // ---- drive-time matrix ----------------------------------------------------
