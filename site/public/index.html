@@ -64,6 +64,7 @@
     <button class="vnav-subitem on" data-sv="buildings" onclick="marketSub('buildings')">Buildings</button>
     <button class="vnav-subitem" data-sv="tenants" onclick="marketSub('tenants')">Tenants</button>
     <button class="vnav-subitem" data-sv="commute" onclick="marketSub('commute')">Commute</button>
+    <button class="vnav-subitem" data-sv="comps" onclick="marketSub('comps')">Comps</button>
   </div>
   <button class="vnav-item" data-m="clients" onclick="showModule('clients')" title="Clients"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 6.6a3 3 0 0 1 0 5.8M20.5 20a5 5 0 0 0-4-4.9"/></svg><span>Clients</span></button>
   <a class="vnav-item" data-m="deals" href="deals.html" title="Deals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg><span>Deals</span></a>
@@ -307,6 +308,9 @@
     </div>
   </div>
 </section>
+
+<!-- COMPS sub-view: comparable transactions (filled by showComps) -->
+<section class="comps-v" id="compsView"><div id="compsBody"></div></section>
 </div><!-- /marketModule -->
 
 <!-- CLIENTS module (filled by renderClients) -->
@@ -392,6 +396,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="assets/comps-math.js"></script>
 <script>
 (function(){
   // ---- amenity categories: SINGLE SOURCE OF TRUTH -------------------------
@@ -1275,6 +1280,8 @@
     closeSV();
     document.getElementById('portfolioView').style.display='none';
     document.getElementById('detailView').classList.remove('show');
+    document.getElementById('commuteView').classList.remove('show');
+    document.getElementById('compsView').classList.remove('show');
     document.getElementById('competitionView').classList.add('show');
     setNav('competition'); setPriobar(false);
     document.getElementById('crumb').innerHTML='Santa Monica · <b>Tenants</b>';
@@ -1288,10 +1295,364 @@
     closeSV();
     document.getElementById('detailView').classList.remove('show');
     document.getElementById('competitionView').classList.remove('show');
+    document.getElementById('commuteView').classList.remove('show');
+    document.getElementById('compsView').classList.remove('show');
     document.getElementById('portfolioView').style.display='block';
     setNav('portfolio'); setPriobar(false);
     setTimeout(function(){if(overviewMap)overviewMap.invalidateSize();},60);
   };
+
+  // ============ COMPARABLE TRANSACTIONS (signed lease comps; normalization) ============
+  // The value here is NORMALIZATION, not coverage: every comp carries three
+  // comparable metrics (net effective / face / total occupancy cost) computed by
+  // the shared engine (assets/comps-math.js). Broker mode is the full editable set;
+  // pitch mode re-fetches the SAME comps through the server's client path, which
+  // applies each comp's redaction flags — so withheld data never reaches the screen.
+  var compsData=[];               // rows currently shown (broker rows, or server-redacted client rows in pitch mode)
+  var compsMetric='net';          // 'net' | 'face' | 'toc'
+  var compsPitch=false;           // pitch mode = show exactly what a client would see
+  var compsLoaded=false, compsErr='';
+  var COMPS_METRICS={
+    net:{key:'net_effective_rent_psf', label:'Net effective', short:'Net eff.'},
+    face:{key:'face_rate_psf',          label:'Face rate',      short:'Face'},
+    toc:{key:'total_occupancy_cost_psf',label:'Total occupancy',short:'Total occ.'}
+  };
+  var COMPS_TEMPLATE_COLS=['building_name','address','tenant','suite','rsf','execution_date','term_months','face_rate','escalation_type','escalation_value','free_rent_months','ti_allowance_psf','expense_structure','base_year','opex_psf','parking_ratio','parking_rate','discount_rate','expansion','renewal','notes','redact_exclude','redact_tenant','redact_suite','redact_economics'];
+
+  function compsCallFn(payload){
+    var tokP; try{ tokP=Promise.resolve(qToken()); }catch(e){ tokP=Promise.resolve(null); }
+    return tokP.catch(function(){return null;}).then(function(tok){
+      if(!tok) throw new Error('Please sign in to use Comps — this is your private deal data.');
+      var body=Object.assign({token:tok}, payload);
+      return fetch('/.netlify/functions/comps',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    }).then(function(res){ return res.text().then(function(txt){
+      var data=null; try{data=JSON.parse(txt);}catch(e){}
+      if(!res.ok) throw new Error((data&&data.error)||('Server error '+res.status));
+      return data;
+    });});
+  }
+
+  window.showComps=function(){
+    closeSV();
+    document.getElementById('portfolioView').style.display='none';
+    document.getElementById('detailView').classList.remove('show');
+    document.getElementById('competitionView').classList.remove('show');
+    document.getElementById('commuteView').classList.remove('show');
+    document.getElementById('compsView').classList.add('show');
+    setNav('comps'); setPriobar(false);
+    document.getElementById('crumb').innerHTML='Santa Monica · <b>Comps</b>';
+    renderComps();
+    if(!compsLoaded) compsLoad();
+  };
+
+  function compsLoad(){
+    var mode=compsPitch?'client':'broker';
+    compsErr='';
+    compsCallFn({action:'list', mode:mode}).then(function(d){
+      compsData=(d&&d.comps)||[]; compsLoaded=true; renderComps();
+    }).catch(function(e){ compsErr=e.message||'Could not load comps.'; compsLoaded=true; renderComps(); });
+  }
+
+  function compsMoney(v){ return (v==null||isNaN(v))?'—':'$'+Number(v).toFixed(2); }
+  function compsMetricVal(c){ return c[COMPS_METRICS[compsMetric].key]; }
+  function compsFlagged(c){ var r=c.redaction||{}; return r.exclude||r.tenant||r.suite||r.economics; }
+
+  function compsSorted(){
+    var mk=COMPS_METRICS[compsMetric].key;
+    return compsData.slice().sort(function(a,b){
+      var av=a[mk], bv=b[mk];
+      if(av==null&&bv==null) return 0; if(av==null) return 1; if(bv==null) return -1;
+      return bv-av; // high to low
+    });
+  }
+
+  function renderComps(){
+    var el=document.getElementById('compsBody'); if(!el) return;
+    var M=COMPS_METRICS;
+    var toggle='<div class="cmp-seg">'+Object.keys(M).map(function(k){
+      return '<button class="cmp-segbtn'+(compsMetric===k?' on':'')+'" data-metric="'+k+'">'+M[k].label+'</button>';
+    }).join('')+'</div>';
+    var actions = compsPitch
+      ? '<button class="cmp-btn" id="cmpExport">Export (as client sees)</button>'
+      : '<button class="cmp-btn primary" id="cmpAdd">+ Add comp</button><button class="cmp-btn" id="cmpImport">Import CSV</button><button class="cmp-btn" id="cmpExport">Export</button>';
+    var pitch='<label class="cmp-pitch"><input type="checkbox" id="cmpPitch"'+(compsPitch?' checked':'')+'><span>Pitch mode</span></label>';
+
+    var head='<div class="cmp-head"><div class="cmp-headL"><h1 class="cmp-h">Comparable transactions</h1>'+
+      '<div class="cmp-sub">Signed deals, normalized to one comparable rate. Sorted by <b>'+M[compsMetric].label.toLowerCase()+'</b>.</div></div>'+
+      '<div class="cmp-headR">'+pitch+'</div></div>';
+    var bar='<div class="cmp-bar"><div class="cmp-barL">'+toggle+'</div><div class="cmp-barR">'+actions+'</div></div>';
+
+    var body='';
+    if(compsErr){ body='<div class="cmp-empty"><b>Couldn’t load comps.</b><div class="cmp-emptysub">'+cmEsc(compsErr)+'</div></div>'; }
+    else if(!compsLoaded){ body='<div class="cmp-empty">Loading your comps…</div>'; }
+    else if(!compsData.length){ body=compsPitch
+        ? '<div class="cmp-empty"><b>Nothing to show a client yet.</b><div class="cmp-emptysub">Add comps in broker mode, then flip to pitch mode to preview what they’ll see.</div></div>'
+        : '<div class="cmp-empty"><b>No comps yet.</b><div class="cmp-emptysub">Add your first closed deal, or import your back-catalog from CSV. The value here is normalization — even a handful of your own deals beats a big unnormalized list.</div><div class="cmp-emptycta"><button class="cmp-btn primary" id="cmpAdd2">+ Add comp</button><button class="cmp-btn" id="cmpImport2">Import CSV</button></div></div>'; }
+    else { body=compsTableHtml(compsSorted()); }
+
+    var note = compsPitch
+      ? '<div class="cmp-mode client"><span class="cmp-dot"></span>Pitch mode — this is exactly what a client sees. Redacted comps are hidden and withheld fields are stripped on the server before they reach this screen.</div>'
+      : '';
+
+    el.innerHTML=head+bar+note+'<div class="cmp-tablewrap">'+body+'</div>';
+    wireComps();
+  }
+
+  function compsTableHtml(list){
+    var pitch=compsPitch;
+    var rows=list.map(function(c){
+      var r=c.redaction||{}, red=c.redacted||{}; // broker rows use .redaction; client rows use .redacted
+      var tenant = c.tenant!=null ? cmEsc(c.tenant) : (pitch?'<span class="cmp-with">Withheld</span>':'<span class="cmp-na">—</span>');
+      var suite = c.suite!=null ? cmEsc(c.suite) : (pitch?'<span class="cmp-with">—</span>':'');
+      var bldg = cmEsc(c.building_name||c.address||'—');
+      var econHidden = pitch && (red.economics || (compsMetricVal(c)==null && c.face_rate_psf==null));
+      var metricCell = econHidden ? '<span class="cmp-with">Withheld</span>' : '<b class="cmp-metric">'+compsMoney(compsMetricVal(c))+'</b>';
+      var flags='';
+      if(!pitch && compsFlagged(c)){
+        var fl=[]; if(r.exclude)fl.push('excluded'); if(r.tenant)fl.push('tenant'); if(r.suite)fl.push('suite'); if(r.economics)fl.push('economics');
+        flags='<span class="cmp-redtag" title="Hidden from clients: '+fl.join(', ')+'">🔒 '+fl.length+'</span>';
+      }
+      var rsf=c.rsf!=null?Number(c.rsf).toLocaleString():'—';
+      var date=c.execution_date?String(c.execution_date).slice(0,10):'—';
+      var term=c.term_months?c.term_months+' mo':'—';
+      var struct=c.expense_structure||'—';
+      var actions = pitch ? '' : '<td class="cmp-act"><button class="cmp-ic" data-edit="'+c.id+'" title="Edit">✎</button><button class="cmp-ic" data-del="'+c.id+'" title="Delete">×</button></td>';
+      return '<tr>'+
+        '<td><div class="cmp-bldg">'+bldg+' '+flags+'</div><div class="cmp-ten">'+tenant+(suite&&suite!=='—'?' · '+suite:'')+'</div></td>'+
+        '<td class="cmp-num">'+rsf+'</td>'+
+        '<td class="cmp-num">'+date+'</td>'+
+        '<td class="cmp-num">'+term+'</td>'+
+        '<td class="cmp-num">'+cmEsc(struct)+'</td>'+
+        '<td class="cmp-num cmp-metriccell">'+metricCell+'</td>'+
+        actions+
+      '</tr>';
+    }).join('');
+    return '<table class="cmp-table"><thead><tr>'+
+      '<th>Building / tenant</th><th class="cmp-num">RSF</th><th class="cmp-num">Signed</th><th class="cmp-num">Term</th><th class="cmp-num">Type</th>'+
+      '<th class="cmp-num">'+COMPS_METRICS[compsMetric].label+' $/SF</th>'+(pitch?'':'<th></th>')+
+    '</tr></thead><tbody>'+rows+'</tbody></table>';
+  }
+
+  function wireComps(){
+    var el=document.getElementById('compsBody'); if(!el) return;
+    el.querySelectorAll('.cmp-segbtn').forEach(function(b){ b.onclick=function(){ compsMetric=b.getAttribute('data-metric'); renderComps(); }; });
+    var pt=document.getElementById('cmpPitch'); if(pt) pt.onchange=function(){ compsPitch=pt.checked; compsLoaded=false; compsData=[]; renderComps(); compsLoad(); };
+    ['cmpAdd','cmpAdd2'].forEach(function(id){ var b=document.getElementById(id); if(b) b.onclick=function(){ compsOpenForm(null); }; });
+    ['cmpImport','cmpImport2'].forEach(function(id){ var b=document.getElementById(id); if(b) b.onclick=function(){ compsOpenImport(); }; });
+    var ex=document.getElementById('cmpExport'); if(ex) ex.onclick=compsExport;
+    el.querySelectorAll('[data-edit]').forEach(function(b){ b.onclick=function(){ var id=b.getAttribute('data-edit'); compsOpenForm(compsData.filter(function(c){return c.id===id;})[0]); }; });
+    el.querySelectorAll('[data-del]').forEach(function(b){ b.onclick=function(){ compsDelete(b.getAttribute('data-del')); }; });
+  }
+
+  function compsDelete(id){
+    var c=compsData.filter(function(x){return x.id===id;})[0];
+    var who=(c&&(c.building_name||c.tenant))||'this comp';
+    if(!confirm('Delete '+who+'? This can’t be undone.')) return;
+    compsCallFn({action:'delete', id:id}).then(function(){ compsData=compsData.filter(function(x){return x.id!==id;}); renderComps(); })
+      .catch(function(e){ alert('Delete failed: '+(e.message||e)); });
+  }
+
+  // ---- entry form (modal) ----
+  function compsMatchBuilding(name,address){
+    var q=(name||'')+' '+(address||''); q=q.toLowerCase();
+    for(var i=0;i<BUILDINGS.length;i++){ var b=BUILDINGS[i];
+      if(name&&b.name&&b.name.toLowerCase()===name.toLowerCase()) return b;
+      if(address&&b.addr&&address.toLowerCase().indexOf(b.addr.toLowerCase().split(',')[0])>=0) return b;
+    }
+    return null;
+  }
+  function compsField(lbl,id,val,type,ph,attrs){ return '<label class="cmp-f"><span>'+lbl+'</span><input id="'+id+'" type="'+(type||'text')+'" value="'+(val==null?'':cmEsc(String(val)))+'"'+(ph?' placeholder="'+cmEsc(ph)+'"':'')+' '+(attrs||'')+'></label>'; }
+  function compsOpenForm(c){
+    c=c||{}; var esc=c.escalation||{type:'none'}, pk=c.parking||{}, op=c.options||{}, rd=c.redaction||{};
+    var isEdit=!!c.id;
+    var structOpts=['','FSG','NNN','MG'].map(function(s){return '<option value="'+s+'"'+(c.expense_structure===s?' selected':'')+'>'+(s||'—')+'</option>';}).join('');
+    var escOpts=[['none','None (flat)'],['percent','Percent / yr'],['fixed','Fixed $/SF step / yr'],['schedule','Custom schedule']].map(function(o){return '<option value="'+o[0]+'"'+(esc.type===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('');
+    var html=''+
+      '<div class="cmp-modal" id="cmpModal"><div class="cmp-mbox"><div class="cmp-mhead"><h2>'+(isEdit?'Edit comp':'Add comp')+'</h2><button class="cmp-mx" id="cmpFormX">×</button></div>'+
+      '<div class="cmp-mbody">'+
+        '<div class="cmp-sec">Property & tenant</div>'+
+        '<div class="cmp-grid">'+
+          compsField('Building name','cf_bname',c.building_name,'text','e.g. The Water Garden')+
+          compsField('Address','cf_addr',c.address,'text','2425 Olympic Blvd')+
+          compsField('Tenant','cf_tenant',c.tenant)+
+          compsField('Suite','cf_suite',c.suite,'text','Ste 300')+
+          compsField('RSF','cf_rsf',c.rsf,'number','10000')+
+          compsField('Execution date','cf_date',c.execution_date?String(c.execution_date).slice(0,10):'','date')+
+        '</div>'+
+        '<div class="cmp-sec">Lease economics</div>'+
+        '<div class="cmp-grid">'+
+          compsField('Term (months)','cf_term',c.term_months,'number','60')+
+          compsField('Face rate $/SF/yr','cf_face',c.face_rate,'number','36')+
+          '<label class="cmp-f"><span>Escalation</span><select id="cf_esctype">'+escOpts+'</select></label>'+
+          compsField('Escalation value','cf_escval',esc.value,'number','3 (%/yr) or 1.00 ($/SF)')+
+          '<label class="cmp-f cmp-f-wide" id="cf_schedwrap" style="display:none"><span>Schedule ($/SF per year, comma-separated)</span><input id="cf_sched" type="text" value="'+(Array.isArray(esc.schedule)?esc.schedule.join(', '):'')+'" placeholder="36, 37.08, 38.19"></label>'+
+          compsField('Free rent (months)','cf_free',c.free_rent_months,'number','5')+
+          compsField('TI allowance $/SF','cf_ti',c.ti_allowance_psf,'number','50')+
+          '<label class="cmp-f"><span>Expense structure</span><select id="cf_struct">'+structOpts+'</select></label>'+
+          compsField('Base year','cf_baseyr',c.base_year,'number','2025')+
+          compsField('Operating exp $/SF (NNN/MG)','cf_opex',c.opex_psf,'number','14')+
+          compsField('Discount rate % (NER)','cf_disc',c.discount_rate,'number','8 (default)')+
+        '</div>'+
+        '<div class="cmp-sec">Parking & options</div>'+
+        '<div class="cmp-grid">'+
+          compsField('Parking ratio (/1,000 SF)','cf_pratio',pk.ratio,'number','3.0')+
+          compsField('Parking rate $/space/mo','cf_prate',pk.rate,'number','125')+
+          compsField('Expansion rights','cf_expansion',op.expansion,'text','Right of first offer, 4th flr')+
+          compsField('Renewal option','cf_renewal',op.renewal,'text','One 5-yr @ 95% FMV')+
+        '</div>'+
+        '<div class="cmp-sec">Client visibility <span class="cmp-secsub">what a client can see in pitch mode / exports</span></div>'+
+        '<div class="cmp-redgrid">'+
+          '<label class="cmp-chk"><input type="checkbox" id="cf_rx_exclude"'+(rd.exclude?' checked':'')+'><span>Hide this comp entirely</span></label>'+
+          '<label class="cmp-chk"><input type="checkbox" id="cf_rx_tenant"'+(rd.tenant?' checked':'')+'><span>Hide tenant name</span></label>'+
+          '<label class="cmp-chk"><input type="checkbox" id="cf_rx_suite"'+(rd.suite?' checked':'')+'><span>Hide suite</span></label>'+
+          '<label class="cmp-chk"><input type="checkbox" id="cf_rx_econ"'+(rd.economics?' checked':'')+'><span>Hide exact economics</span></label>'+
+        '</div>'+
+        '<label class="cmp-f cmp-f-wide"><span>Notes</span><input id="cf_notes" type="text" value="'+cmEsc(c.notes||'')+'"></label>'+
+      '</div>'+
+      '<div class="cmp-mfoot"><div class="cmp-preview" id="cf_preview"></div><div class="cmp-mfootbtns">'+(isEdit?'':'')+'<button class="cmp-btn" id="cmpFormCancel">Cancel</button><button class="cmp-btn primary" id="cmpFormSave">'+(isEdit?'Save changes':'Add comp')+'</button></div></div>'+
+      '</div></div>';
+    var wrap=document.createElement('div'); wrap.innerHTML=html; document.body.appendChild(wrap.firstChild);
+    var modal=document.getElementById('cmpModal');
+    modal._editId=c.id||null;
+    function close(){ modal.remove(); }
+    document.getElementById('cmpFormX').onclick=close;
+    document.getElementById('cmpFormCancel').onclick=close;
+    modal.addEventListener('mousedown',function(e){ if(e.target===modal) close(); });
+    var schedWrap=document.getElementById('cf_schedwrap');
+    function syncEscUI(){ var t=document.getElementById('cf_esctype').value; schedWrap.style.display=(t==='schedule')?'':'none'; document.getElementById('cf_escval').closest('.cmp-f').style.display=(t==='percent'||t==='fixed')?'':'none'; }
+    document.getElementById('cf_esctype').onchange=function(){ syncEscUI(); compsPreview(); };
+    syncEscUI();
+    modal.querySelectorAll('input,select').forEach(function(i){ i.addEventListener('input',compsPreview); i.addEventListener('change',compsPreview); });
+    document.getElementById('cmpFormSave').onclick=compsSaveForm;
+    compsPreview();
+  }
+  function compsFormToObj(){
+    var escType=document.getElementById('cf_esctype').value;
+    var esc={type:escType};
+    if(escType==='percent'||escType==='fixed') esc.value=parseFloat(document.getElementById('cf_escval').value)||0;
+    if(escType==='schedule') esc.schedule=(document.getElementById('cf_sched').value||'').split(',').map(function(x){return parseFloat(x.trim());}).filter(function(x){return isFinite(x);});
+    var v=function(id){ var e=document.getElementById(id); return e?e.value:''; };
+    var num=function(id){ var x=parseFloat(v(id)); return isFinite(x)?x:null; };
+    var bname=v('cf_bname'), addr=v('cf_addr'); var match=compsMatchBuilding(bname,addr);
+    return {
+      id:(document.getElementById('cmpModal')||{})._editId||undefined,
+      building_id: match?match.id:null, building_name:bname, address:addr,
+      tenant:v('cf_tenant'), suite:v('cf_suite'), rsf:num('cf_rsf'),
+      execution_date:v('cf_date')||null, term_months:num('cf_term'), face_rate:num('cf_face'),
+      escalation:esc, free_rent_months:num('cf_free'), ti_allowance_psf:num('cf_ti'),
+      expense_structure:v('cf_struct')||null, base_year:num('cf_baseyr'), opex_psf:num('cf_opex'),
+      discount_rate:num('cf_disc'),
+      parking:{ratio:num('cf_pratio'), rate:num('cf_prate')},
+      options:{expansion:v('cf_expansion'), renewal:v('cf_renewal')},
+      redaction:{exclude:document.getElementById('cf_rx_exclude').checked, tenant:document.getElementById('cf_rx_tenant').checked, suite:document.getElementById('cf_rx_suite').checked, economics:document.getElementById('cf_rx_econ').checked},
+      notes:v('cf_notes')
+    };
+  }
+  function compsPreview(){
+    var box=document.getElementById('cf_preview'); if(!box||!window.CompsMath) return;
+    var o=compsFormToObj();
+    var m=CompsMath.computeMetrics({rsf:o.rsf,term_months:o.term_months,face_rate:o.face_rate,escalation:o.escalation,free_rent_months:o.free_rent_months,ti_allowance_psf:o.ti_allowance_psf,opex_psf:o.opex_psf,parking_ratio:o.parking.ratio,parking_rate:o.parking.rate,discount_rate:o.discount_rate});
+    box.innerHTML='<span class="cmp-pvk">Net effective</span><b>'+compsMoney(m.net_effective_rent_psf)+'</b>'+
+      '<span class="cmp-pvk">Face</span><b>'+compsMoney(m.face_rate_psf)+'</b>'+
+      '<span class="cmp-pvk">Total occ.</span><b>'+compsMoney(m.total_occupancy_cost_psf)+'</b>';
+  }
+  function compsSaveForm(){
+    var o=compsFormToObj();
+    if(!o.rsf||!o.term_months||o.face_rate==null){ alert('RSF, term, and face rate are required to normalize a comp.'); return; }
+    var btn=document.getElementById('cmpFormSave'); btn.disabled=true; btn.textContent='Saving…';
+    compsCallFn({action:'save', comp:o}).then(function(d){
+      var saved=d&&d.comp; if(saved){ var i=compsData.map(function(x){return x.id;}).indexOf(saved.id); if(i>=0) compsData[i]=saved; else compsData.unshift(saved); }
+      var modal=document.getElementById('cmpModal'); if(modal) modal.remove();
+      renderComps();
+    }).catch(function(e){ btn.disabled=false; btn.textContent='Add comp'; alert('Save failed: '+(e.message||e)); });
+  }
+
+  // ---- CSV import (modal) ----
+  function compsParseCSV(text){
+    var rows=[], row=[], cur='', q=false;
+    for(var i=0;i<text.length;i++){ var ch=text[i];
+      if(q){ if(ch==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=ch; }
+      else { if(ch==='"') q=true; else if(ch===','){ row.push(cur); cur=''; } else if(ch==='\n'){ row.push(cur); rows.push(row); row=[]; cur=''; } else if(ch==='\r'){} else cur+=ch; }
+    }
+    if(cur.length||row.length){ row.push(cur); rows.push(row); }
+    return rows.filter(function(r){ return r.some(function(c){return (c||'').trim()!=='';}); });
+  }
+  function compsRowsToObjs(rows){
+    if(!rows.length) return [];
+    var hdr=rows[0].map(function(h){return (h||'').trim().toLowerCase().replace(/\s+/g,'_');});
+    var idx={}; hdr.forEach(function(h,i){ idx[h]=i; });
+    var get=function(r,name){ var i=idx[name]; return i==null?'':(r[i]||'').trim(); };
+    var b=function(r,name){ var s=get(r,name).toLowerCase(); return s==='1'||s==='true'||s==='yes'||s==='y'; };
+    var nu=function(r,name){ var x=parseFloat(get(r,name)); return isFinite(x)?x:null; };
+    return rows.slice(1).map(function(r){
+      var escType=(get(r,'escalation_type')||'none').toLowerCase(); if(['none','percent','fixed','schedule'].indexOf(escType)<0) escType='none';
+      var bname=get(r,'building_name'), addr=get(r,'address'), match=compsMatchBuilding(bname,addr);
+      return {
+        building_id:match?match.id:null, building_name:bname, address:addr,
+        tenant:get(r,'tenant'), suite:get(r,'suite'), rsf:nu(r,'rsf'),
+        execution_date:get(r,'execution_date')||null, term_months:nu(r,'term_months'), face_rate:nu(r,'face_rate'),
+        escalation:{type:escType, value:nu(r,'escalation_value')||0},
+        free_rent_months:nu(r,'free_rent_months'), ti_allowance_psf:nu(r,'ti_allowance_psf'),
+        expense_structure:get(r,'expense_structure').toUpperCase()||null, base_year:nu(r,'base_year'), opex_psf:nu(r,'opex_psf'),
+        discount_rate:nu(r,'discount_rate'),
+        parking:{ratio:nu(r,'parking_ratio'), rate:nu(r,'parking_rate')},
+        options:{expansion:get(r,'expansion'), renewal:get(r,'renewal')},
+        redaction:{exclude:b(r,'redact_exclude'), tenant:b(r,'redact_tenant'), suite:b(r,'redact_suite'), economics:b(r,'redact_economics')},
+        notes:get(r,'notes')
+      };
+    });
+  }
+  function compsOpenImport(){
+    var html='<div class="cmp-modal" id="cmpModal"><div class="cmp-mbox cmp-mbox-sm"><div class="cmp-mhead"><h2>Import comps from CSV</h2><button class="cmp-mx" id="cmpFormX">×</button></div>'+
+      '<div class="cmp-mbody"><p class="cmp-imp-p">Load your back-catalog of closed deals. The first row must be a header. Columns are matched by name — only the ones you have; anything missing is left blank and metrics are computed for you.</p>'+
+      '<button class="cmp-btn" id="cmpTemplate">Download blank template</button>'+
+      '<label class="cmp-file"><input type="file" id="cmpFile" accept=".csv,text/csv"><span>Choose a CSV file…</span></label>'+
+      '<div id="cmpImpPreview"></div></div>'+
+      '<div class="cmp-mfoot"><div></div><div class="cmp-mfootbtns"><button class="cmp-btn" id="cmpFormCancel">Cancel</button><button class="cmp-btn primary" id="cmpImpGo" disabled>Import</button></div></div>'+
+      '</div></div>';
+    var wrap=document.createElement('div'); wrap.innerHTML=html; document.body.appendChild(wrap.firstChild);
+    var modal=document.getElementById('cmpModal'); var parsed=[];
+    function close(){ modal.remove(); }
+    document.getElementById('cmpFormX').onclick=close; document.getElementById('cmpFormCancel').onclick=close;
+    modal.addEventListener('mousedown',function(e){ if(e.target===modal) close(); });
+    document.getElementById('cmpTemplate').onclick=function(){ compsDownload('vantage-comps-template.csv', COMPS_TEMPLATE_COLS.join(',')+'\n'); };
+    document.getElementById('cmpFile').onchange=function(e){
+      var f=e.target.files&&e.target.files[0]; if(!f) return;
+      var rd=new FileReader(); rd.onload=function(){
+        try{ var rows=compsParseCSV(String(rd.result)); parsed=compsRowsToObjs(rows);
+          var prev=document.getElementById('cmpImpPreview');
+          if(!parsed.length){ prev.innerHTML='<div class="cmp-imp-err">No data rows found. Make sure row 1 is a header.</div>'; return; }
+          var sample=parsed.slice(0,5).map(function(o){ var m=CompsMath.computeMetrics({rsf:o.rsf,term_months:o.term_months,face_rate:o.face_rate,escalation:o.escalation,free_rent_months:o.free_rent_months,ti_allowance_psf:o.ti_allowance_psf,opex_psf:o.opex_psf,parking_ratio:o.parking.ratio,parking_rate:o.parking.rate,discount_rate:o.discount_rate});
+            return '<tr><td>'+cmEsc(o.building_name||o.tenant||'—')+'</td><td class="cmp-num">'+(o.rsf?Number(o.rsf).toLocaleString():'—')+'</td><td class="cmp-num">'+compsMoney(m.net_effective_rent_psf)+'</td></tr>'; }).join('');
+          prev.innerHTML='<div class="cmp-imp-ok">Parsed <b>'+parsed.length+'</b> comp'+(parsed.length===1?'':'s')+'. Preview (net effective computed):</div>'+
+            '<table class="cmp-table cmp-imp-table"><thead><tr><th>Building / tenant</th><th class="cmp-num">RSF</th><th class="cmp-num">Net eff. $/SF</th></tr></thead><tbody>'+sample+'</tbody></table>'+(parsed.length>5?'<div class="cmp-imp-more">…and '+(parsed.length-5)+' more</div>':'');
+          document.getElementById('cmpImpGo').disabled=false;
+        }catch(err){ document.getElementById('cmpImpPreview').innerHTML='<div class="cmp-imp-err">Could not read that file: '+cmEsc(err.message||String(err))+'</div>'; }
+      }; rd.readAsText(f);
+    };
+    document.getElementById('cmpImpGo').onclick=function(){
+      if(!parsed.length) return; var btn=this; btn.disabled=true; btn.textContent='Importing…';
+      compsCallFn({action:'import', comps:parsed}).then(function(d){
+        close(); compsLoaded=false; showComps(); alert('Imported '+((d&&d.imported)||0)+' comp'+(((d&&d.imported)||0)===1?'':'s')+'.');
+      }).catch(function(e){ btn.disabled=false; btn.textContent='Import'; alert('Import failed: '+(e.message||e)); });
+    };
+  }
+
+  // ---- export (respects pitch-mode redaction: in pitch mode we export the server-redacted rows) ----
+  function compsDownload(name, text){
+    var blob=new Blob([text],{type:'text/csv'}); var url=URL.createObjectURL(blob);
+    var a=document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){URL.revokeObjectURL(url);},1000);
+  }
+  function compsCsvCell(v){ v=(v==null)?'':String(v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
+  function compsExport(){
+    var list=compsSorted();
+    var cols=compsPitch
+      ? ['building_name','address','tenant','suite','rsf','execution_date','term_months','expense_structure','net_effective_rent_psf','face_rate_psf','total_occupancy_cost_psf']
+      : ['building_name','address','tenant','suite','rsf','execution_date','term_months','face_rate','free_rent_months','ti_allowance_psf','expense_structure','base_year','opex_psf','net_effective_rent_psf','face_rate_psf','total_occupancy_cost_psf'];
+    var lines=[cols.join(',')];
+    list.forEach(function(c){ lines.push(cols.map(function(k){ return compsCsvCell(c[k]); }).join(',')); });
+    compsDownload(compsPitch?'vantage-comps-client.csv':'vantage-comps.csv', lines.join('\n')+'\n');
+  }
 
   // ============ COMMUTE ANALYSIS (team drive-times; first backend feature) ============
   // All team data (names, addresses, geocoded points) lives only in these vars for
@@ -1333,6 +1694,7 @@
     document.getElementById('portfolioView').style.display='none';
     document.getElementById('detailView').classList.remove('show');
     document.getElementById('competitionView').classList.remove('show');
+    document.getElementById('compsView').classList.remove('show');
     document.getElementById('commuteView').classList.add('show');
     setNav('commute'); setPriobar(false);
     document.getElementById('crumb').innerHTML='Santa Monica · <b>Team commute</b>';
@@ -1868,7 +2230,7 @@
       document.querySelectorAll('#vnav .vnav-item').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-m')==='market'); });
     }
     setMarketSubOpen(true);
-    if(sv==='tenants') showCompetition(); else if(sv==='commute') showCommute(); else showPortfolio();
+    if(sv==='tenants') showCompetition(); else if(sv==='commute') showCommute(); else if(sv==='comps') showComps(); else showPortfolio();
   };
   window.showModule=function(m){
     var map={home:'homeView',market:'marketModule',clients:'clientsView',settings:'settingsView'};
@@ -1878,7 +2240,7 @@
     if(m==='home') renderHome();
     else if(m==='clients') renderClients();
     else if(m==='settings') renderSettings();
-    else if(m==='market'){ var dv=document.getElementById('detailView'); if((!dv||!dv.classList.contains('show')) && !document.getElementById('competitionView').classList.contains('show') && !document.getElementById('commuteView').classList.contains('show')){ if(window.showPortfolio) showPortfolio(); } setTimeout(function(){ try{ if(overviewMap) overviewMap.invalidateSize(); if(detailMap) detailMap.invalidateSize(); }catch(e){} },60); }
+    else if(m==='market'){ var dv=document.getElementById('detailView'); if((!dv||!dv.classList.contains('show')) && !document.getElementById('competitionView').classList.contains('show') && !document.getElementById('commuteView').classList.contains('show') && !document.getElementById('compsView').classList.contains('show')){ if(window.showPortfolio) showPortfolio(); } setTimeout(function(){ try{ if(overviewMap) overviewMap.invalidateSize(); if(detailMap) detailMap.invalidateSize(); }catch(e){} },60); }
     if(m!=='market'){ var d=document.getElementById('detailView'); if(d) d.classList.remove('show'); }
   };
   var MAIL_IC='<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>';
