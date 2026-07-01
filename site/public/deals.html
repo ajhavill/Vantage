@@ -405,7 +405,7 @@
 <div class="ov" id="ov"><div class="sheet" id="sheet"></div></div>
 
 <!-- AI assistant -->
-<button class="ai-fab" id="aiFab" onclick="DF.aiPanelToggle()" title="Vantage AI assistant">
+<button class="ai-fab" id="aiFab" onclick="DF.aiPanelToggle()" title="Vantage AI assistant" style="display:none">
   <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.9 5.1L19 9l-5.1 1.9L12 16l-1.9-5.1L5 9l5.1-1.9L12 2z"/></svg>
   Assistant
 </button>
@@ -535,10 +535,11 @@ window.DF = (function(){
     $('authGate').style.display='none';
     me=session.user;
     var chip=$('userChip'); if(chip){ chip.style.display='inline-flex'; $('userEmail').textContent=me.email||''; }
+    var fab=$('aiFab'); if(fab) fab.style.display='';
     try{ _view=localStorage.getItem('vantage_deal_view')||'board'; }catch(e){}
     loadDeals();
   }
-  function showLogin(){ $('authGate').style.display='flex'; var c=$('userChip'); if(c) c.style.display='none'; }
+  function showLogin(){ $('authGate').style.display='flex'; var c=$('userChip'); if(c) c.style.display='none'; var f=$('aiFab'); if(f) f.style.display='none'; var p=$('aiPanel'); if(p) p.classList.remove('open'); }
 
   function bindAuth(){
     if(!window.supabase){ $('agErr').textContent='Could not reach the login service. Check your connection and refresh.'; return; }
