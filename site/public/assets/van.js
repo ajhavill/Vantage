@@ -48,7 +48,7 @@
 
   function injectCSS() {
     var css =
-      ".van-fab{position:fixed;right:22px;bottom:22px;z-index:2300;font:700 13px Inter,system-ui,sans-serif;color:#fff;background:var(--building,#1b2a4a);border:0;border-radius:999px;padding:12px 18px;cursor:pointer;box-shadow:0 10px 30px rgba(20,26,38,.22);display:none;align-items:center;gap:7px}" +
+      ".van-fab{position:fixed;right:22px;bottom:22px;z-index:2147483000;font:700 13px Inter,system-ui,sans-serif;color:#fff;background:var(--building,#1b2a4a);border:0;border-radius:999px;padding:12px 18px;cursor:pointer;box-shadow:0 10px 30px rgba(20,26,38,.28);display:inline-flex;align-items:center;gap:7px}" +
       ".van-fab:hover{filter:brightness(1.1)}" +
       ".van-panel{position:fixed;top:0;right:0;height:100vh;width:min(420px,100%);background:var(--paper-2,#fbf9f4);border-left:1px solid var(--line,#e7e3d9);box-shadow:-8px 0 30px rgba(20,26,38,.16);z-index:2400;display:flex;flex-direction:column;transform:translateX(102%);transition:transform .22s ease}" +
       ".van-panel.open{transform:translateX(0)}" +
@@ -180,6 +180,7 @@
     try {
       var client = getSB(); var s = client ? await client.auth.getSession() : null;
       var token = s && s.data && s.data.session ? s.data.session.access_token : null;
+      if (!token) { if (thinking) thinking.remove(); push("assistant", "⚠️ Please sign in to Vantage first, then ask me again.", true); busy = false; if (sb) sb.disabled = false; return; }
       var ctrl = new AbortController(); var to = setTimeout(function () { ctrl.abort(); }, 45000);
       var res = await fetch(ENDPOINT, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -200,19 +201,11 @@
   }
 
   function open() { var p = $("vanPanel"); if (!p) return; p.classList.add("open"); var f = $("vanFab"); if (f) f.style.display = "none"; updateHeader(); if (!$("vanMsgs").children.length) greet(); setTimeout(function () { var t = $("vanText"); if (t) t.focus(); }, 60); }
-  function close() { var p = $("vanPanel"); if (p) p.classList.remove("open"); var f = $("vanFab"); if (f && loggedIn) f.style.display = ""; }
+  function close() { var p = $("vanPanel"); if (p) p.classList.remove("open"); var f = $("vanFab"); if (f) f.style.display = "inline-flex"; }
   function toggle() { var p = $("vanPanel"); if (!p) return; p.classList.contains("open") ? close() : open(); }
   function setContext(c) { ctx = { dealId: (c && c.dealId) || null, label: (c && c.label) || "your pipeline" }; if ($("vanPanel") && $("vanPanel").classList.contains("open")) updateHeader(); }
 
-  var loggedIn = false;
-  function showFab(v) { loggedIn = v; var f = $("vanFab"); if (f && !$("vanPanel").classList.contains("open")) f.style.display = v ? "" : "none"; if (!v) close(); }
-  function watchAuth() {
-    var client = getSB(); if (!client) return;
-    client.auth.getSession().then(function (r) { showFab(!!(r && r.data && r.data.session)); }).catch(function () {});
-    try { client.auth.onAuthStateChange(function (_e, session) { showFab(!!session); }); } catch (e) {}
-  }
-
-  function init() { if (started) return; started = true; injectCSS(); injectDOM(); watchAuth(); }
+  function init() { if (started) return; started = true; injectCSS(); injectDOM(); }
   window.Van = { init: init, toggle: toggle, open: open, close: close, setContext: setContext, clear: clearChat };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 })();
