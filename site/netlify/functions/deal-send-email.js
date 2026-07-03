@@ -31,21 +31,23 @@ exports.handler = async (event) => {
     try { const dr = await sb.rest("deals?id=eq." + dealId + "&select=owner_id&limit=1"); const d = dr.data && dr.data[0]; if (!d) return okJSON({ error: "That deal wasn't found." }); } catch (e) {}
   }
 
-  const FROM = process.env.EMAIL_FROM;
+  // Reuse the same from-address the questionnaire emails already use (RESEND_FROM), so no
+  // extra config is needed; fall back to EMAIL_FROM, then Resend's sandbox sender.
+  const FROM = process.env.RESEND_FROM || process.env.EMAIL_FROM || "Vantage <onboarding@resend.dev>";
   let sendStatus = "failed", sentAt = null, errMsg = null;
-  if (process.env.RESEND_API_KEY && FROM) {
+  if (process.env.RESEND_API_KEY) {
     try {
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { Authorization: "Bearer " + process.env.RESEND_API_KEY, "Content-Type": "application/json" },
-        body: JSON.stringify(Object.assign({ from: FROM, to: [to], subject: subject, text: text }, cc ? { cc: [cc] } : {}, body.replyTo ? { reply_to: body.replyTo } : {}))
+        body: JSON.stringify(Object.assign({ from: FROM, to: [to], subject: subject, text: text, reply_to: body.replyTo || undefined }, cc ? { cc: [cc] } : {}))
       });
       const d = await res.json().catch(() => null);
       if (res.ok) { sendStatus = "sent"; sentAt = new Date().toISOString(); }
       else { errMsg = (d && (d.message || d.error)) || ("Resend HTTP " + res.status); }
     } catch (e) { errMsg = e.message; }
   } else {
-    errMsg = "Email sending isn't configured yet — set RESEND_API_KEY and a verified EMAIL_FROM domain.";
+    errMsg = "Email sending isn't switched on yet (RESEND_API_KEY isn't set). Your draft is saved — copy it or open it in your mail app.";
   }
 
   // Log the email regardless (a sent record, or a draft to fall back on)
