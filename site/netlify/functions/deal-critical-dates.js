@@ -113,6 +113,26 @@ exports.handler = async () => {
     } catch (e) { /* skip one, keep going */ }
   }
 
+  // Email throttle: the endpoint is publicly invokable (Netlify doesn't sign the
+  // scheduled trigger), so briefings send at most once per ~20h regardless of who
+  // hits it. Task creation above stays idempotent, so extra invocations are no-ops.
+  // The cron_runs table is service_role-only (RLS on, no policies) — see cron-runs.sql.
+  let mayEmail = true;
+  try {
+    const r = await sb.rest("cron_runs?name=eq.deal-critical-dates&select=last_run&limit=1");
+    const last = r.data && r.data[0] && new Date(r.data[0].last_run);
+    if (last && !isNaN(last) && (Date.now() - last.getTime()) < 20 * 3600000) mayEmail = false;
+    // claim the slot BEFORE sending so racing invocations can't double-send
+    if (mayEmail) {
+      const up = await sb.rest("cron_runs?on_conflict=name", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({ name: "deal-critical-dates", last_run: new Date().toISOString() })
+      });
+      if (!up.ok) mayEmail = false;   // couldn't claim the slot (e.g. migration not run) → fail closed
+    }
+  } catch (e) { mayEmail = false; }   // can't verify the throttle → fail closed, no email
+
   // 3) per-broker briefing of everything due within BRIEF_DAYS (existing + new, not done)
   const FROM = process.env.RESEND_FROM || process.env.EMAIL_FROM || "Vantage <onboarding@resend.dev>";
   const briefByOwner = {};
@@ -125,11 +145,13 @@ exports.handler = async () => {
   toCreate.forEach((t) => { const d = parseDate(t.due_date); if (d) addBrief(t.owner_id, d, t.title, dealById[t.deal_id] && dealById[t.deal_id].client_name); });
 
   let emailed = 0;
-  for (const owner of Object.keys(briefByOwner)) {
-    const to = emailById[owner]; if (!to) continue;
-    const items = briefByOwner[owner].sort((a, b) => a.date - b.date);
-    await sendBrief(FROM, to, null, items);
-    emailed++;
+  if (mayEmail) {
+    for (const owner of Object.keys(briefByOwner)) {
+      const to = emailById[owner]; if (!to) continue;
+      const items = briefByOwner[owner].sort((a, b) => a.date - b.date);
+      await sendBrief(FROM, to, null, items);
+      emailed++;
+    }
   }
 
   console.log("critical-dates: created", created, "tasks, emailed", emailed, "brokers");
