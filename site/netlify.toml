@@ -14,3 +14,8 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+
+# Daily critical-date sweep: turns lease deadlines into tasks + a broker briefing,
+# and seeds renewal-outreach tasks ahead of executed-lease expirations.
+[functions."deal-critical-dates"]
+  schedule = "@daily"
