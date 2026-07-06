@@ -970,7 +970,8 @@ window.DF = (function(){
     var tourPropIds={}; (tours||[]).forEach(function(t){ if(t.property_id) tourPropIds[t.property_id]=true; });
     var propsHtml = props.length ? props.map(function(p){ return propCard(p, d.id, tourPropIds[p.id]); }).join('') : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No buildings yet.</div>';
 
-    var propsHtml2 = propsHtml + '<button class="miniadd" onclick="DF.newProperty(\''+d.id+'\')">+ Add building</button>';
+    var propsHtml2 = propsHtml + '<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><button class="miniadd" onclick="DF.newProperty(\''+d.id+'\')">+ Add building</button>'
+      + (props.length?'<button class="miniadd ai" onclick="DF.generateRfp(\''+d.id+'\')" title="Draft a Request for Proposal and send it to the listing brokers">📋 Generate RFP</button>':'')+'</div>';
 
     // group rounds + documents by proposal
     var roundsByProp={}; rounds.forEach(function(r){ (roundsByProp[r.proposal_id]=roundsByProp[r.proposal_id]||[]).push(r); });
@@ -1409,6 +1410,77 @@ window.DF = (function(){
     }catch(e){ var b=$('te_body'); if(b) b.innerHTML='<div class="formerr">Could not draft: '+esc(e.message||e)+'</div>'; }
   }
   function copyTourEmail(){ var t=$('te_text'); if(t){ t.select(); try{ document.execCommand('copy'); if(typeof aiToast==='function') aiToast('Email copied to clipboard.'); }catch(e){} } }
+
+  /* ---------- RFP: generate a Request for Proposal + send to listing brokers ---------- */
+  var _rfpProps=[];
+  async function generateRfp(dealId){
+    await loadPortalBuildings();
+    var d=deals.filter(function(x){return x.id===dealId;})[0]||{};
+    try{ _rfpProps=await q(sb.from('deal_properties').select('*').eq('deal_id',dealId).order('sort_order')); }catch(e){ _rfpProps=[]; }
+    var bldgList=_rfpProps.length?_rfpProps.map(function(p){return p.name;}).filter(Boolean).join(', '):'the shortlisted buildings';
+    openSheet('<h3>Generate RFP</h3><div class="ssub">Describe the requirement and Claude drafts a Request for Proposal you can send to the listing brokers on this deal — asking each for base rent, opex, TI, free rent, escalations, options and parking.</div>'
+      + fld('Requirement <span class="u">size, term, use, timing, must-haves</span>','<textarea id="rfp_req" style="min-height:120px" placeholder="e.g. ~9,500 RSF for a creative-office tenant, 5–7 year term, occupancy by Q1, needs 3.5/1,000 parking, prefers move-in-ready or modest TI, one renewal option.">'+esc(d.__rfpReq||'')+'</textarea>')
+      + '<div class="hint" style="margin:2px 0 8px">Buildings on this deal: '+esc(bldgList)+'</div>'
+      + '<div class="formerr" id="rfp_err"></div>'
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button><button class="btn pri" id="rfp_go">✨ Generate RFP</button></div>');
+    $('rfp_go').addEventListener('click',function(){ rfpGenerate(dealId, d, this); });
+  }
+  async function rfpGenerate(dealId, d, btn){
+    var req=($('rfp_req').value||'').trim();
+    if(!req){ $('rfp_err').textContent='Add a line or two about the requirement first.'; return; }
+    btn.disabled=true; btn.textContent='Drafting…'; $('rfp_err').textContent='';
+    var ask='Draft a professional Request for Proposal (RFP) document from me — the tenant\'s broker at Havill & Co. — on behalf of my client'
+      + (d.client_name?' '+d.client_name:'')+', to be sent to the listing brokers of the buildings we are considering. '
+      + 'Base it on this requirement: '+req+'. Structure it as a clean business document: a short intro, the space requirement, our desired lease economics to respond to, the timeline, and a clear list of exactly what each landlord should include in their proposal (base rent and structure, operating expenses, tenant improvement allowance, free rent, annual escalations, renewal/expansion options, and parking). Keep it firm but professional. Output ONLY the RFP document in clean markdown — no preamble or commentary.';
+    try{
+      var s=await sb.auth.getSession(); var token=s&&s.data&&s.data.session?s.data.session.access_token:null;
+      var res=await fetch('/.netlify/functions/deal-ai-assist',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token, dealId:dealId, question:ask})});
+      var data=await res.json().catch(function(){return null;});
+      var text=data&&data.text?data.text:(data&&data.error?('⚠️ '+data.error):'Could not draft. Please try again.');
+      renderRfp(dealId, d, text);
+    }catch(e){ $('rfp_err').textContent='Could not draft: '+(e.message||e); btn.disabled=false; btn.textContent='✨ Generate RFP'; }
+  }
+  function renderRfp(dealId, d, text){
+    var subject='RFP — '+(d.client_name?d.client_name+' ':'')+'space requirement';
+    // per-building distribution: resolve each building's listing contact from portal data
+    var rows=_rfpProps.map(function(p){
+      var pb=p.building_id?(_portalBuildings||[]).filter(function(b){return b.id===p.building_id;})[0]:null;
+      var c=pb&&pb.leasingContact;
+      var who=(c&&c.name?esc(c.name):'Listing broker')+(c&&c.company?' · '+esc(c.company):'');
+      var right;
+      if(c&&c.email){ right='<button class="btn pri" style="padding:5px 11px" onclick="DF.sendRfpTo(\''+esc(c.email)+'\',\''+dealId+'\',this)">✉ Send</button>'; }
+      else { right='<span class="hint">No email on file — copy &amp; send</span>'; }
+      return '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line,#eee)"><div style="min-width:0;flex:1"><div style="font-size:13px;font-weight:600">'+esc(p.name||'Building')+'</div><div class="hint">'+who+'</div></div>'+right+'</div>';
+    }).join('');
+    openSheet('<h3>Request for Proposal</h3><div class="ssub">Review and edit, then send to each building\'s listing broker — or copy/download to send yourself.</div>'
+      + '<textarea id="rfp_text" class="te-ta" style="min-height:260px">'+esc(text)+'</textarea>'
+      + '<div class="srow" style="justify-content:space-between;align-items:center"><div style="display:flex;gap:10px"><button class="btn" onclick="DF.copyRfp()">Copy</button><button class="btn" onclick="DF.downloadRfp(\''+esc(subject)+'\')">Download</button></div>'
+      + '<button class="btn" onclick="DF.close()">Done</button></div>'
+      + (rows?'<div style="margin-top:14px"><div style="font:600 11.5px Inter;letter-spacing:.02em;color:var(--ink-soft,#40566b);margin-bottom:2px">SEND TO LISTING BROKERS</div>'+rows+'</div>':''));
+    _rfpSubject=subject; _rfpDealId=dealId;
+  }
+  var _rfpSubject='RFP', _rfpDealId=null;
+  function copyRfp(){ var t=$('rfp_text'); if(t){ t.select(); try{ document.execCommand('copy'); if(typeof aiToast==='function') aiToast('RFP copied.'); }catch(e){} } }
+  function downloadRfp(subject){
+    var t=$('rfp_text'); var text=t?t.value:'';
+    var html='<!doctype html><html><head><meta charset="utf-8"><title>'+esc(subject||'RFP')+'</title></head><body style="font:13px/1.6 Georgia,serif">'
+      + (window.marked?window.marked.parse(text):'<pre style="white-space:pre-wrap">'+esc(text)+'</pre>')+'</body></html>';
+    var blob=new Blob([html],{type:'application/msword'});
+    var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=(subject||'RFP').replace(/[^A-Za-z0-9._-]+/g,'_')+'.doc';
+    document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },100);
+  }
+  async function sendRfpTo(email, dealId, btn){
+    var t=$('rfp_text'); var body=t?t.value:'';
+    if(!body.trim()){ if(typeof aiToast==='function') aiToast('Nothing to send.'); return; }
+    if(btn){ btn.disabled=true; btn.textContent='Sending…'; }
+    try{
+      var s=await sb.auth.getSession(); var token=s&&s.data&&s.data.session?s.data.session.access_token:null;
+      var res=await fetch('/.netlify/functions/deal-send-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token, to:email, subject:_rfpSubject, body:body, dealId:dealId})});
+      var data=await res.json().catch(function(){return null;});
+      if(data&&data.ok){ if(btn){ btn.textContent='✓ Sent'; } if(typeof aiToast==='function') aiToast(data.message||('Sent to '+email)); }
+      else { if(btn){ btn.disabled=false; btn.textContent='✉ Send'; } if(typeof aiToast==='function') aiToast((data&&data.error)||'Could not send — copy the RFP instead.'); }
+    }catch(e){ if(btn){ btn.disabled=false; btn.textContent='✉ Send'; } if(typeof aiToast==='function') aiToast('Network error.'); }
+  }
 
   /* ---------- create: proposal ---------- */
   async function newProposal(dealId){
@@ -2624,6 +2696,7 @@ window.DF = (function(){
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask, recGo:recGo,
     newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, buildTourFromTouring:buildTourFromTouring, draftTourEmail:draftTourEmail, copyTourEmail:copyTourEmail, newProposal:newProposal, newRound:newRound,
+    generateRfp:generateRfp, copyRfp:copyRfp, downloadRfp:downloadRfp, sendRfpTo:sendRfpTo,
     setStage:setStage, basisChange:basisChange, marketCheck:marketCheck, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
     proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead,
     shareDeal:shareDeal, toggleProposalVisible:toggleProposalVisible,
