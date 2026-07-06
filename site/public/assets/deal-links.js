@@ -153,13 +153,24 @@
       toast('<span>This questionnaire already has a deal.</span><a href="'+dealUrl(existing.id)+'">Open deal →</a>');
       return existing.id;
     }
-    var deal=await createDeal({clientName:intake.company_name});
+    var deal=await createDeal({clientName:intake.company_name, hsCompanyId:intake.hs_company_id||null});
     var added=0;
     for(var i=0;i<(props||[]).length;i++){
       try{ await addProperty(deal.id, props[i]); added++; }catch(e){ /* keep going — partial list beats none */ }
     }
     await linkIntake(intake, deal.id);
     toast('<span>Deal created for <b>'+esc(deal.client_name)+'</b>'+(added?' with its top '+added+' matched buildings':'')+'.</span><a href="'+dealUrl(deal.id)+'">Open deal →</a>', true);
+    return deal.id;
+  }
+
+  /* ---------- package / shortlist → deal ---------- */
+  async function startDealWithBuildings(opts){
+    opts=opts||{};
+    var deal=await createDeal({clientName:opts.clientName, hsCompanyId:opts.hsCompanyId});
+    for(var i=0;i<(opts.props||[]).length;i++){
+      try{ await addProperty(deal.id, opts.props[i]); }catch(e){ /* partial list beats none */ }
+    }
+    if(opts.navigate!==false){ location.href=dealUrl(deal.id); }
     return deal.id;
   }
 
@@ -177,6 +188,7 @@
   window.DealLinks={
     createDeal:createDeal, listActiveDeals:listActiveDeals, addProperty:addProperty,
     addTourStop:addTourStop, openAddToDeal:openAddToDeal,
-    startDealFromIntake:startDealFromIntake, startPursuit:startPursuit, dealUrl:dealUrl
+    startDealFromIntake:startDealFromIntake, startDealWithBuildings:startDealWithBuildings,
+    startPursuit:startPursuit, dealUrl:dealUrl
   };
 })();

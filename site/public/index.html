@@ -2338,7 +2338,7 @@
     }
     (chHs||[]).forEach(function(co){ map['hs:'+co.id]={key:'hs:'+co.id,_nn:cnorm(co.name),id:co.id,name:co.name,industry:co.industry,city:co.city,domain:co.domain,employees:co.employees,inHubspot:true,source:'hubspot',questionnaires:[],packages:[],comps:[]}; });
     clLoadLocal().forEach(function(lc){ var nn=cnorm(lc.name),hit=false; for(var k in map){ if(map[k]._nn===nn) hit=true; } if(!hit) map['local:'+nn]={key:'local:'+nn,_nn:nn,id:null,name:lc.name,industry:lc.industry||null,inHubspot:false,source:'local',questionnaires:[],packages:[],comps:[]}; });
-    (chIntakes||[]).forEach(function(it){ ensureByName(it.company_name||'Client').questionnaires.push(it); });
+    (chIntakes||[]).forEach(function(it){ var byId=it.hs_company_id&&map['hs:'+it.hs_company_id]; (byId||ensureByName(it.company_name||'Client')).questionnaires.push(it); });
     (chPkgs||[]).forEach(function(p){ ensureByName(p.clientName||'Client').packages.push(p); });
     (chComps||[]).forEach(function(cm){ if(cm.tenant) ensureByName(cm.tenant).comps.push(cm); });
     return Object.keys(map).map(function(k){return map[k];}).sort(function(a,b){ return (clActivity(b)-clActivity(a)) || a.name.localeCompare(b.name); });
@@ -2402,6 +2402,19 @@
     try{ await window.DealLinks.startPursuit({name:c.name, hsCompanyId:c.id||null}); }
     catch(e){ alert(e.message||'Could not create the deal.'); }
   };
+  // package → deal: seed a new deal with the package's buildings
+  window.clientsPkgDeal=async function(key, pi, btn){
+    var c=(chRoster||[]).filter(function(x){return x.key===key;})[0];
+    var p=c&&c.packages&&c.packages[pi];
+    if(!p || !window.DealLinks) return;
+    var props=(p.buildingIds||[]).map(function(id){
+      var b=BUILDINGS.filter(function(x){return x.id===id;})[0];
+      return b?{building_id:b.id, name:b.name, address:b.addr, status:'considering'}:null;
+    }).filter(Boolean);
+    if(btn){ btn.disabled=true; btn.textContent='Creating…'; }
+    try{ await window.DealLinks.startDealWithBuildings({clientName:p.clientName||c.name, hsCompanyId:c.id||null, props:props}); }
+    catch(e){ if(btn){ btn.disabled=false; btn.textContent='→ Deal'; } alert(e.message||'Could not create the deal.'); }
+  };
 
   function clSection(title, extra, inner){
     return '<div class="cl-sec"><div class="cl-sec-h"><span>'+title+'</span>'+(extra||'')+'</div>'+inner+'</div>';
@@ -2420,10 +2433,13 @@
         '<span class="q-badge'+(done?'':' pend')+'">'+(done?'✓ View results':'Awaiting')+'</span></div>'; }).join('')
       : '<div class="q-empty small">No questionnaires yet.</div>';
 
-    // Packages
-    var pHtml = c.packages.length ? c.packages.map(function(p){
+    // Packages — "→ Deal" turns a shared shortlist into a pipeline deal (a won
+    // package becoming the engagement is the natural conversion moment)
+    var pHtml = c.packages.length ? c.packages.map(function(p,pi){
       return '<div class="q-row" onclick="openActivity()"><div style="min-width:0"><div class="q-co">'+cmEsc(p.clientName||c.name)+'</div>'+
-        '<div class="q-meta">'+(p.buildingIds?p.buildingIds.length:0)+' buildings · created '+timeAgo(p.createdAt)+'</div></div><span class="q-badge pend">View</span></div>'; }).join('')
+        '<div class="q-meta">'+(p.buildingIds?p.buildingIds.length:0)+' buildings · created '+timeAgo(p.createdAt)+'</div></div>'+
+        '<button class="cl-secbtn" onclick="event.stopPropagation();clientsPkgDeal(\''+cmEsc(c.key)+'\','+pi+',this)" title="Start a deal seeded with this package\'s buildings">→ Deal</button>'+
+        '<span class="q-badge pend">View</span></div>'; }).join('')
       : '<div class="q-empty small">No packages shared yet.</div>';
 
     // Comps
@@ -2439,7 +2455,7 @@
         '<div class="cl-dsub">'+(meta.length?meta.join(' · '):'—')+'</div></div>'+
         (c.inHubspot?'':'<button class="cl-add" onclick="clientsAddOpen(\''+cmEsc(c.name)+'\')">Add to HubSpot</button>')+
         '<button class="cl-add" onclick="clientsNewDeal(\''+cmEsc(c.key)+'\')">+ New deal</button></div>'+
-      clSection('Questionnaires', '<button class="cl-secbtn" onclick="openQuestionnaire()">+ New</button>', qHtml)+
+      clSection('Questionnaires', '<button class="cl-secbtn" onclick="openQuestionnaire(\''+cmEsc(c.name)+'\''+(c.id?',\''+cmEsc(c.id)+'\'':'')+')">+ New</button>', qHtml)+
       clSection('Packages', '<button class="cl-secbtn" onclick="openShare()">+ New</button>', pHtml)+
       clSection('Comps', '<button class="cl-secbtn" onclick="marketSub(\'comps\')">Open Comps</button>', coHtml)+
       clSection('Proposals &amp; leases', '<a class="cl-secbtn" href="deals.html">Open Deals ↗</a>', '<div id="clDeals">'+(c.id?'<div class="q-empty small">Loading…</div>':'<div class="cl-soon">Link this client to HubSpot to pull their proposals and leases from Deals.</div>')+'</div>')+
@@ -2695,10 +2711,12 @@
 
   // ============ CLIENT QUESTIONNAIRE (intake → auto-matched shortlist) ============
   async function qToken(){ if(!window.vantageSB) return null; var s=await window.vantageSB.auth.getSession(); return (s&&s.data&&s.data.session)?s.data.session.access_token:null; }
-  window.openQuestionnaire=function(){
+  var qPendingHsId=null; // set when the questionnaire is created from a client's hub page
+  window.openQuestionnaire=function(prefillName, hsCompanyId){
+    qPendingHsId=hsCompanyId||null;
     document.getElementById('qModal').classList.add('show');
     document.getElementById('qMain').style.display=''; document.getElementById('qDetail').style.display='none';
-    document.getElementById('qNewLink').style.display='none'; document.getElementById('qCompany').value='';
+    document.getElementById('qNewLink').style.display='none'; document.getElementById('qCompany').value=(typeof prefillName==='string'?prefillName:'');
     qLoadList();
   };
   function qClose(){ document.getElementById('qModal').classList.remove('show'); }
@@ -2717,7 +2735,7 @@
     var btn=document.getElementById('qCreateBtn'); btn.disabled=true; btn.textContent='Creating…';
     try{
       var token=await qToken();
-      var res=await fetch('/.netlify/functions/create-intake',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token, company:company})});
+      var res=await fetch('/.netlify/functions/create-intake',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token, company:company, hsCompanyId:qPendingHsId||undefined})});
       var d=await res.json(); if(!res.ok) throw new Error(d.error||'Error');
       var nl=document.getElementById('qNewLink'); nl.style.display='block';
       nl.innerHTML='<div class="q-nl-row"><input readonly id="qNlUrl" value="'+cmEsc(d.url)+'"><button id="qNlCopy">Copy</button></div><div class="q-nl-note">Send this to '+cmEsc(company)+'. Their answers appear below once submitted.</div>';

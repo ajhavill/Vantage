@@ -19,8 +19,14 @@ exports.handler = async (event) => {
   const user = await userFromToken(token);
   if (!user) return json(401, { error: "Your session has expired — please sign in again." });
 
-  const r = await rest("intakes?owner_id=eq." + encodeURIComponent(user.id) +
-    "&select=slug,company_name,status,responses,roster_filename,created_at,completed_at&order=created_at.desc&limit=300");
+  const cols = "slug,company_name,status,responses,roster_filename,created_at,completed_at";
+  // hs_company_id ships in schema.sql's client-spine migration — retry without it until applied
+  let r = await rest("intakes?owner_id=eq." + encodeURIComponent(user.id) +
+    "&select=" + cols + ",hs_company_id&order=created_at.desc&limit=300");
+  if (!r.ok && /hs_company_id/i.test(String(r.text || ""))) {
+    r = await rest("intakes?owner_id=eq." + encodeURIComponent(user.id) +
+      "&select=" + cols + "&order=created_at.desc&limit=300");
+  }
   if (!r.ok) return json(500, { error: "Lookup failed: " + (r.text || r.status) });
   return json(200, { intakes: Array.isArray(r.data) ? r.data : [] });
 };

@@ -30,11 +30,23 @@ exports.handler = async (event) => {
 
   const slug = slugGen();
   const company = String(body.company || "Client").slice(0, 160);
-  const r = await rest("intakes", {
+  const row = { slug: slug, owner_id: user.id, company_name: company, status: "sent" };
+  // client spine: tie the questionnaire to a HubSpot company when created from a
+  // client's hub page (column ships in schema.sql; degrade until it's applied)
+  if (body.hsCompanyId) row.hs_company_id = String(body.hsCompanyId).slice(0, 64);
+  let r = await rest("intakes", {
     method: "POST",
     headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
-    body: JSON.stringify({ slug: slug, owner_id: user.id, company_name: company, status: "sent" })
+    body: JSON.stringify(row)
   });
+  if (!r.ok && row.hs_company_id && /hs_company_id/i.test(String(r.text || ""))) {
+    delete row.hs_company_id;
+    r = await rest("intakes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify(row)
+    });
+  }
   if (!r.ok) return json(500, { error: "Could not create: " + (r.text || r.status) });
 
   const h = event.headers || {};
