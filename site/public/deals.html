@@ -622,9 +622,13 @@ window.DF = (function(){
   async function loadDeals(){
     try{
       deals=await q(sb.from('deals').select('*').order('created_at',{ascending:false}));
-      var dl=null, wantModel=false; try{ var qp=new URLSearchParams(location.search); dl=qp.get('deal'); wantModel=qp.get('model')==='1'; }catch(e){}
-      if(dl && deals.some(function(d){return d.id===dl;})){ openDeal(dl); if(wantModel) setTimeout(function(){ openModel(dl); }, 90); }
-      else showDashboard();
+      var dl=null, wantModel=false, doAct=null, doTask=null;
+      try{ var qp=new URLSearchParams(location.search); dl=qp.get('deal'); wantModel=qp.get('model')==='1'; doAct=qp.get('do'); doTask=qp.get('task'); }catch(e){}
+      if(dl && deals.some(function(d){return d.id===dl;})){
+        if(doAct) recGo(doAct, dl, doTask); else openDeal(dl);
+        if(wantModel) setTimeout(function(){ openModel(dl); }, 90);
+      }
+      else { showDashboard(); if(doAct) recGo(doAct, null, doTask); }
     }catch(e){ $('pipe').innerHTML='<div class="loading">Could not load deals: '+esc(e.message)+'</div>'; }
   }
 
@@ -818,7 +822,9 @@ window.DF = (function(){
     var d=dealById[f.dealId]; var client=d?(d.client_name||'Deal'):'';
     var du=daysUntil(f.date), over=du<0;
     var when= over? (Math.abs(du)+'d late') : (du===0?'today':(du+'d'));
-    return '<div class="due'+(over?' over':'')+'"'+(f.dealId?' onclick="DF.openDeal(\''+f.dealId+'\')"':'')+'>'
+    var open = f.dealId ? ' onclick="DF.openDeal(\''+f.dealId+'\')"'
+      : (f.kind==='task'&&f.id ? ' onclick="DF.newTask(null,\''+f.id+'\')"' : '');
+    return '<div class="due'+(over?' over':'')+'"'+open+'>'
       + '<span class="due-when">'+esc(when)+'</span>'
       + '<span class="due-l"><span class="due-kind '+f.kind+'"></span>'+esc(f.label)+(client?' <em>· '+esc(client)+'</em>':'')+'</span>'
       + '<span class="due-date">'+fmtDate(f.date)+'</span>'
@@ -826,17 +832,27 @@ window.DF = (function(){
       + '</div>';
   }
   function recRow(r){
-    return '<div class="rec sev'+r.sev+'"'+(r.dealId?' onclick="DF.openDeal(\''+r.dealId+'\')"':'')+'>'
+    var click = ' onclick="DF.recGo(\''+(r.act||'')+'\','+(r.dealId?'\''+r.dealId+'\'':'null')+','+(r.taskId?'\''+r.taskId+'\'':'null')+')"';
+    return '<div class="rec sev'+r.sev+'"'+click+'>'
       + '<span class="rec-dot"></span><span class="rec-t">'+esc(r.text)+'</span><span class="rec-go">→</span></div>';
+  }
+  // Take the broker from a recommendation straight to the thing to do:
+  // open the deal (if any), then the right editor/section for the action.
+  async function recGo(act, dealId, taskId){
+    if(dealId){ await openDeal(dealId); }
+    if(act==='edittask'){ newTask(dealId||null, taskId); }
+    else if(act==='newtask'&&dealId){ newTask(dealId); }
+    else if(act==='commission'&&dealId){ editCommission(dealId); }
+    else if(act==='checklist'||act==='lease'){ var el=$(act==='checklist'?'checklistBody':'leaseSec'); if(el) el.scrollIntoView({behavior:'smooth', block:'start'}); }
   }
   function buildRecs(active, steps, tasks, absts, dealById){
     var recs=[];
-    steps.forEach(function(s){ var du=daysUntil(s.due_date); if(du!=null&&du<0){ var d=dealById[s.deal_id]; recs.push({sev:2, dealId:s.deal_id, text:'You\'re behind on “'+s.label+'”'+(d?' for '+(d.client_name||'a client'):'')}); } });
-    tasks.forEach(function(t){ if(!t.done&&t.due_date){ var du=daysUntil(t.due_date); if(du!=null&&du<0){ var d=dealById[t.deal_id]; recs.push({sev:2, dealId:t.deal_id, text:'Overdue task: '+t.title+(d&&d.client_name?' — '+d.client_name:'')}); } } });
-    absts.forEach(function(a){ if(a.expiration_date){ var du=daysUntil(a.expiration_date); if(du!=null&&du>=0&&du<=120){ var d=dealById[a.deal_id]; recs.push({sev:1, dealId:a.deal_id, text:(d&&d.client_name?d.client_name:'A client')+'’s lease expires in '+du+' days — start the renewal conversation'}); } } });
+    steps.forEach(function(s){ var du=daysUntil(s.due_date); if(du!=null&&du<0){ var d=dealById[s.deal_id]; recs.push({sev:2, dealId:s.deal_id, act:'checklist', text:'You\'re behind on “'+s.label+'”'+(d?' for '+(d.client_name||'a client'):'')}); } });
+    tasks.forEach(function(t){ if(!t.done&&t.due_date){ var du=daysUntil(t.due_date); if(du!=null&&du<0){ var d=dealById[t.deal_id]; recs.push({sev:2, dealId:t.deal_id, act:'edittask', taskId:t.id, text:'Overdue task: '+t.title+(d&&d.client_name?' — '+d.client_name:'')}); } } });
+    absts.forEach(function(a){ if(a.expiration_date){ var du=daysUntil(a.expiration_date); if(du!=null&&du>=0&&du<=120){ var d=dealById[a.deal_id]; recs.push({sev:1, dealId:a.deal_id, act:'lease', text:(d&&d.client_name?d.client_name:'A client')+'’s lease expires in '+du+' days — start the renewal conversation'}); } } });
     var taskDeal={}; tasks.forEach(function(t){ if(!t.done&&t.deal_id) taskDeal[t.deal_id]=true; });
-    active.forEach(function(d){ if(!taskDeal[d.id]) recs.push({sev:0, dealId:d.id, text:'No next action set for '+(d.client_name||'a deal')+' — add a task'}); });
-    active.forEach(function(d){ if(d.commission_amount==null && d.commission_pct==null) recs.push({sev:0, dealId:d.id, text:'Add commission terms for '+(d.client_name||'a deal')}); });
+    active.forEach(function(d){ if(!taskDeal[d.id]) recs.push({sev:0, dealId:d.id, act:'newtask', text:'No next action set for '+(d.client_name||'a deal')+' — add a task'}); });
+    active.forEach(function(d){ if(d.commission_amount==null && d.commission_pct==null) recs.push({sev:0, dealId:d.id, act:'commission', text:'Add commission terms for '+(d.client_name||'a deal')}); });
     recs.sort(function(a,b){ return b.sev-a.sev; });
     return recs.slice(0,7);
   }
@@ -1009,7 +1025,7 @@ window.DF = (function(){
       + '<div class="sec"><div class="sec-h"><h2>Tour schedule</h2><span class="hint">Building visits for this client</span></div>'+toursSection+'</div>'
       + '<div class="sec"><div class="sec-h"><h2>Proposals &amp; rounds</h2>'+addProposalBtn+'</div>'+propsHtmlList+'</div>'
       + '<div class="sec"><div class="sec-h"><h2>Transaction checklist</h2><span class="hint">Every step from engagement to move-in</span></div><div id="checklistBody">'+checklistSection(d,steps)+'</div></div>'
-      + '<div class="sec"><div class="sec-h"><h2>Lease abstract</h2><span class="hint">The executed lease\'s key terms — your client\'s permanent record</span></div>'
+      + '<div class="sec" id="leaseSec"><div class="sec-h"><h2>Lease abstract</h2><span class="hint">The executed lease\'s key terms — your client\'s permanent record</span></div>'
       +   (abstract ? abstractCard(abstract, d.id)
                     : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No lease abstract yet.</div><button class="miniadd" onclick="DF.editAbstract(\''+d.id+'\')">+ Create lease abstract</button>')
       +   leaseDocsBlock(d.id, abstract?abstract.id:null, leaseDocs)
@@ -2477,7 +2493,7 @@ window.DF = (function(){
     openModel:openModel, modelInput:modelInput, modelToggle:modelToggle, modelDeal:modelDeal, modelAdd:modelAdd, modelRemove:modelRemove, modelUnlink:modelUnlink, modelPrint:modelPrint, modelPdf:modelPdf, modelExcel:modelExcel, modelScenario:modelScenario, modelPull:modelPull,
     showDashboard:showDashboard, showPipeline:showPipeline, setPipeView:setPipeView, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, toggleClosed:toggleClosed,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
-    newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask,
+    newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask, recGo:recGo,
     newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, buildTourFromTouring:buildTourFromTouring, draftTourEmail:draftTourEmail, copyTourEmail:copyTourEmail, newProposal:newProposal, newRound:newRound,
     setStage:setStage, basisChange:basisChange, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
     proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead,
