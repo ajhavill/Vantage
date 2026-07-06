@@ -60,23 +60,34 @@
 
   function statCard(k, v, sub) { return '<div class="bh-stat"><div class="k">' + k + '</div><div class="v">' + v + '</div>' + (sub ? '<div class="s">' + esc(sub) + '</div>' : '') + '</div>'; }
   function byStageMini(active) { var c = {}; active.forEach(function (d) { c[d.stage] = (c[d.stage] || 0) + 1; }); return STAGES.filter(function (s) { return c[s[0]]; }).map(function (s) { return c[s[0]] + " " + s[1].toLowerCase(); }).join(" · "); }
+  // Deep-link into deals.html with the action to perform on arrival
+  // (do=edittask|newtask|commission|checklist|lease, task=<id>) — deals.html's
+  // loadDeals reads these params and opens the right editor/section.
+  function actHref(dealId, act, taskId) {
+    var qs = [];
+    if (dealId) qs.push("deal=" + dealId);
+    if (act) qs.push("do=" + act);
+    if (taskId) qs.push("task=" + taskId);
+    return "location.href='deals.html" + (qs.length ? "?" + qs.join("&") : "") + "'";
+  }
   function feedRow(f, byId) {
     var d = byId[f.dealId], client = d ? (d.client_name || "Deal") : "", du = daysUntil(f.date), over = du < 0;
     var when = over ? (Math.abs(du) + "d late") : (du === 0 ? "today" : (du + "d"));
-    return '<div class="bh-due' + (over ? " over" : "") + '"' + (f.dealId ? ' onclick="' + go(f.dealId) + '"' : "") + ">" +
+    var click = f.dealId ? go(f.dealId) : (f.kind === "task" && f.id ? actHref(null, "edittask", f.id) : "location.href='deals.html'");
+    return '<div class="bh-due' + (over ? " over" : "") + '" onclick="' + click + '">' +
       '<span class="bh-when">' + esc(when) + "</span>" +
       '<span class="bh-l"><span class="bh-kind ' + f.kind + '"></span>' + esc(f.label) + (client ? ' <em>· ' + esc(client) + "</em>" : "") + "</span>" +
       '<span class="bh-date">' + fmtDate(f.date) + "</span></div>";
   }
-  function recRow(r) { return '<div class="bh-rec s' + r.sev + '"' + (r.dealId ? ' onclick="' + go(r.dealId) + '"' : "") + '><span class="bh-dot"></span><span class="bh-rt">' + esc(r.text) + '</span><span class="bh-go">→</span></div>'; }
+  function recRow(r) { return '<div class="bh-rec s' + r.sev + '" onclick="' + actHref(r.dealId, r.act, r.taskId) + '"><span class="bh-dot"></span><span class="bh-rt">' + esc(r.text) + '</span><span class="bh-go">→</span></div>'; }
   function buildRecs(active, steps, tasks, absts, byId) {
     var recs = [];
-    steps.forEach(function (s) { var du = daysUntil(s.due_date); if (du != null && du < 0) { var d = byId[s.deal_id]; recs.push({ sev: 2, dealId: s.deal_id, text: "You're behind on “" + s.label + "”" + (d ? " for " + (d.client_name || "a client") : "") }); } });
-    tasks.forEach(function (t) { if (!t.done && t.due_date) { var du = daysUntil(t.due_date); if (du != null && du < 0) { var d = byId[t.deal_id]; recs.push({ sev: 2, dealId: t.deal_id, text: "Overdue task: " + t.title + (d && d.client_name ? " — " + d.client_name : "") }); } } });
-    absts.forEach(function (a) { if (a.expiration_date) { var du = daysUntil(a.expiration_date); if (du != null && du >= 0 && du <= 120) { var d = byId[a.deal_id]; recs.push({ sev: 1, dealId: a.deal_id, text: (d && d.client_name ? d.client_name : "A client") + "’s lease expires in " + du + " days — start the renewal conversation" }); } } });
+    steps.forEach(function (s) { var du = daysUntil(s.due_date); if (du != null && du < 0) { var d = byId[s.deal_id]; recs.push({ sev: 2, dealId: s.deal_id, act: "checklist", text: "You're behind on “" + s.label + "”" + (d ? " for " + (d.client_name || "a client") : "") }); } });
+    tasks.forEach(function (t) { if (!t.done && t.due_date) { var du = daysUntil(t.due_date); if (du != null && du < 0) { var d = byId[t.deal_id]; recs.push({ sev: 2, dealId: t.deal_id, act: "edittask", taskId: t.id, text: "Overdue task: " + t.title + (d && d.client_name ? " — " + d.client_name : "") }); } } });
+    absts.forEach(function (a) { if (a.expiration_date) { var du = daysUntil(a.expiration_date); if (du != null && du >= 0 && du <= 120) { var d = byId[a.deal_id]; recs.push({ sev: 1, dealId: a.deal_id, act: "lease", text: (d && d.client_name ? d.client_name : "A client") + "’s lease expires in " + du + " days — start the renewal conversation" }); } } });
     var td = {}; tasks.forEach(function (t) { if (!t.done && t.deal_id) td[t.deal_id] = true; });
-    active.forEach(function (d) { if (!td[d.id]) recs.push({ sev: 0, dealId: d.id, text: "No next action set for " + (d.client_name || "a deal") + " — add a task" }); });
-    active.forEach(function (d) { if (d.commission_amount == null && d.commission_pct == null) recs.push({ sev: 0, dealId: d.id, text: "Add commission terms for " + (d.client_name || "a deal") }); });
+    active.forEach(function (d) { if (!td[d.id]) recs.push({ sev: 0, dealId: d.id, act: "newtask", text: "No next action set for " + (d.client_name || "a deal") + " — add a task" }); });
+    active.forEach(function (d) { if (d.commission_amount == null && d.commission_pct == null) recs.push({ sev: 0, dealId: d.id, act: "commission", text: "Add commission terms for " + (d.client_name || "a deal") }); });
     recs.sort(function (a, b) { return b.sev - a.sev; });
     return recs.slice(0, 8);
   }
@@ -108,7 +119,7 @@
     steps.forEach(function (s) { if (daysUntil(s.due_date) < 0) overdue++; });
 
     var feed = [];
-    openTasks.forEach(function (t) { if (t.due_date) feed.push({ date: t.due_date, kind: "task", label: t.title, dealId: t.deal_id }); });
+    openTasks.forEach(function (t) { if (t.due_date) feed.push({ date: t.due_date, kind: "task", label: t.title, dealId: t.deal_id, id: t.id }); });
     steps.forEach(function (s) { feed.push({ date: s.due_date, kind: "step", label: s.label, dealId: s.deal_id }); });
     absts.forEach(function (a) { (a.key_dates || []).forEach(function (k) { if (k && k.date) feed.push({ date: k.date, kind: "critical", label: (k.label || "Critical date"), dealId: a.deal_id }); }); if (a.expiration_date) feed.push({ date: a.expiration_date, kind: "critical", label: "Lease expiration", dealId: a.deal_id }); });
     feed.sort(function (x, y) { return x.date < y.date ? -1 : (x.date > y.date ? 1 : 0); });

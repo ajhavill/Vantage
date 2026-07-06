@@ -622,9 +622,13 @@ window.DF = (function(){
   async function loadDeals(){
     try{
       deals=await q(sb.from('deals').select('*').order('created_at',{ascending:false}));
-      var dl=null, wantModel=false; try{ var qp=new URLSearchParams(location.search); dl=qp.get('deal'); wantModel=qp.get('model')==='1'; }catch(e){}
-      if(dl && deals.some(function(d){return d.id===dl;})){ openDeal(dl); if(wantModel) setTimeout(function(){ openModel(dl); }, 90); }
-      else showDashboard();
+      var dl=null, wantModel=false, doAct=null, doTask=null;
+      try{ var qp=new URLSearchParams(location.search); dl=qp.get('deal'); wantModel=qp.get('model')==='1'; doAct=qp.get('do'); doTask=qp.get('task'); }catch(e){}
+      if(dl && deals.some(function(d){return d.id===dl;})){
+        if(doAct) recGo(doAct, dl, doTask); else openDeal(dl);
+        if(wantModel) setTimeout(function(){ openModel(dl); }, 90);
+      }
+      else { showDashboard(); if(doAct) recGo(doAct, null, doTask); }
     }catch(e){ $('pipe').innerHTML='<div class="loading">Could not load deals: '+esc(e.message)+'</div>'; }
   }
 
@@ -818,7 +822,9 @@ window.DF = (function(){
     var d=dealById[f.dealId]; var client=d?(d.client_name||'Deal'):'';
     var du=daysUntil(f.date), over=du<0;
     var when= over? (Math.abs(du)+'d late') : (du===0?'today':(du+'d'));
-    return '<div class="due'+(over?' over':'')+'"'+(f.dealId?' onclick="DF.openDeal(\''+f.dealId+'\')"':'')+'>'
+    var open = f.dealId ? ' onclick="DF.openDeal(\''+f.dealId+'\')"'
+      : (f.kind==='task'&&f.id ? ' onclick="DF.newTask(null,\''+f.id+'\')"' : '');
+    return '<div class="due'+(over?' over':'')+'"'+open+'>'
       + '<span class="due-when">'+esc(when)+'</span>'
       + '<span class="due-l"><span class="due-kind '+f.kind+'"></span>'+esc(f.label)+(client?' <em>· '+esc(client)+'</em>':'')+'</span>'
       + '<span class="due-date">'+fmtDate(f.date)+'</span>'
@@ -826,17 +832,27 @@ window.DF = (function(){
       + '</div>';
   }
   function recRow(r){
-    return '<div class="rec sev'+r.sev+'"'+(r.dealId?' onclick="DF.openDeal(\''+r.dealId+'\')"':'')+'>'
+    var click = ' onclick="DF.recGo(\''+(r.act||'')+'\','+(r.dealId?'\''+r.dealId+'\'':'null')+','+(r.taskId?'\''+r.taskId+'\'':'null')+')"';
+    return '<div class="rec sev'+r.sev+'"'+click+'>'
       + '<span class="rec-dot"></span><span class="rec-t">'+esc(r.text)+'</span><span class="rec-go">→</span></div>';
+  }
+  // Take the broker from a recommendation straight to the thing to do:
+  // open the deal (if any), then the right editor/section for the action.
+  async function recGo(act, dealId, taskId){
+    if(dealId){ await openDeal(dealId); }
+    if(act==='edittask'){ newTask(dealId||null, taskId); }
+    else if(act==='newtask'&&dealId){ newTask(dealId); }
+    else if(act==='commission'&&dealId){ editCommission(dealId); }
+    else if(act==='checklist'||act==='lease'){ var el=$(act==='checklist'?'checklistBody':'leaseSec'); if(el) el.scrollIntoView({behavior:'smooth', block:'start'}); }
   }
   function buildRecs(active, steps, tasks, absts, dealById){
     var recs=[];
-    steps.forEach(function(s){ var du=daysUntil(s.due_date); if(du!=null&&du<0){ var d=dealById[s.deal_id]; recs.push({sev:2, dealId:s.deal_id, text:'You\'re behind on “'+s.label+'”'+(d?' for '+(d.client_name||'a client'):'')}); } });
-    tasks.forEach(function(t){ if(!t.done&&t.due_date){ var du=daysUntil(t.due_date); if(du!=null&&du<0){ var d=dealById[t.deal_id]; recs.push({sev:2, dealId:t.deal_id, text:'Overdue task: '+t.title+(d&&d.client_name?' — '+d.client_name:'')}); } } });
-    absts.forEach(function(a){ if(a.expiration_date){ var du=daysUntil(a.expiration_date); if(du!=null&&du>=0&&du<=120){ var d=dealById[a.deal_id]; recs.push({sev:1, dealId:a.deal_id, text:(d&&d.client_name?d.client_name:'A client')+'’s lease expires in '+du+' days — start the renewal conversation'}); } } });
+    steps.forEach(function(s){ var du=daysUntil(s.due_date); if(du!=null&&du<0){ var d=dealById[s.deal_id]; recs.push({sev:2, dealId:s.deal_id, act:'checklist', text:'You\'re behind on “'+s.label+'”'+(d?' for '+(d.client_name||'a client'):'')}); } });
+    tasks.forEach(function(t){ if(!t.done&&t.due_date){ var du=daysUntil(t.due_date); if(du!=null&&du<0){ var d=dealById[t.deal_id]; recs.push({sev:2, dealId:t.deal_id, act:'edittask', taskId:t.id, text:'Overdue task: '+t.title+(d&&d.client_name?' — '+d.client_name:'')}); } } });
+    absts.forEach(function(a){ if(a.expiration_date){ var du=daysUntil(a.expiration_date); if(du!=null&&du>=0&&du<=120){ var d=dealById[a.deal_id]; recs.push({sev:1, dealId:a.deal_id, act:'lease', text:(d&&d.client_name?d.client_name:'A client')+'’s lease expires in '+du+' days — start the renewal conversation'}); } } });
     var taskDeal={}; tasks.forEach(function(t){ if(!t.done&&t.deal_id) taskDeal[t.deal_id]=true; });
-    active.forEach(function(d){ if(!taskDeal[d.id]) recs.push({sev:0, dealId:d.id, text:'No next action set for '+(d.client_name||'a deal')+' — add a task'}); });
-    active.forEach(function(d){ if(d.commission_amount==null && d.commission_pct==null) recs.push({sev:0, dealId:d.id, text:'Add commission terms for '+(d.client_name||'a deal')}); });
+    active.forEach(function(d){ if(!taskDeal[d.id]) recs.push({sev:0, dealId:d.id, act:'newtask', text:'No next action set for '+(d.client_name||'a deal')+' — add a task'}); });
+    active.forEach(function(d){ if(d.commission_amount==null && d.commission_pct==null) recs.push({sev:0, dealId:d.id, act:'commission', text:'Add commission terms for '+(d.client_name||'a deal')}); });
     recs.sort(function(a,b){ return b.sev-a.sev; });
     return recs.slice(0,7);
   }
@@ -1009,7 +1025,7 @@ window.DF = (function(){
       + '<div class="sec"><div class="sec-h"><h2>Tour schedule</h2><span class="hint">Building visits for this client</span></div>'+toursSection+'</div>'
       + '<div class="sec"><div class="sec-h"><h2>Proposals &amp; rounds</h2>'+addProposalBtn+'</div>'+propsHtmlList+'</div>'
       + '<div class="sec"><div class="sec-h"><h2>Transaction checklist</h2><span class="hint">Every step from engagement to move-in</span></div><div id="checklistBody">'+checklistSection(d,steps)+'</div></div>'
-      + '<div class="sec"><div class="sec-h"><h2>Lease abstract</h2><span class="hint">The executed lease\'s key terms — your client\'s permanent record</span></div>'
+      + '<div class="sec" id="leaseSec"><div class="sec-h"><h2>Lease abstract</h2><span class="hint">The executed lease\'s key terms — your client\'s permanent record</span></div>'
       +   (abstract ? abstractCard(abstract, d.id)
                     : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No lease abstract yet.</div><button class="miniadd" onclick="DF.editAbstract(\''+d.id+'\')">+ Create lease abstract</button>')
       +   leaseDocsBlock(d.id, abstract?abstract.id:null, leaseDocs)
@@ -1214,22 +1230,56 @@ window.DF = (function(){
 
   /* ---------- create: deal ---------- */
   function newDeal(){
+    _pickedCompanyId=null;
     openSheet('<h3>New deal</h3><div class="ssub">Start tracking a client from tour through executed lease.</div>'
-      + fld('Client / company name','<input id="f_name" placeholder="e.g. Pico Robertson Partners" autofocus>')
+      + fld('Client / company name','<input id="f_name" placeholder="e.g. Pico Robertson Partners" autocomplete="off" oninput="DF.companySuggest(this.value)" autofocus><div class="sugg" id="f_csugg"></div>')
+      + '<div id="f_chint" style="font-size:11.5px;color:var(--ink-faint);margin-top:6px">Pick a HubSpot company to link this deal to that client — its proposals &amp; leases then appear on the client’s hub page.</div>'
       + '<div class="formerr" id="f_err"></div>'
       + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button><button class="btn pri" id="f_save">Create deal</button></div>');
+    loadCompanies();
     $('f_save').addEventListener('click',async function(){
       var name=($('f_name').value||'').trim();
       if(!name){ $('f_err').textContent='Enter a client name.'; return; }
+      // exact-name match auto-links even if the broker didn't click a suggestion
+      if(!_pickedCompanyId && Array.isArray(_companies)){ var mt=_companies.filter(function(c){return (c.name||'').toLowerCase()===name.toLowerCase();})[0]; if(mt) _pickedCompanyId=mt.id; }
       this.disabled=true; this.textContent='Creating…';
       try{
         var row;
         try{ row=await q(sb.from('deals').insert({owner_id:me.id, client_name:name, stage:'needs'}).select().single()); }
         catch(stageErr){ row=await q(sb.from('deals').insert({owner_id:me.id, client_name:name, stage:'touring'}).select().single()); }  // pre-migration fallback if the new stage values aren't enabled in the DB yet
+        // best-effort link to the HubSpot company; never blocks deal creation (e.g. column not migrated yet)
+        if(_pickedCompanyId){ try{ await q(sb.from('deals').update({hs_company_id:_pickedCompanyId}).eq('id',row.id)); row.hs_company_id=_pickedCompanyId; }catch(linkErr){} }
         deals.unshift(row); closeSheet(); openDeal(row.id);
       }catch(e){ $('f_err').textContent=e.message; this.disabled=false; this.textContent='Create deal'; }
     });
   }
+  /* ---------- client ↔ HubSpot company link (for the Clients hub) ---------- */
+  var _companies=null, _companiesLoading=null, _csuggList=[], _pickedCompanyId=null;
+  function loadCompanies(){
+    if(_companies!==null) return Promise.resolve(_companies);
+    if(_companiesLoading) return _companiesLoading;
+    _companiesLoading=(async function(){
+      try{
+        var s=await sb.auth.getSession(); var token=s&&s.data&&s.data.session?s.data.session.access_token:null;
+        var res=await fetch('/.netlify/functions/clients',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token, action:'list'})});
+        var d=await res.json(); _companies=(d&&d.companies)||[];
+      }catch(e){ _companies=[]; }
+      return _companies;
+    })();
+    return _companiesLoading;
+  }
+  function companySuggest(val){
+    var el=$('f_csugg'); if(!el) return;
+    _pickedCompanyId=null;
+    val=(val||'').trim().toLowerCase();
+    if(val.length<2){ el.innerHTML=''; el.classList.remove('on'); return; }
+    if(_companies===null){ loadCompanies().then(function(){ var f=$('f_name'); companySuggest(f?f.value:val); }); return; }
+    _csuggList=_companies.filter(function(c){ return (c.name||'').toLowerCase().indexOf(val)>=0; }).slice(0,8);
+    if(!_csuggList.length){ el.innerHTML='<div class="sugg-none">No HubSpot match — creates an unlinked client.</div>'; el.classList.add('on'); return; }
+    el.innerHTML=_csuggList.map(function(c,i){ return '<div class="sugg-i" onclick="DF.companyPick('+i+')"><span class="sugg-n">'+esc(c.name)+'</span><span class="sugg-a">'+esc(c.industry||'')+(c.city?' · '+esc(c.city):'')+'</span></div>'; }).join('');
+    el.classList.add('on');
+  }
+  function companyPick(i){ var c=_csuggList[i]; if(!c) return; _pickedCompanyId=c.id; if($('f_name')) $('f_name').value=c.name||''; var el=$('f_csugg'); if(el){ el.innerHTML=''; el.classList.remove('on'); } }
 
   /* ---------- create: property (with portal building search) ---------- */
   var _portalBuildings=null, _portalLoading=null, _suggList=[], _pickedBuildingId=null;
@@ -2443,8 +2493,8 @@ window.DF = (function(){
     openModel:openModel, modelInput:modelInput, modelToggle:modelToggle, modelDeal:modelDeal, modelAdd:modelAdd, modelRemove:modelRemove, modelUnlink:modelUnlink, modelPrint:modelPrint, modelPdf:modelPdf, modelExcel:modelExcel, modelScenario:modelScenario, modelPull:modelPull,
     showDashboard:showDashboard, showPipeline:showPipeline, setPipeView:setPipeView, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, toggleClosed:toggleClosed,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
-    newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask,
-    newDeal:newDeal, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, buildTourFromTouring:buildTourFromTouring, draftTourEmail:draftTourEmail, copyTourEmail:copyTourEmail, newProposal:newProposal, newRound:newRound,
+    newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask, recGo:recGo,
+    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, buildTourFromTouring:buildTourFromTouring, draftTourEmail:draftTourEmail, copyTourEmail:copyTourEmail, newProposal:newProposal, newRound:newRound,
     setStage:setStage, basisChange:basisChange, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
     proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead,
     shareDeal:shareDeal, toggleProposalVisible:toggleProposalVisible,
