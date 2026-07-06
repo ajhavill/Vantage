@@ -132,13 +132,14 @@ exports.handler = async (event) => {
 
   const ec = ex.economics || {};
   const conf = ex.confidence || "low";
-  // The extraction summary + caveats live in the round's Notes, so the review sheet
-  // shows a normal (pre-filled) round — the broker checks it against the attached PDF.
+  // The extraction summary + caveats live in the round's Notes as BULLETS, one per
+  // line (Andrew's call: scannable, not a wall of text). Each notable term gets its
+  // own bullet. The broker checks the pre-filled round against the attached PDF.
   const noteBits = [];
-  noteBits.push("AI-read from " + (body.filename || "PDF") + " (" + conf + " confidence)" + (ex.is_proposal === false ? " — may not be a proposal" : "") + ".");
-  if (ex.summary) noteBits.push(ex.summary);
-  if (ex.notable && ex.notable.length) noteBits.push("Notable: " + ex.notable.join("; ") + ".");
-  noteBits.push("Verify against the source PDF before marking final.");
+  noteBits.push("• AI-read from " + (body.filename || "PDF") + " (" + conf + " confidence)" + (ex.is_proposal === false ? " — may not be a proposal" : ""));
+  if (ex.summary) noteBits.push("• " + ex.summary);
+  (ex.notable || []).forEach((n) => { if (n) noteBits.push("• " + String(n)); });
+  noteBits.push("• Verify against the source PDF before marking final.");
 
   const basis = RENT_BASES.indexOf(ec.rent_basis) >= 0 ? ec.rent_basis : null;
   const row = {
@@ -150,7 +151,7 @@ exports.handler = async (event) => {
     base_rent_psf: ec.base_rent_psf, opex_psf: ec.opex_psf, size_sf: ec.size_sf,
     term_months: ec.term_months, annual_escalation_pct: ec.annual_escalation_pct,
     free_rent_months: ec.free_rent_months, ti_psf: ec.ti_psf,
-    summary: noteBits.join(" "), created_by: user.id
+    summary: noteBits.join("\n"), created_by: user.id
   };
   try {
     await sb.rest("proposal_rounds", {
