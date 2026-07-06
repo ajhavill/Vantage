@@ -802,6 +802,46 @@
   .cw-sec{margin-bottom:24px}
   .cw-h{font:700 14px 'Bricolage Grotesque',sans-serif;color:var(--ink);margin:0 0 10px}
 
+  /* ---- CLIENTS HUB ---- */
+  .cl-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+  .cl-headbtns{display:flex;gap:8px;flex-wrap:wrap;flex:none}
+  .cl-headbtns button{font:600 12.5px Inter;color:var(--ink);background:var(--paper);border:1px solid var(--line-2);border-radius:9px;padding:8px 13px;cursor:pointer}
+  .cl-headbtns button:hover{border-color:var(--accent);color:var(--accent)}
+  .cl-add{background:var(--accent)!important;color:#fff!important;border-color:var(--accent)!important}
+  .cl-add:hover{background:#255c69!important;color:#fff!important}
+  .cl-searchwrap{display:flex;align-items:center;gap:9px;background:var(--paper-2);border:1px solid var(--line-2);border-radius:11px;padding:0 14px;margin-bottom:16px;color:var(--ink-faint);max-width:520px}
+  .cl-search{flex:1;border:0;background:none;outline:none;font:14px Inter;color:var(--ink);padding:12px 0}
+  .cl-banner{font:500 12.5px/1.55 Inter;color:var(--ink-soft);background:rgba(45,110,126,.07);border:1px solid rgba(45,110,126,.2);border-radius:11px;padding:11px 14px;margin-bottom:16px}
+  .cl-banner b{color:var(--ink)}
+  .cl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+  .cl-card{border:1px solid var(--line);border-radius:14px;background:var(--paper-2);padding:16px;cursor:pointer;transition:border-color .14s,box-shadow .14s}
+  .cl-card:hover{border-color:var(--accent);box-shadow:var(--shadow)}
+  .cl-card-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  .cl-avatar{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:11px;background:var(--building);color:#fff;font:700 14px 'Bricolage Grotesque',sans-serif;flex:none}
+  .cl-avatar.big{width:52px;height:52px;font-size:19px;border-radius:14px}
+  .cl-hs{font:700 9.5px Inter;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);background:rgba(45,110,126,.1);border:1px solid rgba(45,110,126,.25);border-radius:6px;padding:2px 7px;white-space:nowrap}
+  .cl-off{font:700 9.5px Inter;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);background:var(--paper);border:1px solid var(--line-2);border-radius:6px;padding:2px 7px;white-space:nowrap}
+  .cl-name{font:700 15px 'Bricolage Grotesque',sans-serif;color:var(--ink);line-height:1.25;margin-bottom:2px}
+  .cl-ind{font:500 12px Inter;color:var(--ink-faint);margin-bottom:11px}
+  .cl-chips{display:flex;flex-wrap:wrap;gap:5px}
+  .cl-chip{font:600 10.5px Inter;color:var(--ink-soft);background:var(--paper);border:1px solid var(--line-2);border-radius:6px;padding:3px 8px}
+  .cl-chip.muted{color:var(--ink-faint)}
+  /* detail */
+  .cl-back{font:600 12.5px Inter;color:var(--ink-soft);background:none;border:0;cursor:pointer;padding:4px 0;margin-bottom:14px}
+  .cl-back:hover{color:var(--accent)}
+  .cl-dhead{display:flex;align-items:center;gap:16px;padding-bottom:18px;margin-bottom:8px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .cl-dheadmeta{flex:1;min-width:0}
+  .cl-dtop{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .cl-dname{font:800 22px 'Bricolage Grotesque',sans-serif;color:var(--ink);margin:0}
+  .cl-dsub{font:500 13px Inter;color:var(--ink-faint);margin-top:3px}
+  .cl-sec{margin-top:22px}
+  .cl-sec-h{display:flex;justify-content:space-between;align-items:center;font:700 12px Inter;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);margin-bottom:9px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+  .cl-secbtn{font:600 11.5px Inter;color:var(--accent);background:none;border:0;cursor:pointer;padding:0;text-decoration:none}
+  .cl-secbtn:hover{text-decoration:underline}
+  .cl-soon{font:500 12.5px/1.55 Inter;color:var(--ink-soft);background:var(--paper-2);border:1px dashed var(--line-2);border-radius:11px;padding:13px 15px}
+  .cl-soon b{color:var(--ink)}
+  .q-empty.small{padding:14px;font-size:12.5px}
+
   /* ---- COMPS (comparable transactions) ---- */
   .comps-v{display:none}
   .comps-v.show{display:block}
