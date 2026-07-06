@@ -1214,22 +1214,56 @@ window.DF = (function(){
 
   /* ---------- create: deal ---------- */
   function newDeal(){
+    _pickedCompanyId=null;
     openSheet('<h3>New deal</h3><div class="ssub">Start tracking a client from tour through executed lease.</div>'
-      + fld('Client / company name','<input id="f_name" placeholder="e.g. Pico Robertson Partners" autofocus>')
+      + fld('Client / company name','<input id="f_name" placeholder="e.g. Pico Robertson Partners" autocomplete="off" oninput="DF.companySuggest(this.value)" autofocus><div class="sugg" id="f_csugg"></div>')
+      + '<div id="f_chint" style="font-size:11.5px;color:var(--ink-faint);margin-top:6px">Pick a HubSpot company to link this deal to that client — its proposals &amp; leases then appear on the client’s hub page.</div>'
       + '<div class="formerr" id="f_err"></div>'
       + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button><button class="btn pri" id="f_save">Create deal</button></div>');
+    loadCompanies();
     $('f_save').addEventListener('click',async function(){
       var name=($('f_name').value||'').trim();
       if(!name){ $('f_err').textContent='Enter a client name.'; return; }
+      // exact-name match auto-links even if the broker didn't click a suggestion
+      if(!_pickedCompanyId && Array.isArray(_companies)){ var mt=_companies.filter(function(c){return (c.name||'').toLowerCase()===name.toLowerCase();})[0]; if(mt) _pickedCompanyId=mt.id; }
       this.disabled=true; this.textContent='Creating…';
       try{
         var row;
         try{ row=await q(sb.from('deals').insert({owner_id:me.id, client_name:name, stage:'needs'}).select().single()); }
         catch(stageErr){ row=await q(sb.from('deals').insert({owner_id:me.id, client_name:name, stage:'touring'}).select().single()); }  // pre-migration fallback if the new stage values aren't enabled in the DB yet
+        // best-effort link to the HubSpot company; never blocks deal creation (e.g. column not migrated yet)
+        if(_pickedCompanyId){ try{ await q(sb.from('deals').update({hs_company_id:_pickedCompanyId}).eq('id',row.id)); row.hs_company_id=_pickedCompanyId; }catch(linkErr){} }
         deals.unshift(row); closeSheet(); openDeal(row.id);
       }catch(e){ $('f_err').textContent=e.message; this.disabled=false; this.textContent='Create deal'; }
     });
   }
+  /* ---------- client ↔ HubSpot company link (for the Clients hub) ---------- */
+  var _companies=null, _companiesLoading=null, _csuggList=[], _pickedCompanyId=null;
+  function loadCompanies(){
+    if(_companies!==null) return Promise.resolve(_companies);
+    if(_companiesLoading) return _companiesLoading;
+    _companiesLoading=(async function(){
+      try{
+        var s=await sb.auth.getSession(); var token=s&&s.data&&s.data.session?s.data.session.access_token:null;
+        var res=await fetch('/.netlify/functions/clients',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token, action:'list'})});
+        var d=await res.json(); _companies=(d&&d.companies)||[];
+      }catch(e){ _companies=[]; }
+      return _companies;
+    })();
+    return _companiesLoading;
+  }
+  function companySuggest(val){
+    var el=$('f_csugg'); if(!el) return;
+    _pickedCompanyId=null;
+    val=(val||'').trim().toLowerCase();
+    if(val.length<2){ el.innerHTML=''; el.classList.remove('on'); return; }
+    if(_companies===null){ loadCompanies().then(function(){ var f=$('f_name'); companySuggest(f?f.value:val); }); return; }
+    _csuggList=_companies.filter(function(c){ return (c.name||'').toLowerCase().indexOf(val)>=0; }).slice(0,8);
+    if(!_csuggList.length){ el.innerHTML='<div class="sugg-none">No HubSpot match — creates an unlinked client.</div>'; el.classList.add('on'); return; }
+    el.innerHTML=_csuggList.map(function(c,i){ return '<div class="sugg-i" onclick="DF.companyPick('+i+')"><span class="sugg-n">'+esc(c.name)+'</span><span class="sugg-a">'+esc(c.industry||'')+(c.city?' · '+esc(c.city):'')+'</span></div>'; }).join('');
+    el.classList.add('on');
+  }
+  function companyPick(i){ var c=_csuggList[i]; if(!c) return; _pickedCompanyId=c.id; if($('f_name')) $('f_name').value=c.name||''; var el=$('f_csugg'); if(el){ el.innerHTML=''; el.classList.remove('on'); } }
 
   /* ---------- create: property (with portal building search) ---------- */
   var _portalBuildings=null, _portalLoading=null, _suggList=[], _pickedBuildingId=null;
@@ -2444,7 +2478,7 @@ window.DF = (function(){
     showDashboard:showDashboard, showPipeline:showPipeline, setPipeView:setPipeView, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, toggleClosed:toggleClosed,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask,
-    newDeal:newDeal, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, buildTourFromTouring:buildTourFromTouring, draftTourEmail:draftTourEmail, copyTourEmail:copyTourEmail, newProposal:newProposal, newRound:newRound,
+    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, buildTourFromTouring:buildTourFromTouring, draftTourEmail:draftTourEmail, copyTourEmail:copyTourEmail, newProposal:newProposal, newRound:newRound,
     setStage:setStage, basisChange:basisChange, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
     proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead,
     shareDeal:shareDeal, toggleProposalVisible:toggleProposalVisible,
