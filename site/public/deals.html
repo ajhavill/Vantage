@@ -1175,6 +1175,26 @@ window.DF = (function(){
       + '</div>'
       + (a.options?'<div class="la-opts"><div class="la-l">Options</div>'+esc(a.options)+'</div>':'')
       + (kds.length?'<div class="la-kd"><div class="la-l">Critical dates</div>'+kds.map(function(k){return '<div class="la-kdrow"><span>'+esc(k.label||'—')+'</span><b>'+fmtDate(k.date)+'</b></div>';}).join('')+'</div>':'')
+      + aiReviewPanel(a)
+      + '</div>';
+  }
+  // Tenant-side lease risk review from the AI lease read (stored in abstract.data.__ai).
+  function aiReviewPanel(a){
+    var ai = a && a.data && a.data.__ai; if(!ai) return '';
+    var sevColor={high:'#b3372f',medium:'#b7791f',low:'#5b7183'};
+    var review=(ai.review||[]).slice().sort(function(x,y){ var o={high:0,medium:1,low:2}; return (o[x.severity]||3)-(o[y.severity]||3); });
+    var items = review.length ? review.map(function(r){
+      var c=sevColor[r.severity]||'#5b7183';
+      return '<div style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-top:1px solid var(--line,#eee)">'
+        + '<span style="flex:none;font:700 9.5px Inter;letter-spacing:.04em;color:#fff;background:'+c+';border-radius:4px;padding:2px 6px;margin-top:1px">'+esc((r.severity||'').toUpperCase())+'</span>'
+        + '<span style="font-size:12.5px;line-height:1.5">'+esc(r.issue||'')+'</span></div>';
+    }).join('') : '<div style="font-size:12px;color:var(--ink-faint);padding:4px 0">No notable tenant-side risks flagged.</div>';
+    var when=''; try{ when=new Date(ai.at).toLocaleDateString(); }catch(e){}
+    return '<div class="la-airev" style="margin-top:12px;border:1px solid #f0e2d0;background:#fbf7f0;border-radius:9px;padding:11px 13px">'
+      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><b style="font-size:12.5px;color:#8a5a1a">⚠ AI lease review</b>'
+      + '<span style="font:400 10.5px Inter;color:var(--ink-faint)">'+(review.length?review.length+' flag'+(review.length>1?'s':''):'no flags')+(when?' · '+esc(when):'')+' · '+esc(ai.confidence||'')+' confidence</span></div>'
+      + items
+      + '<div style="font:400 10.5px Inter;color:var(--ink-faint);margin-top:7px">AI-generated from the lease PDF — not legal advice. Verify against the document and counsel.</div>'
       + '</div>';
   }
 
@@ -1933,7 +1953,9 @@ window.DF = (function(){
         + '<div style="display:flex;gap:9px;align-items:center;flex:none">'+visBtn
         + '<button class="delx" onclick="DF.deleteDoc(\''+dc.id+'\',\''+esc(dc.storage_path)+'\',\''+dealId+'\')">remove</button></div></div>';
     }).join('');
-    return '<div class="docs" style="margin-top:12px">'+list+'<button class="miniadd" onclick="DF.attachLeaseDoc(\''+dealId+'\',\''+(abstractId||'')+'\')">📎 Attach lease document (PDF)</button></div>';
+    return '<div class="docs" style="margin-top:12px">'+list
+      + '<button class="miniadd" onclick="DF.attachLeaseDoc(\''+dealId+'\',\''+(abstractId||'')+'\')">📎 Attach lease document (PDF)</button>'
+      + '<button class="miniadd ai" onclick="DF.readLease(\''+dealId+'\')" title="Upload the executed lease PDF — Claude abstracts the terms and flags tenant-side risks">📄 Read the signed lease (AI)</button></div>';
   }
   function attachLeaseDoc(dealId, abstractId){
     var inp=document.createElement('input');
@@ -2043,6 +2065,35 @@ window.DF = (function(){
         openDeal(dealId);                       // show the attached file now
         setTimeout(function(){ openDeal(dealId); }, 32000);   // then the draft round
       }catch(e){ alert('Could not read that PDF: '+(e.message||e)); }
+    };
+    inp.click();
+  }
+  // Read the executed lease PDF → abstract fields + critical dates + tenant-side risk
+  // review. Safe: if an abstract already exists, only the AI review is attached (the
+  // broker's typed fields are never overwritten); otherwise a pre-filled draft is created.
+  function readLease(dealId){
+    var inp=document.createElement('input');
+    inp.type='file'; inp.accept='.pdf,application/pdf';
+    inp.onchange=async function(){
+      var file=inp.files&&inp.files[0]; if(!file) return;
+      if(!/pdf$/i.test(file.name) && file.type!=='application/pdf'){ alert('Please pick a PDF of the executed lease.'); return; }
+      if(file.size>15*1024*1024){ alert('File too large — 15MB max.'); return; }
+      var safe=file.name.replace(/[^A-Za-z0-9._-]/g,'_');
+      var path=dealId+'/'+randSlug(8)+'_'+safe;
+      try{
+        var up=await sb.storage.from('deal-files').upload(path, file, {upsert:false, contentType:file.type||'application/pdf'});
+        if(up.error) throw up.error;
+        await q(sb.from('documents').insert({deal_id:dealId, proposal_id:null, kind:'lease',
+          filename:file.name, storage_path:path, mime:file.type||'application/pdf', size_bytes:file.size, uploaded_by:me.id}).select().single());
+        var s=await sb.auth.getSession(); var token=(s&&s.data&&s.data.session)?s.data.session.access_token:null;
+        if(!token) throw new Error('Your session expired — please sign in again.');
+        var res=await fetch('/.netlify/functions/deal-ai-abstract-background',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({token:token, dealId:dealId, storagePath:path, filename:file.name})});
+        if(res.status!==202 && !res.ok) throw new Error('Could not start the lease read (HTTP '+res.status+'). Is the AI key set up?');
+        aiToast('📄 Claude is reading the lease — the abstract and risk review will appear in ~40 seconds.');
+        openDeal(dealId);
+        setTimeout(function(){ openDeal(dealId); }, 42000);
+      }catch(e){ alert('Could not read that lease: '+(e.message||e)); }
     };
     inp.click();
   }
@@ -2531,7 +2582,7 @@ window.DF = (function(){
     attachDoc:attachDoc, attachLeaseDoc:attachLeaseDoc, downloadDoc:downloadDoc, deleteDoc:deleteDoc, toggleDocVisible:toggleDocVisible,
     aiDraft:aiDraft, aiPickTmpl:aiPickTmpl, aiDocx:aiDocx, toggleVoice:toggleVoice, editRound:editRound, extractFromPdf:extractFromPdf,
     newTourStop:newTourStop, editTourStop:editTourStop, toggleTourVisible:toggleTourVisible, tourPropChange:tourPropChange,
-    editAbstract:editAbstract, addKeyDate:addKeyDate, toggleAbstractVisible:toggleAbstractVisible,
+    editAbstract:editAbstract, addKeyDate:addKeyDate, toggleAbstractVisible:toggleAbstractVisible, readLease:readLease,
     effectiveRent:effectiveRent, grossEquiv:grossEquiv
   };
 })();
