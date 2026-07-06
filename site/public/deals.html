@@ -1017,6 +1017,7 @@ window.DF = (function(){
       +     '<select class="fld" style="width:auto" onchange="DF.setStage(\''+d.id+'\',this.value)">'+stageOpts+'</select></div>'
       +   '</div>'
       + '</div>'
+      + nextActionBanner(d, steps, proposals, tours, abstract)
       + '<div id="snapWrap">'+snapshotSection(d,steps)+'</div>'
       + '<div class="sec"><div class="sec-h"><h2>Tasks &amp; next steps</h2><span class="hint">Your to-dos for this client</span></div><div id="tasksBody">'+tasksSection(d,tasks)+'</div></div>'
       + '<div class="sec"><div class="sec-h"><h2>Occupancy model</h2><span class="hint">Compare options side-by-side — net effective, all-in &amp; NPV</span></div>'
@@ -1197,6 +1198,25 @@ window.DF = (function(){
       + items
       + '<div style="font:400 10.5px Inter;color:var(--ink-faint);margin-top:7px">AI-generated from the lease PDF — not legal advice. Verify against the document and counsel.</div>'
       + '</div>';
+  }
+
+  // Stage-aware "what to do next" banner — makes the deal page guided, not a wall of sections.
+  function nextActionBanner(d, steps, proposals, tours, abstract){
+    var hasProp=(steps!==undefined); // steps present ⇒ deal loaded
+    var map={
+      needs:      { t:'Define the requirement and add the buildings in play.',            label:'+ Add building',   act:"DF.newProperty('"+d.id+"')" },
+      touring:    { t:'Schedule tours for the buildings you’re considering.',              label:'↻ Build tour',     act:"DF.buildTourFromTouring('"+d.id+"')" },
+      evaluating: { t:'Request proposals from the listing brokers.',                       label:'📋 Generate RFP',  act:"DF.generateRfp('"+d.id+"')" },
+      proposals:  { t:'Compare the proposals and identify the preferred option.',          label:'⇄ Compare',        act:"DF.openCompare('"+d.id+"')" },
+      negotiation:{ t:'Negotiate terms, then read the lease when it arrives.',             label:'📄 Read the lease',act:"DF.readLease('"+d.id+"')" },
+      executed:   { t:'Abstract the executed lease and set its critical dates.',           label:(abstract?'Edit abstract':'+ Lease abstract'), act:"DF.editAbstract('"+d.id+"')" }
+    };
+    var m=map[d.stage]; if(!m) return '';
+    var stageLabel=(STAGE_LABEL[d.stage]||d.stage);
+    return '<div style="display:flex;align-items:center;gap:14px;background:linear-gradient(90deg,#eef4f6,#f7fafb);border:1px solid #dbe7ea;border-left:3px solid var(--accent,#2d6e7e);border-radius:10px;padding:11px 15px;margin-bottom:16px">'
+      + '<div style="min-width:0;flex:1"><div style="font:700 10.5px Inter;letter-spacing:.05em;color:var(--accent,#2d6e7e);text-transform:uppercase">'+esc(stageLabel)+' · next step</div>'
+      +   '<div style="font-size:13.5px;color:var(--ink,#1a2230);margin-top:1px">'+esc(m.t)+'</div></div>'
+      + '<button class="btn pri" style="flex:none;white-space:nowrap" onclick="'+m.act+'">'+m.label+'</button></div>';
   }
 
   function tourCard(s, propById, dealId){
