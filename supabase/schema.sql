@@ -252,3 +252,11 @@ create policy intakes_select on public.intakes for select using (
 create policy intakes_insert_own on public.intakes for insert with check (owner_id = auth.uid());
 create policy intakes_update_own on public.intakes for update using (owner_id = auth.uid());
 create policy intakes_delete_own on public.intakes for delete using (owner_id = auth.uid());
+
+-- 6) Client spine: link questionnaires to the client's HubSpot company id — the
+--    same bridge key the Clients hub, tenant-intel, comps, and (Phase 2) deals use.
+--    Lets the hub attach intakes to the right client without name-matching, and
+--    lets a deal created from a questionnaire carry the company id. Additive,
+--    safe to re-run; everything degrades gracefully until this is applied.
+alter table public.intakes add column if not exists hs_company_id text;
+create index if not exists intakes_hs_company_idx on public.intakes(org_id, hs_company_id);

@@ -456,7 +456,10 @@ window.TEN = (function(){
       var snapList = snaps.length ? '<div style="margin-top:8px;font-size:11.5px" class="muted">'+snaps.map(function(s){return fdate(s.captured_at)+': '+fnum(s.headcount)+(s.source&&s.source!=='manual'?' ('+esc(s.source)+')':'');}).join(' · ')+'</div>' : '';
       var addForm = internal ? '<div class="sect">Record a headcount snapshot</div>'
         + '<div class="snapform"><input id="snapN" type="number" min="0" placeholder="Headcount"><button onclick="TEN.addSnap(\''+id+'\')">Add snapshot</button><span id="snapMsg" class="muted" style="font-size:12px"></span></div>' : '';
-      $('dbody').innerHTML=kv+trend+snapList+addForm;
+      var pursue = (internal && window.DealLinks) ? '<div class="sect">Pursuit</div>'
+        + '<button class="dlk-btn" id="pursueBtn" onclick="TEN.startPursuit(\''+id+'\')">Start a deal for this tenant →</button>'
+        + '<div class="muted" style="font-size:12px;margin-top:6px">Creates a deal linked to this company (and their current building) in the pipeline.</div>' : '';
+      $('dbody').innerHTML=kv+trend+snapList+addForm+pursue;
     }catch(e){ $('dbody').innerHTML='<div class="loading">Could not load: '+esc(e.message)+'</div>'; }
   }
   function closeDrawer(){ $('scrim').classList.remove('on'); var d=$('drawer'); d.classList.remove('on'); d.setAttribute('aria-hidden','true'); }
@@ -467,6 +470,15 @@ window.TEN = (function(){
     try{ await callFn('tenant-snapshot', {companyId:id, headcount:n, source:'manual'});
       msg.textContent='Saved.'; await reload(true); openDrawer(id);
     }catch(e){ msg.textContent=e.message; }
+  }
+  // high-propensity tenant → a real pursuit in the deal pipeline (deal carries the
+  // HubSpot company id, so it also shows on their Clients-hub page)
+  async function startPursuit(id){
+    var t=TENANTS.filter(function(x){return x.id===id;})[0]; if(!t||!window.DealLinks) return;
+    var b=BUILD[t.buildingId]||{};
+    var btn=$('pursueBtn'); if(btn){ btn.disabled=true; btn.textContent='Creating the deal…'; }
+    try{ await window.DealLinks.startPursuit({name:t.name, hsCompanyId:t.id, buildingName:b.name||null, buildingId:t.buildingId||null}); }
+    catch(e){ if(btn){ btn.disabled=false; btn.textContent='Start a deal for this tenant →'; } alert(e.message||'Could not create the deal.'); }
   }
 
   /* ---------- controls ---------- */
@@ -494,8 +506,10 @@ window.TEN = (function(){
   }
 
   document.addEventListener('DOMContentLoaded', bindAuth);
-  return { setMode:setMode, toggle:toggle, render:render, reload:reload, sortBy:sortBy, openDrawer:openDrawer, closeDrawer:closeDrawer, addSnap:addSnap, hubspotSetup:hubspotSetup };
+  return { setMode:setMode, toggle:toggle, render:render, reload:reload, sortBy:sortBy, openDrawer:openDrawer, closeDrawer:closeDrawer, addSnap:addSnap, startPursuit:startPursuit, hubspotSetup:hubspotSetup };
 })();
 </script>
+<!-- Deal links — powers "Start a deal for this tenant" in the detail drawer. -->
+<script src="assets/deal-links.js"></script>
 </body>
 </html>

@@ -130,6 +130,7 @@
 <section class="detail" id="detailView">
   <div class="dsr-bar">
     <span class="dsr-name" id="dsrName"></span>
+    <button class="dsr-adddeal" onclick="window.addBuildingToDeal&&window.addBuildingToDeal()" title="Add this building to a client's deal">+ Add to deal</button>
     <button class="dsr-back" onclick="showPortfolio()">Back to market map
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
     </button>
@@ -983,6 +984,10 @@
   document.getElementById('lightbox').addEventListener('click',function(e){ if(e.target.id==='lightbox') lbClose(); });
   document.addEventListener('keydown',function(e){ if(!document.getElementById('lightbox').classList.contains('open'))return; if(e.key==='Escape')lbClose(); else if(e.key==='ArrowLeft')lbStep(-1); else if(e.key==='ArrowRight')lbStep(1); });
 
+  // bridge for the dossier's "+ Add to deal" button (deal-links.js owns the modal)
+  window.addBuildingToDeal=function(){
+    if(curB && window.DealLinks) window.DealLinks.openAddToDeal({id:curB.id, name:curB.name, addr:curB.addr});
+  };
   function openDetail(id, highlightCompany){
     curB=BUILDINGS.filter(function(b){return b.id===id})[0];
     if(!curB)return;
@@ -2333,7 +2338,7 @@
     }
     (chHs||[]).forEach(function(co){ map['hs:'+co.id]={key:'hs:'+co.id,_nn:cnorm(co.name),id:co.id,name:co.name,industry:co.industry,city:co.city,domain:co.domain,employees:co.employees,inHubspot:true,source:'hubspot',questionnaires:[],packages:[],comps:[]}; });
     clLoadLocal().forEach(function(lc){ var nn=cnorm(lc.name),hit=false; for(var k in map){ if(map[k]._nn===nn) hit=true; } if(!hit) map['local:'+nn]={key:'local:'+nn,_nn:nn,id:null,name:lc.name,industry:lc.industry||null,inHubspot:false,source:'local',questionnaires:[],packages:[],comps:[]}; });
-    (chIntakes||[]).forEach(function(it){ ensureByName(it.company_name||'Client').questionnaires.push(it); });
+    (chIntakes||[]).forEach(function(it){ var byId=it.hs_company_id&&map['hs:'+it.hs_company_id]; (byId||ensureByName(it.company_name||'Client')).questionnaires.push(it); });
     (chPkgs||[]).forEach(function(p){ ensureByName(p.clientName||'Client').packages.push(p); });
     (chComps||[]).forEach(function(cm){ if(cm.tenant) ensureByName(cm.tenant).comps.push(cm); });
     return Object.keys(map).map(function(k){return map[k];}).sort(function(a,b){ return (clActivity(b)-clActivity(a)) || a.name.localeCompare(b.name); });
@@ -2389,6 +2394,27 @@
 
   window.openClient=function(key){ clientsState.view='detail'; clientsState.selectedKey=key; renderClients(); };
   window.clientsBack=function(){ clientsState.view='list'; clientsState.selectedKey=null; renderClients(); };
+  // "+ New deal" on a client's hub page — the deal carries hs_company_id so it
+  // shows back up in this hub's Proposals & leases via deal-client-list (Phase 2)
+  window.clientsNewDeal=async function(key){
+    var c=(chRoster||[]).filter(function(x){return x.key===key;})[0];
+    if(!c || !window.DealLinks) return;
+    try{ await window.DealLinks.startPursuit({name:c.name, hsCompanyId:c.id||null}); }
+    catch(e){ alert(e.message||'Could not create the deal.'); }
+  };
+  // package → deal: seed a new deal with the package's buildings
+  window.clientsPkgDeal=async function(key, pi, btn){
+    var c=(chRoster||[]).filter(function(x){return x.key===key;})[0];
+    var p=c&&c.packages&&c.packages[pi];
+    if(!p || !window.DealLinks) return;
+    var props=(p.buildingIds||[]).map(function(id){
+      var b=BUILDINGS.filter(function(x){return x.id===id;})[0];
+      return b?{building_id:b.id, name:b.name, address:b.addr, status:'considering'}:null;
+    }).filter(Boolean);
+    if(btn){ btn.disabled=true; btn.textContent='Creating…'; }
+    try{ await window.DealLinks.startDealWithBuildings({clientName:p.clientName||c.name, hsCompanyId:c.id||null, props:props}); }
+    catch(e){ if(btn){ btn.disabled=false; btn.textContent='→ Deal'; } alert(e.message||'Could not create the deal.'); }
+  };
 
   function clSection(title, extra, inner){
     return '<div class="cl-sec"><div class="cl-sec-h"><span>'+title+'</span>'+(extra||'')+'</div>'+inner+'</div>';
@@ -2407,10 +2433,13 @@
         '<span class="q-badge'+(done?'':' pend')+'">'+(done?'✓ View results':'Awaiting')+'</span></div>'; }).join('')
       : '<div class="q-empty small">No questionnaires yet.</div>';
 
-    // Packages
-    var pHtml = c.packages.length ? c.packages.map(function(p){
+    // Packages — "→ Deal" turns a shared shortlist into a pipeline deal (a won
+    // package becoming the engagement is the natural conversion moment)
+    var pHtml = c.packages.length ? c.packages.map(function(p,pi){
       return '<div class="q-row" onclick="openActivity()"><div style="min-width:0"><div class="q-co">'+cmEsc(p.clientName||c.name)+'</div>'+
-        '<div class="q-meta">'+(p.buildingIds?p.buildingIds.length:0)+' buildings · created '+timeAgo(p.createdAt)+'</div></div><span class="q-badge pend">View</span></div>'; }).join('')
+        '<div class="q-meta">'+(p.buildingIds?p.buildingIds.length:0)+' buildings · created '+timeAgo(p.createdAt)+'</div></div>'+
+        '<button class="cl-secbtn" onclick="event.stopPropagation();clientsPkgDeal(\''+cmEsc(c.key)+'\','+pi+',this)" title="Start a deal seeded with this package\'s buildings">→ Deal</button>'+
+        '<span class="q-badge pend">View</span></div>'; }).join('')
       : '<div class="q-empty small">No packages shared yet.</div>';
 
     // Comps
@@ -2424,8 +2453,9 @@
       '<div class="cl-dhead"><span class="cl-avatar big">'+cmEsc(clInitials(c.name).toUpperCase())+'</span>'+
         '<div class="cl-dheadmeta"><div class="cl-dtop"><h1 class="cl-dname">'+cmEsc(c.name)+'</h1>'+hsTag+'</div>'+
         '<div class="cl-dsub">'+(meta.length?meta.join(' · '):'—')+'</div></div>'+
-        (c.inHubspot?'':'<button class="cl-add" onclick="clientsAddOpen(\''+cmEsc(c.name)+'\')">Add to HubSpot</button>')+'</div>'+
-      clSection('Questionnaires', '<button class="cl-secbtn" onclick="openQuestionnaire()">+ New</button>', qHtml)+
+        (c.inHubspot?'':'<button class="cl-add" onclick="clientsAddOpen(\''+cmEsc(c.name)+'\')">Add to HubSpot</button>')+
+        '<button class="cl-add" onclick="clientsNewDeal(\''+cmEsc(c.key)+'\')">+ New deal</button></div>'+
+      clSection('Questionnaires', '<button class="cl-secbtn" onclick="openQuestionnaire(\''+cmEsc(c.name)+'\''+(c.id?',\''+cmEsc(c.id)+'\'':'')+')">+ New</button>', qHtml)+
       clSection('Packages', '<button class="cl-secbtn" onclick="openShare()">+ New</button>', pHtml)+
       clSection('Comps', '<button class="cl-secbtn" onclick="marketSub(\'comps\')">Open Comps</button>', coHtml)+
       clSection('Proposals &amp; leases', '<a class="cl-secbtn" href="deals.html">Open Deals ↗</a>', '<div id="clDeals">'+(c.id?'<div class="q-empty small">Loading…</div>':'<div class="cl-soon">Link this client to HubSpot to pull their proposals and leases from Deals.</div>')+'</div>')+
@@ -2681,10 +2711,12 @@
 
   // ============ CLIENT QUESTIONNAIRE (intake → auto-matched shortlist) ============
   async function qToken(){ if(!window.vantageSB) return null; var s=await window.vantageSB.auth.getSession(); return (s&&s.data&&s.data.session)?s.data.session.access_token:null; }
-  window.openQuestionnaire=function(){
+  var qPendingHsId=null; // set when the questionnaire is created from a client's hub page
+  window.openQuestionnaire=function(prefillName, hsCompanyId){
+    qPendingHsId=hsCompanyId||null;
     document.getElementById('qModal').classList.add('show');
     document.getElementById('qMain').style.display=''; document.getElementById('qDetail').style.display='none';
-    document.getElementById('qNewLink').style.display='none'; document.getElementById('qCompany').value='';
+    document.getElementById('qNewLink').style.display='none'; document.getElementById('qCompany').value=(typeof prefillName==='string'?prefillName:'');
     qLoadList();
   };
   function qClose(){ document.getElementById('qModal').classList.remove('show'); }
@@ -2703,7 +2735,7 @@
     var btn=document.getElementById('qCreateBtn'); btn.disabled=true; btn.textContent='Creating…';
     try{
       var token=await qToken();
-      var res=await fetch('/.netlify/functions/create-intake',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token, company:company})});
+      var res=await fetch('/.netlify/functions/create-intake',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token, company:company, hsCompanyId:qPendingHsId||undefined})});
       var d=await res.json(); if(!res.ok) throw new Error(d.error||'Error');
       var nl=document.getElementById('qNewLink'); nl.style.display='block';
       nl.innerHTML='<div class="q-nl-row"><input readonly id="qNlUrl" value="'+cmEsc(d.url)+'"><button id="qNlCopy">Copy</button></div><div class="q-nl-note">Send this to '+cmEsc(company)+'. Their answers appear below once submitted.</div>';
@@ -2802,10 +2834,21 @@
           m.flags.map(function(x){return '<span class="q-tag warn">'+cmEsc(x)+'</span>';}).join('')+'</div></div>'+
           '<div class="q-mscore"><div class="v">'+m.score+'</div><div class="l">fit</div></div></div>';
       }).join('')+'</div>'+
-      '<div class="q-detail-actions"><button class="q-open-pf" id="qOpenPkg">Build a package from the top matches →</button></div>';
+      '<div class="q-detail-actions"><button class="q-open-pf" id="qOpenPkg">Build a package from the top matches →</button>'+
+      '<button class="q-open-pf" id="qStartDeal" style="margin-left:8px">'+((it.responses&&it.responses.__deal&&it.responses.__deal.id)?'Open this client’s deal →':'Start a deal from this questionnaire →')+'</button></div>';
     document.getElementById('qBack').onclick=function(){ el.style.display='none'; document.getElementById('qMain').style.display=''; };
     document.getElementById('qPdfBtn').onclick=function(){ qBuildPrintDoc(it); };
     document.getElementById('qOpenPkg').onclick=function(){ qClose(); if(window.openShareWith) window.openShareWith(matches.slice(0,6).map(function(m){return m.b.id;}), it.company_name); };
+    document.getElementById('qStartDeal').onclick=async function(){
+      var btn=this; if(!window.DealLinks) return;
+      var linked=it.responses&&it.responses.__deal&&it.responses.__deal.id;
+      if(linked){ location.href=window.DealLinks.dealUrl(linked); return; }
+      btn.disabled=true; btn.textContent='Creating the deal…';
+      try{
+        await window.DealLinks.startDealFromIntake(it, matches.slice(0,6).map(function(m){ return {building_id:m.b.id, name:m.b.name, address:m.b.addr, status:'considering'}; }));
+        btn.textContent='Open this client’s deal →'; btn.disabled=false;
+      }catch(e){ btn.disabled=false; btn.textContent='Start a deal from this questionnaire →'; alert(e.message||'Could not create the deal.'); }
+    };
     if(it.roster_filename) qrInit(it);
   }
   // ---- AI roster reader: fetch the uploaded sheet, parse it client-side, let Claude extract the team ----
@@ -2962,6 +3005,8 @@
   sb.auth.getSession().then(function(r){ if(r && r.data && r.data.session) showApp(r.data.session); else showLogin(); });
 })();
 </script>
+<!-- Deal links — "add to deal" / "start a deal" bridges from Market, Clients & Questionnaires into deals.html. -->
+<script src="assets/deal-links.js"></script>
 <!-- Van — AI tenant-rep assistant (self-contained widget; shows once a broker is signed in). Owned by the deal-flow session. -->
 <script src="assets/van.js"></script>
 <!-- Broker Home dashboard — takes over the Home tab with the deal command-center. Owned by the deal-flow session. -->
