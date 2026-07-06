@@ -1243,7 +1243,7 @@ window.DF = (function(){
       + '<td class="num">'+(ge==null?'—':psf(ge))+'</td>'
       + '<td class="num">'+(r.size_sf==null?'—':Number(r.size_sf).toLocaleString())+'</td>'
       + '<td class="num">'+(r.term_months==null?'—':(r.term_months+'mo'))+'</td>'
-      + '<td>'+esc(r.summary||'')+'<button class="rev" onclick="DF.editRound(\''+r.id+'\',\''+r.deal_id+'\')">'+(r.draft_text?'view proposal':(r.status==='draft'?'review':'edit'))+'</button></td>'
+      + '<td>'+esc(r.summary||'').replace(/\n/g,'<br>')+'<button class="rev" onclick="DF.editRound(\''+r.id+'\',\''+r.deal_id+'\')">'+(r.draft_text?'view proposal':(r.status==='draft'?'review':'edit'))+'</button></td>'
       + '</tr>';
   }
 
