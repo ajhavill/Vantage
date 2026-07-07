@@ -138,17 +138,87 @@
 <script>
 (function(){
   "use strict";
-  var slug=new URLSearchParams(location.search).get('d')||'';
+  var qp=new URLSearchParams(location.search);
+  var slug=qp.get('d')||'';
+  var dealId=qp.get('id')||'';
+  var viaPortal=qp.get('via')==='portal' && !!dealId;
+  var portalToken=null;
   var unlockedPass='';
   var RENT_BASES={FSG:'FSG',MG:'Modified Gross',IG:'Industrial Gross',NNN:'NNN',NN:'NN',N:'N',GROSS:'Flat Gross',ABS:'Absolute Net',OTHER:'Other'};
 
+  // portal mode: ride the logged-in portal session (or the broker Cockpit session,
+  // for "view as client" previews) instead of a passcode
+  function readPortalToken(){
+    try{
+      var s=JSON.parse(localStorage.getItem('vantage_portal_session')||'null');
+      if(s&&s.access_token&&(!s.expires_at||s.expires_at-Math.floor(Date.now()/1000)>30)) return s.access_token;
+    }catch(e){}
+    try{
+      var b=JSON.parse(localStorage.getItem('sb-siaoqjvvxuckyxpxftwt-auth-token')||'null');
+      if(b&&b.access_token) return b.access_token;
+    }catch(e){}
+    return null;
+  }
+
   // fire-and-forget engagement ping (records that the client opened / downloaded)
   function track(type, detail){
-    if(!slug||!unlockedPass) return;
+    var body=null;
+    if(viaPortal&&portalToken) body={dealId:dealId, token:portalToken, type:type, detail:detail||null};
+    else if(slug&&unlockedPass) body={slug:slug, passcode:unlockedPass, type:type, detail:detail||null};
+    if(!body) return;
     try{ fetch('/.netlify/functions/deal-track',{method:'POST',headers:{'Content-Type':'application/json'},keepalive:true,
-      body:JSON.stringify({slug:slug,passcode:unlockedPass,type:type,detail:detail||null})}); }catch(e){}
+      body:JSON.stringify(body)}); }catch(e){}
   }
   window.cvPrint=function(){ track('download','pdf'); setTimeout(function(){ window.print(); }, 120); };
+
+  // ---- Excel export of the side-by-side comparison (SheetJS, loaded on demand) ----
+  var _exportCols=null, _exportClient='Client', _xlsxLoading=null;
+  function loadXlsx(){
+    if(window.XLSX) return Promise.resolve();
+    if(_xlsxLoading) return _xlsxLoading;
+    _xlsxLoading=new Promise(function(resolve,reject){
+      var s=document.createElement('script');
+      s.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+      s.onload=function(){ resolve(); }; s.onerror=function(){ _xlsxLoading=null; reject(new Error('load failed')); };
+      document.head.appendChild(s);
+    });
+    return _xlsxLoading;
+  }
+  window.cvExcel=function(){
+    var cols=_exportCols; if(!cols||!cols.length) return;
+    loadXlsx().then(function(){
+      var sel=cols.map(function(c){ return c.round; });
+      var eff=sel.map(effectiveRent);
+      var head=['Metric'].concat(cols.map(function(c){ return (c.proposal.title||'Proposal')+(c.building?' — '+c.building:''); }));
+      function r(label,fn){ return [label].concat(sel.map(fn)); }
+      var aoa=[
+        head,
+        r('Building',            function(x,i){ return cols[i].building||''; }),
+        r('Rent structure',      function(x){ return basisLabel(x.rent_basis,x.rent_basis_label); }),
+        r('Size (SF)',           function(x){ return x.size_sf==null?null:Number(x.size_sf); }),
+        r('Term (months)',       function(x){ return x.term_months==null?null:Number(x.term_months); }),
+        r('Starting rate ($/SF/yr)',    function(x){ return x.base_rent_psf==null?null:Number(x.base_rent_psf); }),
+        r('Opex / NNN load ($/SF/yr)',  function(x){ return x.opex_psf==null?null:Number(x.opex_psf); }),
+        r('Annual escalation (%)',      function(x){ return x.annual_escalation_pct==null?null:Number(x.annual_escalation_pct); }),
+        r('Free rent (months)',         function(x){ return x.free_rent_months==null?null:Number(x.free_rent_months); }),
+        r('TI allowance ($/SF)',        function(x){ return x.ti_psf==null?null:Number(x.ti_psf); }),
+        ['Net effective rent ($/SF/yr)'].concat(eff.map(function(e){ return e?Number(e.netEff.toFixed(2)):null; })),
+        ['Total cost over term ($/SF)'].concat(eff.map(function(e){ return e?Number(e.costPerSF.toFixed(2)):null; })),
+        ['Total cost over term ($)'].concat(eff.map(function(e,i){
+          var sf=sel[i].size_sf==null?null:Number(sel[i].size_sf);
+          return (e&&sf)?Math.round(e.costPerSF*sf):null;
+        })),
+        [],
+        ['Net effective rent normalizes each proposal to one $/SF/yr (gross-equivalent), accounting for rent structure, escalations, free rent, and TI allowance over the term. Prepared by Havill & Co.']
+      ];
+      var ws=XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols']=[{wch:28}].concat(cols.map(function(){ return {wch:22}; }));
+      var wb=XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Proposal comparison');
+      XLSX.writeFile(wb, (_exportClient+' — proposal comparison.xlsx').replace(/[\\/:*?"<>|]/g,''));
+      track('download','xlsx');
+    }).catch(function(){ alert('Could not load the Excel engine — check your connection and try again.'); });
+  };
 
   function $(id){ return document.getElementById(id); }
   function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
@@ -198,7 +268,11 @@
       return { proposal:pr, building:(pr.property_id&&propName[pr.property_id])?propName[pr.property_id]:null, round:latestByProp[pr.id] };
     });
 
-    var html='<div class="cv-toolbar"><button class="cv-pdf" onclick="cvPrint()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg> Download PDF</button></div>'
+    _exportCols=cols; _exportClient=data.client_name||'Client';
+    var html='<div class="cv-toolbar">'
+      +(viaPortal?'<a class="cv-pdf" href="portal.html" style="margin-right:auto;text-decoration:none">‹ Your portal</a>':'')
+      +(cols.length?'<button class="cv-pdf" style="margin-right:8px" onclick="cvExcel()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="m9 13 6 6"/><path d="m15 13-6 6"/></svg> Excel</button>':'')
+      +'<button class="cv-pdf" onclick="cvPrint()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg> Download PDF</button></div>'
       +'<div class="cv-h">'+(data.client_name?esc(data.client_name)+' — ':'')+'your options</div>'
       +'<div class="cv-sub">A live, read-only view of the buildings and proposals we’re working on for you. It updates as the deal progresses.</div>';
 
@@ -311,9 +385,26 @@
       +'<div class="cv-note">Lowest net effective rent = best overall value once all concessions are accounted for.</div>';
   }
 
+  // portal entry: no passcode — authenticate with the portal session
+  function portalLoad(){
+    portalToken=readPortalToken();
+    if(!portalToken){ location.href='portal.html'; return; }
+    $('gateMsg').textContent='Opening your deal…'; $('gatePass').style.display='none';
+    $('gateBtn').style.display='none'; document.querySelector('.gate-card label').style.display='none';
+    fetch('/.netlify/functions/deal-client-get',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dealId:dealId,token:portalToken})})
+      .then(function(res){ return res.json().then(function(d){ return {status:res.status,d:d}; }); })
+      .then(function(r){
+        if(r.status===200){ render(r.d); track('open'); return; }
+        if(r.status===401){ location.href='portal.html'; return; }
+        $('gateErr').textContent=(r.d&&r.d.error)||'Could not open this deal.';
+      })
+      .catch(function(){ $('gateErr').textContent='Network error — please refresh.'; });
+  }
+
   $('gateBtn').addEventListener('click',unlock);
   $('gatePass').addEventListener('keydown',function(e){ if(e.key==='Enter') unlock(); });
-  if(!slug){ $('gateMsg').textContent='This link is missing its deal code. Please use the full link your broker sent.'; }
+  if(viaPortal){ portalLoad(); }
+  else if(!slug){ $('gateMsg').textContent='This link is missing its deal code. Please use the full link your broker sent.'; }
 })();
 </script>
 </body>

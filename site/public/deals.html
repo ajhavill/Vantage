@@ -591,6 +591,10 @@ window.DF = (function(){
   function showApp(session){
     $('authGate').style.display='none';
     me=session.user;
+    // tenant-portal users don't belong in the deal pipeline — send them to their
+    // portal. (RLS already hides all broker data; this is UX, not security.)
+    try{ sb.from('profiles').select('role').eq('id',me.id).single()
+      .then(function(r){ if(r&&r.data&&r.data.role==='client') location.replace('portal.html'); }); }catch(e){}
     var chip=$('userChip'); if(chip){ chip.style.display='inline-flex'; $('userEmail').textContent=me.email||''; }
     try{ _view=localStorage.getItem('vantage_deal_view')||'board'; }catch(e){}
     try{ loadPortalBuildings(); }catch(e){}
@@ -942,7 +946,7 @@ window.DF = (function(){
       var docs=await q(sb.from('documents').select('*').eq('deal_id',id).order('created_at'));
       var tours=await q(sb.from('tour_stops').select('*').eq('deal_id',id).order('scheduled_at',{ascending:true,nullsFirst:false}));
       var abstracts=await q(sb.from('lease_abstracts').select('*').eq('deal_id',id).order('created_at'));
-      var events=[]; try{ events=await q(sb.from('deal_events').select('type,created_at').eq('deal_id',id).order('created_at',{ascending:false})); }catch(e){}
+      var events=[]; try{ events=await q(sb.from('deal_events').select('type,detail,created_at').eq('deal_id',id).order('created_at',{ascending:false})); }catch(e){}
       var steps=[]; try{ steps=await q(sb.from('deal_steps').select('*').eq('deal_id',id).order('sort_order')); }catch(e){}
       var tasks=[]; try{ tasks=await q(sb.from('deal_tasks').select('*').eq('deal_id',id).order('due_date',{ascending:true,nullsFirst:false})); }catch(e){}
       try{ syncDealModel(id, proposals, rounds, abstracts[0]||null); }catch(e){}
@@ -956,7 +960,18 @@ window.DF = (function(){
     var ev=events||[];
     var opens=ev.filter(function(e){return e.type==='open';}).length;
     var dls=ev.filter(function(e){return e.type==='download';}).length;
-    var engLine = ev.length ? '<div class="meta" style="margin-top:3px"><span style="color:var(--accent)">👁 Client opened '+opens+'×</span>'+(ev[0]?' · last '+ago(ev[0].created_at):'')+(dls?' · '+dls+' PDF download'+(dls>1?'s':''):'')+'</div>' : '';
+    // portal events carry WHO in detail ("email" or "email · xlsx"); passcode-link
+    // events have no identity. Show per-person counts when we have them.
+    var byWho={};
+    ev.forEach(function(e){
+      var m=/^([^\s·]+@[^\s·]+)/.exec(e.detail||'');
+      if(m){ var w=byWho[m[1]]=byWho[m[1]]||{opens:0,last:null}; if(e.type==='open') w.opens++; if(!w.last) w.last=e.created_at; }
+    });
+    var whoBits=Object.keys(byWho).slice(0,3).map(function(w){
+      return esc(w)+(byWho[w].opens?' '+byWho[w].opens+'×':'')+(byWho[w].last?' ('+ago(byWho[w].last)+')':'');
+    });
+    var engLine = ev.length ? '<div class="meta" style="margin-top:3px"><span style="color:var(--accent)">👁 Client opened '+opens+'×</span>'+(ev[0]?' · last '+ago(ev[0].created_at):'')+(dls?' · '+dls+' download'+(dls>1?'s':''):'')
+      +(whoBits.length?'<br><span style="color:var(--ink-faint)">Portal: '+whoBits.join(' · ')+'</span>':'')+'</div>' : '';
     var stageOpts=Object.keys(STAGE_LABEL).map(function(k){
       return '<option value="'+k+'"'+(d.stage===k?' selected':'')+'>'+STAGE_LABEL[k]+'</option>';
     }).join('');
@@ -1013,6 +1028,9 @@ window.DF = (function(){
       +     '<button class="act-btn" onclick="DF.shareDeal(\''+d.id+'\')" title="Create a private, read-only link for the client">'
       +       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>'
       +       (d.slug?'Client link':'Share with client')+'</button>'
+      +     '<button class="act-btn" onclick="DF.openPortal(\''+d.id+'\')" title="The client\'s logged-in portal: invite people, attach packages, send update notifications">'
+      +       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>'
+      +       'Portal</button>'
       +     '<div class="stagepick"><label>Stage</label>'
       +     '<select class="fld" style="width:auto" onchange="DF.setStage(\''+d.id+'\',this.value)">'+stageOpts+'</select></div>'
       +   '</div>'
@@ -1985,6 +2003,44 @@ window.DF = (function(){
 
   function cmpRound(i, roundId){ if(_cmp&&_cmp.cols[i]){ _cmp.cols[i].selId=roundId; renderCompare(); } }
 
+  // export the current comparison (each column at its selected round) to .xlsx —
+  // same engine numbers as the on-screen table; SheetJS is already loaded for the model
+  function cmpExcel(){
+    var c=_cmp; if(!c||!c.cols.length||!window.XLSX) return;
+    var sel=c.cols.map(function(col){ return col.rounds.filter(function(r){return r.id===col.selId;})[0]||col.rounds[col.rounds.length-1]; });
+    var eff=sel.map(effectiveRent);
+    var head=['Metric'].concat(c.cols.map(function(col,i){
+      return (col.proposal.title||'Proposal')+(col.building?' — '+col.building:'')+' (Rd '+sel[i].round_no+')';
+    }));
+    function r(label,fn){ return [label].concat(sel.map(fn)); }
+    var aoa=[
+      head,
+      r('Building',            function(x,i){ return c.cols[i].building||''; }),
+      r('Rent structure',      function(x){ return basisLabel(x.rent_basis,x.rent_basis_label); }),
+      r('Size (SF)',           function(x){ return x.size_sf==null?null:Number(x.size_sf); }),
+      r('Term (months)',       function(x){ return x.term_months==null?null:Number(x.term_months); }),
+      r('Starting base ($/SF/yr)',    function(x){ return x.base_rent_psf==null?null:Number(x.base_rent_psf); }),
+      r('Opex / NNN load ($/SF/yr)',  function(x){ return x.opex_psf==null?null:Number(x.opex_psf); }),
+      ['Gross-equivalent start ($/SF/yr)'].concat(eff.map(function(e){ return e?Number(e.grossStart.toFixed(2)):null; })),
+      r('Annual escalation (%)',      function(x){ return x.annual_escalation_pct==null?null:Number(x.annual_escalation_pct); }),
+      r('Free rent (months)',         function(x){ return x.free_rent_months==null?null:Number(x.free_rent_months); }),
+      r('TI allowance ($/SF)',        function(x){ return x.ti_psf==null?null:Number(x.ti_psf); }),
+      ['Net effective rent ($/SF/yr)'].concat(eff.map(function(e){ return e?Number(e.netEff.toFixed(2)):null; })),
+      ['Total cost over term ($/SF)'].concat(eff.map(function(e){ return e?Number(e.costPerSF.toFixed(2)):null; })),
+      ['Total cost over term ($)'].concat(eff.map(function(e,i){
+        var sf=sel[i].size_sf==null?null:Number(sel[i].size_sf);
+        return (e&&sf)?Math.round(e.costPerSF*sf):null;
+      })),
+      [],
+      ['Net effective rent normalizes each proposal to one $/SF/yr (gross-equivalent): base + opex, base escalated annually, free rent abating base only, TI credited up front, spread over the term. Prepared by Havill & Co.']
+    ];
+    var ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols']=[{wch:30}].concat(c.cols.map(function(){ return {wch:24}; }));
+    var wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Proposal comparison');
+    XLSX.writeFile(wb, ((c.deal.client_name||'Deal')+' — proposal comparison.xlsx').replace(/[\\/:*?"<>|]/g,''));
+  }
+
   function renderCompare(){
     var c=_cmp; if(!c) return;
     var v=$('dealView');
@@ -2039,7 +2095,9 @@ window.DF = (function(){
 
     v.innerHTML = back
       + '<div class="dealhead"><div><h1>'+esc(c.deal.client_name||'Deal')+' — compare</h1>'
-      +   '<div class="meta">Side-by-side economics, normalized to a gross-equivalent net effective rent.</div></div></div>'
+      +   '<div class="meta">Side-by-side economics, normalized to a gross-equivalent net effective rent.</div></div>'
+      +   '<div class="dhactions"><button class="act-btn" onclick="DF.cmpExcel()" title="Export this comparison to Excel">'
+      +   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg> Excel</button></div></div>'
       + '<div class="cmpwrap"><table class="cmp"><thead><tr><th class="rl"></th>'+headCells+'</tr></thead><tbody>'+body+'</tbody></table></div>'
       + '<div class="cmpnote"><b>How net effective rent is figured:</b> gross-equivalent start = base + opex '
       +   '(opex = the pass-through paid on top of base — leave blank for full-service). Base rent escalates annually by the '
@@ -2080,6 +2138,156 @@ window.DF = (function(){
       await q(sb.from('proposals').update({client_visible:makeVisible}).eq('id',proposalId).select().single());
       openDeal(dealId);
     }catch(e){ alert('Could not update visibility: '+e.message); }
+  }
+
+  /* ---------- tenant portal (client logins — see supabase/client-portal.sql) ----------
+     The portal is the logged-in successor to the passcode link: the broker invites
+     people at the client company by email, attaches option packages, and triggers
+     "something new" notification emails. Everything the client sees still flows
+     through the same client_visible / final-round filters. */
+  var _ptDealId=null, _ptCoList=[];
+
+  function ptLoadPackages(){ try{ return JSON.parse(localStorage.getItem('vantage_packages')||'[]'); }catch(e){ return []; } }
+  function ptPkgLabel(p){
+    if(!p) return 'Package';
+    if(p.client&&p.client.name) return p.client.name;
+    return p.clientName||p.client||p.name||('Package '+(p.slug||''));
+  }
+
+  async function openPortal(dealId){
+    var d=deals.filter(function(x){return x.id===dealId;})[0]; if(!d) return;
+    _ptDealId=dealId;
+    if(!d.hs_company_id){
+      openSheet('<h3>Client portal</h3><div class="ssub">Portal access is keyed to the client company. Link this deal to its HubSpot company first — then invite people by email.</div>'
+        + fld('Find the client company','<input id="pt_co" placeholder="start typing the company name" autocomplete="off" oninput="DF.portalCoSuggest(this.value)" autofocus><div class="sugg" id="pt_csugg"></div>')
+        + '<div class="formerr" id="pt_err"></div>'
+        + '<div class="srow"><button class="btn" onclick="DF.close()">Close</button></div>');
+      loadCompanies();
+      return;
+    }
+    openSheet('<h3>Client portal</h3><div class="ssub">Loading…</div>');
+    var grants=null, links=[];
+    try{
+      grants=await q(sb.from('client_access').select('*').eq('hs_company_id',d.hs_company_id).order('created_at'));
+    }catch(e){
+      openSheet('<h3>Client portal</h3><div class="ssub" style="color:#C2453F">The portal tables aren\'t set up yet — run <b>supabase/client-portal.sql</b> once in the Supabase SQL editor, then reopen this.</div>'
+        + '<div class="srow"><button class="btn" onclick="DF.close()">Close</button></div>');
+      return;
+    }
+    try{ links=await q(sb.from('portal_package_links').select('*').eq('hs_company_id',d.hs_company_id).order('created_at')); }catch(e){ links=[]; }
+    renderPortalSheet(d, grants||[], links||[]);
+  }
+
+  function renderPortalSheet(d, grants, links){
+    var members = grants.length ? grants.map(function(g){
+      return '<div class="docrow"><span class="docname" style="cursor:default">'
+        + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> '
+        + esc(g.email||g.user_id)+(g.active?'':' <span style="color:var(--ink-faint)">(revoked)</span>')+'</span>'
+        + '<button class="vis '+(g.active?'on':'')+'" onclick="DF.portalRevoke(\''+g.id+'\','+(g.active?'false':'true')+')">'+(g.active?'● Active':'○ Revoked')+'</button></div>';
+    }).join('') : '<div style="font:500 12.5px Inter;color:var(--ink-faint);padding:4px 0 8px">No one at '+esc(d.client_name||'this client')+' has portal access yet.</div>';
+
+    var linked = links.length ? links.map(function(l){
+      return '<div class="docrow"><span class="docname" style="cursor:default">'+esc(l.label||l.slug)+'</span>'
+        + '<button class="vis" onclick="DF.portalDetach(\''+l.id+'\')">✕ Remove</button></div>';
+    }).join('') : '';
+    var linkedSlugs={}; links.forEach(function(l){ linkedSlugs[l.slug]=1; });
+    var avail=ptLoadPackages().filter(function(p){ return p.slug && !linkedSlugs[p.slug]; });
+    var attach = avail.length
+      ? '<div style="display:flex;gap:8px;align-items:center;margin-top:6px"><select id="pt_pkg" class="fld" style="flex:1">'
+        + avail.map(function(p){ return '<option value="'+esc(p.slug)+'">'+esc(ptPkgLabel(p))+'</option>'; }).join('')
+        + '</select><button class="miniadd" onclick="DF.portalAttach()">+ Attach</button></div>'
+        + '<div style="font-size:11px;color:var(--ink-faint);margin-top:5px">Packages this browser created in the Cockpit. Attaching lets portal users open the interactive shortlist without a passcode.</div>'
+      : (links.length?'':'<div style="font-size:11.5px;color:var(--ink-faint)">No packages found in this browser — create one in the Cockpit first, then attach it here.</div>');
+
+    openSheet('<h3>Client portal — '+esc(d.client_name||'client')+'</h3>'
+      + '<div class="ssub">One login for your client: their deals, tours, proposals with side-by-side analysis, documents, and their options shortlists. They only ever see what you\'ve marked visible.</div>'
+      + '<div style="font:700 12px Inter;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);margin:16px 0 6px">People with access</div>'
+      + members
+      + '<div style="display:flex;gap:8px;margin-top:8px"><input id="pt_email" class="fld" placeholder="their email" style="flex:1.4"><input id="pt_name" class="fld" placeholder="name (optional)" style="flex:1"><button class="miniadd" id="pt_invBtn" onclick="DF.portalInvite()">✉ Invite</button></div>'
+      + '<div style="font:700 12px Inter;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);margin:18px 0 6px">Options packages on their portal</div>'
+      + linked + attach
+      + '<div style="font:700 12px Inter;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);margin:18px 0 6px">Tell them something\'s new</div>'
+      + '<textarea id="pt_note" class="fld" rows="2" placeholder="optional note, e.g. “Two new proposals are in — take a look before Friday’s call.”"></textarea>'
+      + '<div style="display:flex;gap:8px;margin-top:8px;align-items:center"><button class="miniadd" id="pt_ntfBtn" onclick="DF.portalNotify()">📤 Notify client</button><span style="font-size:11px;color:var(--ink-faint)">Emails every active portal user at this client. Never automatic.</span></div>'
+      + '<div class="ge" style="margin-top:16px"><a href="portal.html?preview='+encodeURIComponent(d.hs_company_id)+'" target="_blank" rel="noopener">👁 Preview their portal (view as client) ↗</a></div>'
+      + '<div class="formerr" id="pt_err"></div><div id="pt_ok" style="font:500 12.5px Inter;color:var(--fitness);min-height:16px"></div>'
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Close</button></div>');
+  }
+
+  function portalCoSuggest(val){
+    var el=$('pt_csugg'); if(!el) return;
+    val=(val||'').trim().toLowerCase();
+    if(val.length<2){ el.innerHTML=''; el.classList.remove('on'); return; }
+    if(_companies===null){ loadCompanies().then(function(){ var f=$('pt_co'); portalCoSuggest(f?f.value:val); }); return; }
+    _ptCoList=_companies.filter(function(c){ return (c.name||'').toLowerCase().indexOf(val)>=0; }).slice(0,8);
+    if(!_ptCoList.length){ el.innerHTML='<div class="sugg-none">No HubSpot match. Add the company in the Clients tab first.</div>'; el.classList.add('on'); return; }
+    el.innerHTML=_ptCoList.map(function(c,i){ return '<div class="sugg-i" onclick="DF.portalCoPick('+i+')"><span class="sugg-n">'+esc(c.name)+'</span><span class="sugg-a">'+esc(c.industry||'')+(c.city?' · '+esc(c.city):'')+'</span></div>'; }).join('');
+    el.classList.add('on');
+  }
+  async function portalCoPick(i){
+    var c=_ptCoList[i]; if(!c||!_ptDealId) return;
+    try{
+      await q(sb.from('deals').update({hs_company_id:c.id}).eq('id',_ptDealId).select().single());
+      var d=deals.filter(function(x){return x.id===_ptDealId;})[0]; if(d) d.hs_company_id=c.id;
+      openPortal(_ptDealId);
+    }catch(e){ var er=$('pt_err'); if(er) er.textContent='Could not link the company: '+e.message; }
+  }
+
+  async function portalInvite(){
+    var d=deals.filter(function(x){return x.id===_ptDealId;})[0]; if(!d) return;
+    var email=($('pt_email').value||'').trim(), name=($('pt_name').value||'').trim();
+    if(!email){ $('pt_err').textContent='Enter their email.'; return; }
+    var b=$('pt_invBtn'); b.disabled=true; b.textContent='Inviting…'; $('pt_err').textContent=''; $('pt_ok').textContent='';
+    try{
+      var s=await sb.auth.getSession(); var token=s&&s.data&&s.data.session?s.data.session.access_token:null;
+      var res=await fetch('/.netlify/functions/portal-invite',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token:token, email:email, fullName:name||undefined, hsCompanyId:d.hs_company_id, clientName:d.client_name||undefined})});
+      var out=await res.json().catch(function(){return {};});
+      if(!res.ok) throw new Error(out.error||('Error '+res.status));
+      openPortal(_ptDealId);
+    }catch(e){ $('pt_err').textContent=e.message; b.disabled=false; b.textContent='✉ Invite'; }
+  }
+
+  async function portalRevoke(grantId, makeActive){
+    try{
+      await q(sb.from('client_access').update({active:makeActive==='true'||makeActive===true}).eq('id',grantId).select());
+      openPortal(_ptDealId);
+    }catch(e){ var er=$('pt_err'); if(er) er.textContent=e.message; }
+  }
+
+  async function portalAttach(){
+    var d=deals.filter(function(x){return x.id===_ptDealId;})[0]; if(!d) return;
+    var selEl=$('pt_pkg'); if(!selEl) return;
+    // resolve the package by SLUG (the option value), never by list index — the
+    // available list can shift between render and click, and an index would then
+    // attach the WRONG client's shortlist. The DB unique constraint + insert also
+    // reject an already-linked slug, so double-attach is safe.
+    var slug=selEl.value;
+    var p=ptLoadPackages().filter(function(x){ return x.slug===slug; })[0];
+    if(!p){ var e0=$('pt_err'); if(e0) e0.textContent='That package is no longer available in this browser.'; return; }
+    try{
+      await q(sb.from('portal_package_links').insert({org_id:d.org_id, hs_company_id:d.hs_company_id, slug:p.slug, label:ptPkgLabel(p), created_by:me.id}).select());
+      openPortal(_ptDealId);
+    }catch(e){ var er=$('pt_err'); if(er) er.textContent='Could not attach: '+e.message; }
+  }
+
+  async function portalDetach(linkId){
+    try{ await q(sb.from('portal_package_links').delete().eq('id',linkId).select()); openPortal(_ptDealId); }
+    catch(e){ var er=$('pt_err'); if(er) er.textContent=e.message; }
+  }
+
+  async function portalNotify(){
+    var d=deals.filter(function(x){return x.id===_ptDealId;})[0]; if(!d) return;
+    var b=$('pt_ntfBtn'); b.disabled=true; b.textContent='Sending…'; $('pt_err').textContent=''; $('pt_ok').textContent='';
+    try{
+      var s=await sb.auth.getSession(); var token=s&&s.data&&s.data.session?s.data.session.access_token:null;
+      var res=await fetch('/.netlify/functions/portal-notify',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token:token, hsCompanyId:d.hs_company_id, note:($('pt_note').value||'').trim()||undefined})});
+      var out=await res.json().catch(function(){return {};});
+      if(!res.ok) throw new Error(out.error||('Error '+res.status));
+      $('pt_ok').textContent='Sent to '+out.sent+' portal user'+(out.sent===1?'':'s')+' ✓';
+      b.disabled=false; b.textContent='📤 Notify client';
+    }catch(e){ $('pt_err').textContent=e.message; b.disabled=false; b.textContent='📤 Notify client'; }
   }
 
   /* ---------- documents (Supabase Storage bucket "deal-files") ---------- */
@@ -2712,7 +2920,8 @@ window.DF = (function(){
   return {
     showEmails:showEmails, filterEmails:filterEmails, viewEmail:viewEmail, composeEmail:composeEmail, draftCompose:draftCompose, connectEmail:connectEmail, pickProvider:pickProvider, sendTourEmail:sendTourEmail,
     openModel:openModel, modelInput:modelInput, modelToggle:modelToggle, modelDeal:modelDeal, modelAdd:modelAdd, modelRemove:modelRemove, modelUnlink:modelUnlink, modelPrint:modelPrint, modelPdf:modelPdf, modelExcel:modelExcel, modelScenario:modelScenario, modelPull:modelPull,
-    showDashboard:showDashboard, showPipeline:showPipeline, setPipeView:setPipeView, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, toggleClosed:toggleClosed,
+    showDashboard:showDashboard, showPipeline:showPipeline, setPipeView:setPipeView, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, cmpExcel:cmpExcel, toggleClosed:toggleClosed,
+    openPortal:openPortal, portalCoSuggest:portalCoSuggest, portalCoPick:portalCoPick, portalInvite:portalInvite, portalRevoke:portalRevoke, portalAttach:portalAttach, portalDetach:portalDetach, portalNotify:portalNotify,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask, recGo:recGo,
     newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, buildTourFromTouring:buildTourFromTouring, draftTourEmail:draftTourEmail, copyTourEmail:copyTourEmail, newProposal:newProposal, newRound:newRound,

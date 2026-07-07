@@ -337,17 +337,22 @@
 <script>
 (function(){
   "use strict";
-  var PKG=null, slug=null, pass=null, landMap=null, cmvMap=null, cmvLayer=null, cmvTeam=[], cmvRes=null, cmvSel=null;
+  var PKG=null, slug=null, pass=null, portalTok=null, landMap=null, cmvMap=null, cmvLayer=null, cmvTeam=[], cmvRes=null, cmvSel=null;
 
   function qs(k){ return new URLSearchParams(location.search).get(k); }
   function esc(s){ return VV.esc(s); }
 
-  // fire-and-forget engagement ping (never blocks or breaks the viewer)
+  // fire-and-forget engagement ping (never blocks or breaks the viewer);
+  // portal mode proves access with the session token instead of the passcode
   function track(eventName, building){
-    if(!slug || !pass) return;
+    var creds=null;
+    if(slug&&pass) creds={slug:slug,passcode:pass};
+    else if(slug&&portalTok) creds={slug:slug,token:portalTok};
+    if(!creds) return;
+    creds.event=eventName; if(building) creds.building=building;
     try{
       fetch('/.netlify/functions/track',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({slug:slug,passcode:pass,event:eventName,building:building||undefined}),keepalive:true})
+        body:JSON.stringify(creds),keepalive:true})
         .catch(function(){});
     }catch(e){}
   }
@@ -558,6 +563,39 @@
     if(pts.length) cmvMap.fitBounds(pts,{padding:[50,50],maxZoom:13});
   }
 
+  // ---- portal entry: a logged-in portal user opens the package with their session
+  // (no passcode). Falls back to the passcode gate if the session is missing/stale.
+  function portalToken(){
+    try{
+      var s=JSON.parse(localStorage.getItem('vantage_portal_session')||'null');
+      if(s&&s.access_token&&(!s.expires_at||s.expires_at-Math.floor(Date.now()/1000)>30)) return s.access_token;
+    }catch(e){}
+    try{
+      var b=JSON.parse(localStorage.getItem('sb-siaoqjvvxuckyxpxftwt-auth-token')||'null');
+      if(b&&b.access_token) return b.access_token;
+    }catch(e){}
+    return null;
+  }
+  function portalUnlock(){
+    var tok=portalToken();
+    if(!tok){ location.href='portal.html'; return; }
+    document.getElementById('gateSub').textContent='Opening your shortlist…';
+    document.getElementById('gatePass').style.display='none';
+    document.getElementById('gateBtn').style.display='none';
+    fetch('/.netlify/functions/get-package',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slug:slug,token:tok})})
+      .then(function(r){ return r.text().then(function(t){ var d=null; try{d=JSON.parse(t);}catch(e){} return {status:r.status, ok:r.ok, d:d}; }); })
+      .then(function(r){
+        if(r.ok){ PKG=r.d; portalTok=tok; VV.setCommuteAuth({token:tok}); boot(); return; }
+        // stale/insufficient session — bounce back to the portal to re-auth rather
+        // than dead-ending with the passcode UI hidden
+        if(r.status===401){ location.href='portal.html'; return; }
+        document.getElementById('gateErr').textContent=(r.d&&r.d.error)||('Could not open this shortlist ('+r.status+').');
+      })
+      .catch(function(){
+        document.getElementById('gateErr').textContent='Can’t reach the server. This viewer runs on the deployed site.';
+      });
+  }
+
   // ---- init ----
   slug=qs('c');
   if(!slug || !/^[A-Za-z0-9]{6,40}$/.test(slug)){
@@ -565,6 +603,8 @@
     document.getElementById('gateSub').textContent='This link is missing or malformed. Please use the exact link your broker sent you.';
     document.getElementById('gatePass').style.display='none';
     document.getElementById('gateBtn').style.display='none';
+  } else if(qs('via')==='portal'){
+    portalUnlock();
   }
   document.getElementById('gateBtn').addEventListener('click',unlock);
   document.getElementById('gatePass').addEventListener('keydown',function(e){ if(e.key==='Enter') unlock(); });
