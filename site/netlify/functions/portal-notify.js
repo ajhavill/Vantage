@@ -60,19 +60,22 @@ exports.handler = async (event) => {
     '<p style="color:#8A93A0;font-size:12px;margin:0">You\'re receiving this because Havill &amp; Co. shares your leasing updates through the Vantage portal.</p></div>';
 
   const from = process.env.RESEND_FROM || "Vantage <onboarding@resend.dev>";
-  try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: "Bearer " + process.env.RESEND_API_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: from, to: emails, subject: "New update in your Vantage portal", html: html })
-    });
-    if (!res.ok) {
-      const t = await res.text().catch(() => "");
-      return json(502, { error: "Email send failed: " + (t || res.status) });
+  // Send ONE email per recipient so co-workers at the client don't see each
+  // other's addresses (a single To: array would disclose the whole list).
+  let sent = 0, lastErr = null;
+  for (const to of emails) {
+    try {
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + process.env.RESEND_API_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ from: from, to: [to], subject: "New update in your Vantage portal", html: html })
+      });
+      if (res.ok) sent++;
+      else lastErr = (await res.text().catch(() => "")) || String(res.status);
+    } catch (e) {
+      lastErr = (e && e.message) ? e.message : "network error";
     }
-  } catch (e) {
-    return json(502, { error: "Email send failed: " + (e && e.message ? e.message : "network error") });
   }
-
-  return json(200, { ok: true, sent: emails.length });
+  if (!sent) return json(502, { error: "Email send failed: " + (lastErr || "unknown") });
+  return json(200, { ok: true, sent: sent });
 };

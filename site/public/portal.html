@@ -339,10 +339,12 @@
         html+='<div class="pt-sec"><div class="pt-sec-h">Questionnaires</div><div class="linklist">'
           +intakes.map(function(iq){
             var done=iq.status==='completed';
-            return '<a class="linkitem" href="intake.html?i='+encodeURIComponent(iq.slug)+'">'
-              +'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>'
+            var inner='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>'
               +'<span class="ln">Space needs questionnaire</span>'
-              +'<span class="lm">'+(done?'Completed ✓':'Please complete →')+'</span></a>';
+              +'<span class="lm">'+(done?'Completed ✓':'Please complete →')+'</span>';
+            return done
+              ? '<div class="linkitem" style="cursor:default">'+inner+'</div>'
+              : '<a class="linkitem" href="intake.html?i='+encodeURIComponent(iq.slug)+'">'+inner+'</a>';
           }).join('')+'</div></div>';
       }
     });

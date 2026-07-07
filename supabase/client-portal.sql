@@ -90,6 +90,48 @@ returns boolean language sql security definer stable set search_path = public as
   select exists(select 1 from public.profiles where id = auth.uid() and role = 'client');
 $$;
 
+-- 4a) SECURITY-CRITICAL — freeze role/org_id against self-escalation.
+--   schema.sql's `profiles_update_own` policy has USING (id = auth.uid()) with NO
+--   WITH CHECK, so Postgres defaults WITH CHECK to the USING expr — which a user's
+--   own row always satisfies. That let ANY logged-in user PATCH their own row's
+--   `role`/`org_id` via PostgREST (the anon key is public), e.g. a client setting
+--   role='org_admin', org_id=<Havill> — instantly unlocking every org-scoped table
+--   (comps, tenant_intel, deals, profiles). This trigger closes that hole
+--   independently of the policy (and survives a re-run of schema.sql, which would
+--   otherwise restore the unsafe policy). SECURITY INVOKER (the default) so
+--   current_role reflects the CALLER: PostgREST SET ROLEs to 'authenticated'/'anon'
+--   for end users, 'service_role' for our server functions, and the migration runs
+--   as the table owner — so only end-user calls are frozen. Our portal-invite
+--   function legitimately sets role/org_id, and it uses the service_role key.
+create or replace function public.freeze_profile_privileges()
+returns trigger language plpgsql as $$
+begin
+  if current_role in ('authenticated', 'anon') then
+    if new.role is distinct from old.role then
+      raise exception 'role cannot be changed by this user';
+    end if;
+    if new.org_id is distinct from old.org_id then
+      raise exception 'org_id cannot be changed by this user';
+    end if;
+  end if;
+  return new;
+end; $$;
+drop trigger if exists profiles_freeze_privileges on public.profiles;
+create trigger profiles_freeze_privileges before update on public.profiles
+  for each row execute function public.freeze_profile_privileges();
+
+-- Belt-and-braces: also give the policy an explicit WITH CHECK pinning the two
+-- sensitive columns to their current values. (If schema.sql is later re-run it
+-- reverts to the unsafe form — the trigger above is the durable guarantee.)
+drop policy if exists profiles_update_own on public.profiles;
+create policy profiles_update_own on public.profiles for update
+  using (id = auth.uid())
+  with check (
+    id = auth.uid()
+    and role   = (select p.role   from public.profiles p where p.id = auth.uid())
+    and org_id is not distinct from (select p.org_id from public.profiles p where p.id = auth.uid())
+  );
+
 -- 5) Packages join the client spine (deals + intakes already have hs_company_id):
 --    lets the portal home list a client's option packages ("brochure" phase).
 alter table public.packages add column if not exists hs_company_id text;

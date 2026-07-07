@@ -22,10 +22,17 @@ const { configured, rest, userFromToken } = require("./_sb");
 
 const json = (statusCode, obj) => ({ statusCode, headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) });
 
+// For the invite REDIRECT (which carries a fresh session token in the URL hash),
+// prefer the trusted server-side site URL over the request's Host header — a
+// spoofed X-Forwarded-Host must never steer where the token lands. Supabase's
+// redirect allowlist is the backstop; this removes the header as the primary
+// source. (create-package intentionally uses the header for share links, but
+// those carry no token.)
 function siteUrl(event) {
+  if (process.env.URL) return process.env.URL;
   const h = event.headers || {};
   const host = h["x-forwarded-host"] || h.host || "";
-  return host ? ("https://" + host) : (process.env.URL || "");
+  return host ? ("https://" + host) : "";
 }
 
 // GoTrue admin invite (service_role). Returns { user } | { exists } | { error }.
