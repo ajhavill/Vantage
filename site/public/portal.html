@@ -49,6 +49,13 @@
   .linkitem .lm{margin-left:auto;font:500 11.5px Inter;color:var(--ink-faint);white-space:nowrap}
   .linkitem svg{flex:none;color:var(--accent)}
 
+  .advisor{margin-top:18px;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:12px;background:var(--paper-2);padding:14px 17px}
+  .advisor .adv-l{font:600 10px Inter;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint)}
+  .advisor .adv-nm{font:700 16px 'Bricolage Grotesque';color:var(--ink);margin-top:3px}
+  .advisor .adv-mail{display:inline-block;font:600 13px Inter;color:var(--accent);text-decoration:none;margin-top:2px}
+  .advisor .adv-mail:hover{text-decoration:underline}
+  .advisor .adv-sub{font:400 12px Inter;color:var(--ink-faint);margin-top:4px}
+
   .pt-disc{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font:400 11px Inter;color:var(--ink-faint);line-height:1.5}
   .pt-load{font:500 13px Inter;color:var(--ink-faint);padding:60px 0;text-align:center}
 
@@ -280,6 +287,15 @@
       var name=co.client_name||'Your company';
       html+='<div class="pt-h">'+esc(name)+' — your portal</div>'
         +'<div class="pt-sub">Everything Havill &amp; Co. is working on for you: options, tours, proposals, analysis, and your lease documents. It updates as your deal progresses.</div>';
+
+      // your advisor — who represents you + how to reach them
+      var adv=co.advisor;
+      if(adv&&(adv.name||adv.email)){
+        html+='<div class="advisor"><div class="adv-l">Your advisor</div>'
+          +'<div class="adv-nm">'+esc(adv.name||adv.email)+'</div>'
+          +(adv.email?'<a class="adv-mail" href="mailto:'+esc(adv.email)+'?subject='+encodeURIComponent('Re: '+name+' — portal')+'">'+esc(adv.email)+'</a>':'')
+          +'<div class="adv-sub">Questions about anything here? Reach out any time.</div></div>';
+      }
 
       // deals
       var deals=co.deals||[];

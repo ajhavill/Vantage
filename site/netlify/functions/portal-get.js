@@ -32,14 +32,23 @@ const csv = (arr) => arr.map((x) => String(x)).join(",");
 
 // Everything the portal home shows for ONE company grant.
 async function companyPayload(orgId, hsCompanyId, clientName) {
-  const out = { hs_company_id: hsCompanyId, client_name: clientName, deals: [], packages: [], intakes: [], documents: [] };
+  const out = { hs_company_id: hsCompanyId, client_name: clientName, advisor: null, deals: [], packages: [], intakes: [], documents: [] };
 
   // deals (dead ones stay broker-side)
   const dr = await sb.rest("deals?org_id=eq." + encodeURIComponent(orgId) +
     "&hs_company_id=eq." + encodeURIComponent(hsCompanyId) +
-    "&stage=neq.dead&select=id,client_name,client_logo_url,stage,created_at,updated_at&order=updated_at.desc");
+    "&stage=neq.dead&select=id,client_name,client_logo_url,stage,owner_id,created_at,updated_at&order=updated_at.desc");
   const deals = Array.isArray(dr.data) ? dr.data : [];
   if (!out.client_name && deals[0]) out.client_name = deals[0].client_name || null;
+
+  // "Your advisor" — the broker on the client's most recent active deal, so the
+  // portal always shows who represents them and how to reach out. Name + email only.
+  const ownerId = deals.find((d) => d.owner_id) && deals.find((d) => d.owner_id).owner_id;
+  if (ownerId) {
+    const ap = await sb.rest("profiles?id=eq." + encodeURIComponent(ownerId) + "&select=full_name,email&limit=1");
+    const a = (ap.ok && Array.isArray(ap.data) && ap.data[0]) || null;
+    if (a && (a.full_name || a.email)) out.advisor = { name: a.full_name || null, email: a.email || null };
+  }
 
   if (deals.length) {
     const ids = csv(deals.map((d) => d.id));
