@@ -41,6 +41,32 @@ async function signUrl(storagePath, expiresIn) {
 const ROUND_COLS = "id,proposal_id,round_no,from_party,rent_basis,rent_basis_label," +
   "base_rent_psf,opex_psf,size_sf,term_months,annual_escalation_pct,free_rent_months,ti_psf,summary";
 
+// Portal path: a logged-in client (or a broker previewing) opens a deal by id with
+// their Supabase token instead of a passcode. Clients must hold an active
+// client_access grant matching the deal's org + company; brokers must own the deal
+// or be in its org. Returns the deal row on success, null on any failure.
+async function dealFromToken(dealId, token) {
+  if (!/^[0-9a-f-]{36}$/i.test(String(dealId))) return null;
+  const user = await sb.userFromToken(token);
+  if (!user) return null;
+  const pr = await sb.rest("profiles?id=eq." + encodeURIComponent(user.id) + "&select=org_id,role&limit=1");
+  const me = (pr.ok && Array.isArray(pr.data) && pr.data[0]) || null;
+  if (!me) return null;
+  const dr = await sb.rest("deals?id=eq." + encodeURIComponent(dealId) + "&select=*&limit=1");
+  const deal = (dr.ok && Array.isArray(dr.data) && dr.data[0]) || null;
+  if (!deal) return null;
+  if (me.role === "client") {
+    if (!deal.hs_company_id || !deal.org_id) return null;
+    const g = await sb.rest("client_access?user_id=eq." + encodeURIComponent(user.id) +
+      "&org_id=eq." + encodeURIComponent(deal.org_id) +
+      "&hs_company_id=eq." + encodeURIComponent(deal.hs_company_id) + "&active=eq.true&select=id&limit=1");
+    return (g.ok && Array.isArray(g.data) && g.data[0]) ? deal : null;
+  }
+  // broker preview — own deal or same firm
+  if (deal.owner_id === user.id || (me.org_id && deal.org_id === me.org_id)) return deal;
+  return null;
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") return json(405, { error: "Use POST." });
   if (!sb.configured()) return json(500, { error: "Server not configured." });
@@ -48,20 +74,26 @@ exports.handler = async (event) => {
   let body;
   try { body = JSON.parse(event.body || "{}"); } catch (e) { return json(400, { error: "Malformed request body." }); }
 
-  const slug = String(body.slug || "");
-  if (!/^[A-Za-z0-9]{6,40}$/.test(slug)) return json(404, { error: "Link not found." });
-
-  // fetch the deal by slug
   let deal = null;
-  try {
-    const r = await sb.rest("deals?slug=eq." + encodeURIComponent(slug) + "&select=*&limit=1");
-    if (r.ok && r.data && r.data[0]) deal = r.data[0];
-  } catch (e) { deal = null; }
+  if (body.token && body.dealId) {
+    // logged-in portal path (client grant or broker preview)
+    deal = await dealFromToken(body.dealId, String(body.token));
+    if (!deal) return json(401, { error: "You don't have access to this deal — please sign in to the portal again." });
+  } else {
+    // original passcode path (no login)
+    const slug = String(body.slug || "");
+    if (!/^[A-Za-z0-9]{6,40}$/.test(slug)) return json(404, { error: "Link not found." });
 
-  if (!deal || !deal.passcode_hash || !deal.salt) return json(404, { error: "Link not found." });
+    try {
+      const r = await sb.rest("deals?slug=eq." + encodeURIComponent(slug) + "&select=*&limit=1");
+      if (r.ok && r.data && r.data[0]) deal = r.data[0];
+    } catch (e) { deal = null; }
 
-  if (!body.passcode || !safeEq(hashPass(body.passcode, deal.salt), deal.passcode_hash)) {
-    return json(401, { error: "Incorrect passcode." });
+    if (!deal || !deal.passcode_hash || !deal.salt) return json(404, { error: "Link not found." });
+
+    if (!body.passcode || !safeEq(hashPass(body.passcode, deal.salt), deal.passcode_hash)) {
+      return json(401, { error: "Incorrect passcode." });
+    }
   }
 
   const id = deal.id;

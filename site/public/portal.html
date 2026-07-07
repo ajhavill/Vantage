@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your portal — Vantage by Havill &amp; Co.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/vantage.css"/>
+<style>
+  .pt-top{display:flex;align-items:center;gap:14px;padding:15px 24px;border-bottom:1px solid var(--line);background:var(--paper-2);position:sticky;top:0;z-index:10}
+  .pt-brand{font:800 18px 'Bricolage Grotesque';color:var(--ink)}
+  .pt-brand .dot{color:var(--accent)}
+  .pt-by{font:500 11px Inter;color:var(--ink-faint);letter-spacing:.04em;text-transform:uppercase}
+  .pt-user{margin-left:auto;display:flex;align-items:center;gap:12px;font:500 12.5px Inter;color:var(--ink-soft)}
+  .pt-user b{color:var(--ink)}
+  .pt-out{font:600 12px Inter;color:var(--ink-soft);background:none;border:1px solid var(--line-2);border-radius:8px;padding:6px 12px;cursor:pointer}
+  .pt-out:hover{border-color:var(--accent);color:var(--accent)}
+  .pt-preview{background:#8a6d1d;color:#fff;font:600 11.5px Inter;text-align:center;padding:7px 12px}
+
+  .pt-wrap{max-width:1080px;margin:0 auto;padding:26px 24px 60px}
+  .pt-h{font:700 23px 'Bricolage Grotesque';color:var(--ink);margin-bottom:4px}
+  .pt-sub{font:400 13px Inter;color:var(--ink-faint);margin-bottom:24px}
+  .pt-sec{margin-top:30px}
+  .pt-sec-h{font:700 15px 'Bricolage Grotesque';color:var(--ink);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  .pt-empty{font:500 13px Inter;color:var(--ink-faint);padding:22px 0}
+
+  .dealgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+  .dcard{display:block;border:1px solid var(--line);border-radius:13px;background:var(--paper-2);padding:17px 18px;text-decoration:none;transition:border-color .12s}
+  .dcard:hover{border-color:var(--accent)}
+  .dcard .st{display:inline-block;font:700 10px Inter;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);background:rgba(45,110,126,.09);border-radius:6px;padding:3px 8px}
+  .dcard .nm{font:700 16px 'Bricolage Grotesque';color:var(--ink);margin-top:9px}
+  .dcard .bl{font:500 12px Inter;color:var(--ink-soft);margin-top:3px;line-height:1.5}
+  .dcard .facts{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px}
+  .dcard .fact{font:500 11.5px Inter;color:var(--ink-faint)}
+  .dcard .fact b{display:block;font:700 14px 'Bricolage Grotesque';color:var(--ink)}
+  .dcard .go{font:600 12px Inter;color:var(--accent);margin-top:12px}
+
+  .tourlist{display:flex;flex-direction:column;gap:8px}
+  .touritem{border:1px solid var(--line);border-radius:11px;background:var(--paper-2);padding:11px 14px}
+  .touritem .tw{font:600 11.5px Inter;color:var(--accent)}
+  .touritem .tn{font:700 14px 'Bricolage Grotesque';color:var(--ink);margin-top:2px}
+
+  .linklist{display:flex;flex-direction:column;gap:8px}
+  .linkitem{display:flex;align-items:center;gap:10px;padding:12px 15px;border:1px solid var(--line);border-radius:11px;background:var(--paper-2);text-decoration:none}
+  .linkitem:hover{border-color:var(--accent)}
+  .linkitem .ln{font:600 13px Inter;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .linkitem .lm{margin-left:auto;font:500 11.5px Inter;color:var(--ink-faint);white-space:nowrap}
+  .linkitem svg{flex:none;color:var(--accent)}
+
+  .pt-disc{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font:400 11px Inter;color:var(--ink-faint);line-height:1.5}
+  .pt-load{font:500 13px Inter;color:var(--ink-faint);padding:60px 0;text-align:center}
+
+  /* auth screens */
+  #gate{position:fixed;inset:0;z-index:3000;display:flex;align-items:center;justify-content:center;background:var(--paper);padding:20px}
+  .gate-card{width:min(400px,100%);background:var(--paper-2);border:1px solid var(--line);border-radius:18px;padding:30px 28px;box-shadow:var(--shadow)}
+  .gate-logo{font:800 24px 'Bricolage Grotesque';color:var(--ink)}
+  .gate-logo .dot{color:var(--accent)}
+  .gate-by{font:500 12px Inter;color:var(--ink-faint);margin-top:4px}
+  .gate-card h1{font:700 17px 'Bricolage Grotesque';color:var(--ink);margin:22px 0 5px}
+  .gate-card p{font:400 12.5px Inter;color:var(--ink-soft);margin:0 0 16px;line-height:1.55}
+  .gate-card label{font:600 11px Inter;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-faint);display:block;margin:12px 0 6px}
+  .gate-card input{width:100%;font:500 15px Inter;padding:11px 13px;border:1px solid var(--line-2);border-radius:10px;background:var(--paper)}
+  .gate-card input:focus{outline:none;border-color:var(--accent)}
+  .gate-card button.pri{width:100%;font:600 14px Inter;color:#fff;background:var(--building);border:0;border-radius:10px;padding:12px;cursor:pointer;margin-top:16px}
+  .gate-card button.pri:disabled{opacity:.6;cursor:default}
+  .gate-err{font:500 12.5px Inter;color:#C2453F;margin-top:10px;min-height:16px}
+  .gate-ok{font:500 12.5px Inter;color:#2E7D4F;margin-top:10px;min-height:16px}
+  .gate-alt{font:500 12px Inter;color:var(--ink-soft);margin-top:14px;text-align:center}
+  .gate-alt a{color:var(--accent);cursor:pointer;text-decoration:none}
+
+  @media (max-width:600px){
+    .pt-top{padding:12px 16px}
+    .pt-wrap{padding:18px 16px 50px}
+    .pt-h{font-size:20px}
+    .dealgrid{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="gate-card">
+    <div class="gate-logo">Vantage<span class="dot">.</span></div>
+    <div class="gate-by">by Havill &amp; Co.</div>
+    <div id="gateBody"></div>
+  </div>
+</div>
+
+<div id="previewBar" class="pt-preview" style="display:none">Broker preview — you're seeing this portal exactly as the client does. Nothing is tracked.</div>
+<div class="pt-top" id="ptTop" style="display:none">
+  <span class="pt-brand">Vantage<span class="dot">.</span></span>
+  <span class="pt-by">by Havill &amp; Co.</span>
+  <span class="pt-user" id="ptUser"></span>
+</div>
+
+<main class="pt-wrap" id="ptView" style="display:none"><div class="pt-load">Loading your portal…</div></main>
+
+<script>
+(function(){
+  "use strict";
+  var SUPA_URL  = "https://siaoqjvvxuckyxpxftwt.supabase.co";
+  var SUPA_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNpYW9xanZ2eHVja3l4cHhmdHd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2OTU5MTMsImV4cCI6MjA5ODI3MTkxM30.HgWjVlB9e0rYgX-MCTee16UV5tZ6m-pCXXjwY1cu3b0";
+  var SESSION_KEY = "vantage_portal_session";
+  var STAGE_LABEL = {needs:'Getting started', touring:'Touring', evaluating:'Evaluating options', proposals:'Proposals in', negotiation:'Negotiating', executed:'Lease signed'};
+
+  var previewCompanyId = new URLSearchParams(location.search).get('preview') || null;
+
+  function $(id){ return document.getElementById(id); }
+  function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+
+  /* ---------- auth (raw GoTrue REST — no SDK, matching the project's no-build style).
+     The portal keeps its OWN session key so a broker signed into the Cockpit in the
+     same browser never collides with a client session. ---------- */
+  function loadSession(){ try{ return JSON.parse(localStorage.getItem(SESSION_KEY)||'null'); }catch(e){ return null; } }
+  function saveSession(s){ try{ localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }catch(e){} }
+  function clearSession(){ try{ localStorage.removeItem(SESSION_KEY); }catch(e){} }
+
+  function auth(path, body, bearer){
+    return fetch(SUPA_URL+'/auth/v1/'+path, {
+      method:'POST',
+      headers:{ apikey:SUPA_ANON, Authorization:'Bearer '+(bearer||SUPA_ANON), 'Content-Type':'application/json' },
+      body: JSON.stringify(body||{})
+    }).then(function(res){ return res.json().catch(function(){return {};}).then(function(d){ return {status:res.status, ok:res.ok, d:d}; }); });
+  }
+
+  function sessionFromTokenResponse(d){
+    return { access_token:d.access_token, refresh_token:d.refresh_token,
+             expires_at: Math.floor(Date.now()/1000)+(d.expires_in||3600),
+             email:(d.user&&d.user.email)||'' };
+  }
+
+  // returns a valid access token (refreshing if within 2 min of expiry), or null
+  var _refreshing=null;
+  function getToken(){
+    var s=loadSession();
+    if(!s||!s.access_token) return Promise.resolve(null);
+    if(s.expires_at && s.expires_at - Math.floor(Date.now()/1000) > 120) return Promise.resolve(s.access_token);
+    if(!s.refresh_token) return Promise.resolve(null);
+    if(!_refreshing){
+      _refreshing = auth('token?grant_type=refresh_token',{refresh_token:s.refresh_token}).then(function(r){
+        _refreshing=null;
+        if(r.ok&&r.d.access_token){ var ns=sessionFromTokenResponse(r.d); ns.email=ns.email||s.email; saveSession(ns); return ns.access_token; }
+        clearSession(); return null;
+      });
+    }
+    return _refreshing;
+  }
+
+  // broker preview rides on the Cockpit's supabase-js session (same origin)
+  function getBrokerToken(){
+    try{
+      var raw=localStorage.getItem('sb-siaoqjvvxuckyxpxftwt-auth-token');
+      if(!raw) return null;
+      var s=JSON.parse(raw);
+      return (s&&s.access_token)?s.access_token:null;
+    }catch(e){ return null; }
+  }
+
+  /* ---------- gate screens ---------- */
+  function gateSignIn(msg){
+    $('gate').style.display='flex';
+    $('gateBody').innerHTML='<h1>Sign in to your portal</h1>'
+      +'<p>'+(msg||'Your leasing updates, proposals, tour schedule, and documents — shared with you by Havill &amp; Co.')+'</p>'
+      +'<label for="gEmail">Email</label><input id="gEmail" type="email" autocomplete="email" placeholder="you@company.com">'
+      +'<label for="gPass">Password</label><input id="gPass" type="password" autocomplete="current-password" placeholder="••••••••">'
+      +'<button class="pri" id="gBtn">Sign in</button>'
+      +'<div class="gate-err" id="gErr"></div>'
+      +'<div class="gate-alt"><a id="gForgot">Forgot your password?</a></div>';
+    function go(){
+      var email=($('gEmail').value||'').trim(), pass=$('gPass').value||'';
+      if(!email||!pass){ $('gErr').textContent='Enter your email and password.'; return; }
+      var b=$('gBtn'); b.disabled=true; b.textContent='Signing in…'; $('gErr').textContent='';
+      auth('token?grant_type=password',{email:email,password:pass}).then(function(r){
+        b.disabled=false; b.textContent='Sign in';
+        if(r.ok&&r.d.access_token){ saveSession(sessionFromTokenResponse(r.d)); boot(); return; }
+        $('gErr').textContent=(r.d&&(r.d.error_description||r.d.msg))||'Sign-in failed — check your email and password.';
+      }).catch(function(){ b.disabled=false; b.textContent='Sign in'; $('gErr').textContent='Network error — please try again.'; });
+    }
+    $('gBtn').addEventListener('click',go);
+    $('gPass').addEventListener('keydown',function(e){ if(e.key==='Enter') go(); });
+    $('gForgot').addEventListener('click',gateForgot);
+  }
+
+  function gateForgot(){
+    $('gateBody').innerHTML='<h1>Reset your password</h1>'
+      +'<p>Enter your email and we’ll send you a link to set a new password.</p>'
+      +'<label for="gEmail">Email</label><input id="gEmail" type="email" autocomplete="email" placeholder="you@company.com">'
+      +'<button class="pri" id="gBtn">Send reset link</button>'
+      +'<div class="gate-err" id="gErr"></div><div class="gate-ok" id="gOk"></div>'
+      +'<div class="gate-alt"><a id="gBack">Back to sign in</a></div>';
+    $('gBtn').addEventListener('click',function(){
+      var email=($('gEmail').value||'').trim();
+      if(!email){ $('gErr').textContent='Enter your email.'; return; }
+      var b=$('gBtn'); b.disabled=true; b.textContent='Sending…'; $('gErr').textContent='';
+      auth('recover',{email:email, options:{redirect_to:location.origin+'/portal.html'}}).then(function(r){
+        b.disabled=false; b.textContent='Send reset link';
+        if(r.ok||r.status===200){ $('gOk').textContent='If that email has portal access, a reset link is on its way.'; return; }
+        $('gErr').textContent=(r.d&&(r.d.error_description||r.d.msg))||'Could not send the reset email.';
+      });
+    });
+    $('gBack').addEventListener('click',function(){ gateSignIn(); });
+  }
+
+  // invite / recovery landing: tokens arrive in the URL hash
+  function gateSetPassword(hashTokens, kind){
+    $('gate').style.display='flex';
+    $('gateBody').innerHTML='<h1>'+(kind==='recovery'?'Set a new password':'Welcome — set your password')+'</h1>'
+      +'<p>'+(kind==='recovery'?'Choose a new password for your portal account.':'You’ve been invited to your private leasing portal. Choose a password to finish setting up your account.')+'</p>'
+      +'<label for="gPass1">Password</label><input id="gPass1" type="password" autocomplete="new-password" placeholder="at least 8 characters">'
+      +'<label for="gPass2">Confirm password</label><input id="gPass2" type="password" autocomplete="new-password" placeholder="same again">'
+      +'<button class="pri" id="gBtn">Save &amp; enter portal</button>'
+      +'<div class="gate-err" id="gErr"></div>';
+    $('gBtn').addEventListener('click',function(){
+      var p1=$('gPass1').value||'', p2=$('gPass2').value||'';
+      if(p1.length<8){ $('gErr').textContent='Use at least 8 characters.'; return; }
+      if(p1!==p2){ $('gErr').textContent='The passwords don’t match.'; return; }
+      var b=$('gBtn'); b.disabled=true; b.textContent='Saving…'; $('gErr').textContent='';
+      fetch(SUPA_URL+'/auth/v1/user',{
+        method:'PUT',
+        headers:{ apikey:SUPA_ANON, Authorization:'Bearer '+hashTokens.access_token, 'Content-Type':'application/json' },
+        body: JSON.stringify({password:p1})
+      }).then(function(res){ return res.json().catch(function(){return {};}).then(function(d){ return {ok:res.ok,d:d}; }); })
+      .then(function(r){
+        if(!r.ok){ b.disabled=false; b.textContent='Save & enter portal'; $('gErr').textContent=(r.d&&(r.d.msg||r.d.error_description))||'Could not save the password.'; return; }
+        saveSession({ access_token:hashTokens.access_token, refresh_token:hashTokens.refresh_token,
+                      expires_at: Math.floor(Date.now()/1000)+3000, email:(r.d&&r.d.email)||'' });
+        history.replaceState(null,'',location.pathname+location.search);
+        boot();
+      })
+      .catch(function(){ b.disabled=false; b.textContent='Save & enter portal'; $('gErr').textContent='Network error — please try again.'; });
+    });
+  }
+
+  function parseHash(){
+    if(!location.hash||location.hash.length<2) return null;
+    var p=new URLSearchParams(location.hash.slice(1));
+    if(p.get('error_description')) return { error:p.get('error_description') };
+    if(!p.get('access_token')) return null;
+    return { access_token:p.get('access_token'), refresh_token:p.get('refresh_token')||null, type:p.get('type')||'' };
+  }
+
+  /* ---------- portal home ---------- */
+  function fmtWhen(iso){
+    if(!iso) return 'Time to be confirmed';
+    return new Date(iso).toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+  }
+  function fmtDate(d){ if(!d) return null; var dt=new Date(d+'T00:00:00'); return isNaN(dt)?d:dt.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}); }
+
+  function renderHome(data){
+    $('gate').style.display='none';
+    $('ptTop').style.display='flex'; $('ptView').style.display='block';
+    if(data.preview) $('previewBar').style.display='block';
+    $('ptUser').innerHTML=(data.user&&data.user.email?'<b>'+esc(data.user.email)+'</b>':'')
+      +'<button class="pt-out" id="ptOut">Sign out</button>';
+    $('ptOut').addEventListener('click',function(){
+      if(data.preview){ window.close(); location.href='/deals.html'; return; }
+      clearSession(); location.reload();
+    });
+
+    var companies=data.companies||[];
+    if(!companies.length){
+      $('ptView').innerHTML='<div class="pt-h">Welcome</div>'
+        +'<div class="pt-empty">Your account isn’t linked to a client company yet. Your broker at Havill &amp; Co. can fix that in a minute — just let them know.</div>';
+      return;
+    }
+
+    var html='';
+    companies.forEach(function(co){
+      var name=co.client_name||'Your company';
+      html+='<div class="pt-h">'+esc(name)+' — your portal</div>'
+        +'<div class="pt-sub">Everything Havill &amp; Co. is working on for you: options, tours, proposals, analysis, and your lease documents. It updates as your deal progresses.</div>';
+
+      // deals
+      var deals=co.deals||[];
+      html+='<div class="pt-sec"><div class="pt-sec-h">Your deals</div>';
+      if(deals.length){
+        html+='<div class="dealgrid">'+deals.map(function(d){
+          var facts='';
+          if(d.buildings&&d.buildings.length) facts+='<span class="fact">Buildings<b>'+d.buildings.length+'</b></span>';
+          if(d.shared_proposals) facts+='<span class="fact">Proposals<b>'+d.shared_proposals+'</b></span>';
+          if(d.has_abstract&&d.lease_expiration) facts+='<span class="fact">Lease expires<b>'+esc(fmtDate(d.lease_expiration)||'—')+'</b></span>';
+          return '<a class="dcard" href="deal-client.html?id='+encodeURIComponent(d.id)+'&via=portal'+(data.preview?'&preview=1':'')+'">'
+            +'<span class="st">'+esc(STAGE_LABEL[d.stage]||d.stage||'')+'</span>'
+            +'<div class="nm">'+esc(name)+'</div>'
+            +(d.buildings&&d.buildings.length?'<div class="bl">'+esc(d.buildings.join(' · '))+'</div>':'')
+            +(facts?'<div class="facts">'+facts+'</div>':'')
+            +'<div class="go">Open deal room →</div></a>';
+        }).join('')+'</div>';
+      } else {
+        html+='<div class="pt-empty">No active deals shared with you yet.</div>';
+      }
+      html+='</div>';
+
+      // upcoming tours across deals
+      var tours=[];
+      deals.forEach(function(d){ (d.upcoming_tours||[]).forEach(function(t){ tours.push(t); }); });
+      tours.sort(function(a,b){ return String(a.scheduled_at||'').localeCompare(String(b.scheduled_at||'')); });
+      if(tours.length){
+        html+='<div class="pt-sec"><div class="pt-sec-h">Upcoming tours</div><div class="tourlist">'
+          +tours.slice(0,5).map(function(t){
+            return '<div class="touritem"><div class="tw">'+esc(fmtWhen(t.scheduled_at))+'</div><div class="tn">'+esc(t.label||'Tour')+'</div></div>';
+          }).join('')+'</div></div>';
+      }
+
+      // option packages (interactive brochures)
+      var pkgs=co.packages||[];
+      if(pkgs.length){
+        html+='<div class="pt-sec"><div class="pt-sec-h">Your building options</div><div class="linklist">'
+          +pkgs.map(function(p){
+            return '<a class="linkitem" href="client.html?c='+encodeURIComponent(p.slug)+'&via=portal">'
+              +'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg>'
+              +'<span class="ln">'+esc(p.label||'Building shortlist')+'</span><span class="lm">Interactive shortlist →</span></a>';
+          }).join('')+'</div></div>';
+      }
+
+      // documents
+      var docs=co.documents||[];
+      if(docs.length){
+        html+='<div class="pt-sec"><div class="pt-sec-h">Documents</div><div class="linklist">'
+          +docs.map(function(dc){
+            return '<a class="linkitem" href="'+esc(dc.url)+'" target="_blank" rel="noopener">'
+              +'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>'
+              +'<span class="ln">'+esc(dc.filename)+'</span><span class="lm">'+esc(dc.label||'')+'</span></a>';
+          }).join('')+'</div></div>';
+      }
+
+      // questionnaires
+      var intakes=co.intakes||[];
+      if(intakes.length){
+        html+='<div class="pt-sec"><div class="pt-sec-h">Questionnaires</div><div class="linklist">'
+          +intakes.map(function(iq){
+            var done=iq.status==='completed';
+            return '<a class="linkitem" href="intake.html?i='+encodeURIComponent(iq.slug)+'">'
+              +'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>'
+              +'<span class="ln">Space needs questionnaire</span>'
+              +'<span class="lm">'+(done?'Completed ✓':'Please complete →')+'</span></a>';
+          }).join('')+'</div></div>';
+      }
+    });
+
+    html+='<div class="pt-disc">This portal is private to you and your team. Figures shown are estimates for comparison and are subject to final executed documents. Prepared by Havill &amp; Co.</div>';
+    $('ptView').innerHTML=html;
+  }
+
+  function loadHome(token){
+    var body={token:token};
+    if(previewCompanyId) body.previewCompanyId=previewCompanyId;
+    fetch('/.netlify/functions/portal-get',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+      .then(function(res){ return res.json().then(function(d){ return {status:res.status,d:d}; }); })
+      .then(function(r){
+        if(r.status===200){ renderHome(r.d); return; }
+        if(r.status===401){ clearSession(); gateSignIn('Your session expired — please sign in again.'); return; }
+        gateSignIn((r.d&&r.d.error)||'Could not load your portal.');
+      })
+      .catch(function(){ gateSignIn('Network error — please try again.'); });
+  }
+
+  function boot(){
+    // 1) invite / recovery links land here with tokens in the hash
+    var hash=parseHash();
+    if(hash){
+      if(hash.error){ gateSignIn(esc(hash.error)); history.replaceState(null,'',location.pathname+location.search); return; }
+      if(hash.type==='invite'||hash.type==='signup'||hash.type==='recovery'){ gateSetPassword(hash, hash.type==='recovery'?'recovery':'invite'); return; }
+      // magic-link style landing (no explicit type) — accept the session directly
+      saveSession({access_token:hash.access_token, refresh_token:hash.refresh_token, expires_at:Math.floor(Date.now()/1000)+3000, email:''});
+      history.replaceState(null,'',location.pathname+location.search);
+    }
+    // 2) broker preview mode uses the Cockpit session
+    if(previewCompanyId){
+      var bt=getBrokerToken();
+      if(bt){ loadHome(bt); return; }
+      gateSignIn('To preview, sign in to the Cockpit first, then reopen this preview link.');
+      return;
+    }
+    // 3) normal client session
+    getToken().then(function(t){
+      if(t) loadHome(t); else gateSignIn();
+    });
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
