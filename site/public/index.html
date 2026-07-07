@@ -2459,10 +2459,54 @@
       clSection('Packages', '<button class="cl-secbtn" onclick="openShare()">+ New</button>', pHtml)+
       clSection('Comps', '<button class="cl-secbtn" onclick="marketSub(\'comps\')">Open Comps</button>', coHtml)+
       clSection('Proposals &amp; leases', '<a class="cl-secbtn" href="deals.html">Open Deals ↗</a>', '<div id="clDeals">'+(c.id?'<div class="q-empty small">Loading…</div>':'<div class="cl-soon">Link this client to HubSpot to pull their proposals and leases from Deals.</div>')+'</div>')+
+      clSection('Tenant portal', (c.id?'<a class="cl-secbtn" href="portal.html?preview='+cmEsc(c.id)+'" target="_blank" rel="noopener" title="See their portal exactly as they do">👁 Preview ↗</a>':''), '<div id="clPortal">'+(c.id?'<div class="q-empty small">Loading…</div>':'<div class="cl-soon">Link this client to HubSpot to invite them to their private portal.</div>')+'</div>')+
       clSection('Financial analysis', '', '<div class="cl-soon">Per-client financial analysis is coming — it’ll pull from this client’s comps and lease terms, and feed the tenant portal.</div>')+
       '</div>';
-    if(c.id) clLoadDeals(c);
+    if(c.id){ clLoadDeals(c); clLoadPortal(c); }
   }
+
+  // ---- tenant portal membership on the client hub page (mirrors deals.html's
+  // Portal sheet; grants live in client_access keyed by the HubSpot company id) ----
+  function clLoadPortal(c){
+    var box=document.getElementById('clPortal'); if(!box || !window.vantageSB) return;
+    window.vantageSB.from('client_access').select('*').eq('hs_company_id',c.id).order('created_at').then(function(r){
+      if(!document.getElementById('clPortal')) return; // user navigated away
+      if(r.error){ box.innerHTML='<div class="cl-soon">The portal isn’t set up yet — run <b>supabase/client-portal.sql</b> once and this section lights up.</div>'; return; }
+      var rows=r.data||[];
+      var members=rows.length?rows.map(function(g){
+        return '<div class="q-row" style="cursor:default"><div style="min-width:0"><div class="q-co">'+cmEsc(g.email||g.user_id)+'</div>'+
+          '<div class="q-meta">'+(g.active?'Active':'Revoked')+' · invited '+timeAgo(g.created_at)+'</div></div>'+
+          '<button class="cl-secbtn" onclick="clientsPortalRevoke(\''+cmEsc(g.id)+'\',\''+cmEsc(c.key)+'\','+(g.active?'false':'true')+')">'+(g.active?'Revoke':'Restore')+'</button></div>';
+      }).join(''):'<div class="q-empty small">No one has portal access yet — invite them below.</div>';
+      box.innerHTML=members
+        +'<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'
+        +'<input id="clPtEmail" type="email" placeholder="their email" style="flex:1.4;min-width:170px;font:500 13px Inter;padding:8px 11px;border:1px solid var(--line-2);border-radius:9px;background:var(--paper)">'
+        +'<input id="clPtName" type="text" placeholder="name (optional)" style="flex:1;min-width:120px;font:500 13px Inter;padding:8px 11px;border:1px solid var(--line-2);border-radius:9px;background:var(--paper)">'
+        +'<button class="cl-secbtn" id="clPtBtn" onclick="clientsPortalInvite(\''+cmEsc(c.key)+'\')">✉ Invite</button></div>'
+        +'<div id="clPtMsg" style="font:500 12px Inter;margin-top:7px;min-height:15px;color:var(--ink-faint)"></div>';
+    });
+  }
+  window.clientsPortalInvite=async function(key){
+    var c=(chRoster||[]).filter(function(x){return x.key===key;})[0]; if(!c||!c.id) return;
+    var email=(document.getElementById('clPtEmail').value||'').trim();
+    var name=(document.getElementById('clPtName').value||'').trim();
+    var msg=document.getElementById('clPtMsg'), btn=document.getElementById('clPtBtn');
+    if(!email){ msg.textContent='Enter their email.'; msg.style.color='#C2453F'; return; }
+    btn.disabled=true; btn.textContent='Inviting…'; msg.textContent='';
+    try{
+      var tok=await qToken();
+      var res=await fetch('/.netlify/functions/portal-invite',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token:tok, email:email, fullName:name||undefined, hsCompanyId:c.id, clientName:c.name||undefined})});
+      var d=await res.json().catch(function(){return {};});
+      if(!res.ok) throw new Error(d.error||('Error '+res.status));
+      clLoadPortal(c);
+    }catch(e){ msg.textContent=e.message; msg.style.color='#C2453F'; btn.disabled=false; btn.textContent='✉ Invite'; }
+  };
+  window.clientsPortalRevoke=async function(grantId,key,makeActive){
+    var c=(chRoster||[]).filter(function(x){return x.key===key;})[0]; if(!c) return;
+    try{ await window.vantageSB.from('client_access').update({active:makeActive==='true'||makeActive===true}).eq('id',grantId); }catch(e){}
+    clLoadPortal(c);
+  };
   // Phase 2: pull a client's proposals & leases from the Deals section by HubSpot
   // company id. The endpoint is owned by the Deals session (see the handoff doc); until
   // it exists this degrades to a placeholder, so shipping this early is safe.
@@ -2965,6 +3009,10 @@
   var gate=document.getElementById('authGate');
   function showApp(session){
     gate.style.display='none';
+    // tenant-portal users don't belong in the Cockpit — send them to their portal.
+    // (RLS already hides all broker data from them; this is UX, not security.)
+    try{ sb.from('profiles').select('role').eq('id',session.user.id).single()
+      .then(function(r){ if(r&&r.data&&r.data.role==='client') location.replace('portal.html'); }); }catch(e){}
     var chip=document.getElementById('userChip'), em=document.getElementById('userEmail');
     if(chip){ chip.style.display='inline-flex'; em.textContent=(session&&session.user&&session.user.email)||''; }
     // land on the right module (supports ?m= deep links), refreshing greeting + attention

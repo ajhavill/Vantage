@@ -337,17 +337,22 @@
 <script>
 (function(){
   "use strict";
-  var PKG=null, slug=null, pass=null, landMap=null, cmvMap=null, cmvLayer=null, cmvTeam=[], cmvRes=null, cmvSel=null;
+  var PKG=null, slug=null, pass=null, portalTok=null, landMap=null, cmvMap=null, cmvLayer=null, cmvTeam=[], cmvRes=null, cmvSel=null;
 
   function qs(k){ return new URLSearchParams(location.search).get(k); }
   function esc(s){ return VV.esc(s); }
 
-  // fire-and-forget engagement ping (never blocks or breaks the viewer)
+  // fire-and-forget engagement ping (never blocks or breaks the viewer);
+  // portal mode proves access with the session token instead of the passcode
   function track(eventName, building){
-    if(!slug || !pass) return;
+    var creds=null;
+    if(slug&&pass) creds={slug:slug,passcode:pass};
+    else if(slug&&portalTok) creds={slug:slug,token:portalTok};
+    if(!creds) return;
+    creds.event=eventName; if(building) creds.building=building;
     try{
       fetch('/.netlify/functions/track',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({slug:slug,passcode:pass,event:eventName,building:building||undefined}),keepalive:true})
+        body:JSON.stringify(creds),keepalive:true})
         .catch(function(){});
     }catch(e){}
   }
@@ -579,7 +584,7 @@
     document.getElementById('gateBtn').style.display='none';
     fetch('/.netlify/functions/get-package',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slug:slug,token:tok})})
       .then(function(r){ return r.text().then(function(t){ var d=null; try{d=JSON.parse(t);}catch(e){} if(!r.ok) throw new Error((d&&d.error)||('Error '+r.status)); return d; }); })
-      .then(function(d){ PKG=d; boot(); })
+      .then(function(d){ PKG=d; portalTok=tok; VV.setCommuteAuth({token:tok}); boot(); })
       .catch(function(e){
         document.getElementById('gateErr').textContent=/failed to fetch|networkerror|load failed/i.test(e.message)?'Can’t reach the server. This viewer runs on the deployed site.':e.message;
       });

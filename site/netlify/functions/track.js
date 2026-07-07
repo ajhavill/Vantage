@@ -11,11 +11,33 @@
 
 const { getStore, connectLambda } = require("@netlify/blobs");
 const crypto = require("crypto");
+const sb = require("./_sb");
 
 const json = (statusCode, obj) => ({ statusCode, headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) });
 
 function hashPass(passcode, salt) { return crypto.pbkdf2Sync(String(passcode), salt, 100000, 32, "sha256").toString("hex"); }
 function safeEq(a, b) { const ab = Buffer.from(String(a)), bb = Buffer.from(String(b)); if (ab.length !== bb.length) return false; return crypto.timingSafeEqual(ab, bb); }
+
+// Portal path: a logged-in CLIENT with the package attached to their company may
+// record engagement (same access proof as get-package's token path). Broker-side
+// users return false so previews never pollute the activity stats.
+async function clientHoldsPackage(slug, token) {
+  if (!sb.configured()) return false;
+  const user = await sb.userFromToken(token);
+  if (!user) return false;
+  const pr = await sb.rest("profiles?id=eq." + encodeURIComponent(user.id) + "&select=role&limit=1");
+  const me = (pr.ok && Array.isArray(pr.data) && pr.data[0]) || null;
+  if (!me || me.role !== "client") return false;
+  const g = await sb.rest("client_access?user_id=eq." + encodeURIComponent(user.id) + "&active=eq.true&select=org_id,hs_company_id");
+  const grants = (g.ok && Array.isArray(g.data)) ? g.data : [];
+  for (const gr of grants) {
+    const l = await sb.rest("portal_package_links?org_id=eq." + encodeURIComponent(gr.org_id) +
+      "&hs_company_id=eq." + encodeURIComponent(gr.hs_company_id) +
+      "&slug=eq." + encodeURIComponent(slug) + "&select=id&limit=1");
+    if (l.ok && Array.isArray(l.data) && l.data[0]) return true;
+  }
+  return false;
+}
 
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") return json(405, { error: "Use POST." });
@@ -36,7 +58,12 @@ exports.handler = async (event) => {
     pkg = await pkgs.get(slug, { type: "json" });
   } catch (e) { pkg = null; }
   if (!pkg) return json(404, { error: "Not found." });
-  if (!body.passcode || !safeEq(hashPass(body.passcode, pkg.salt), pkg.passcodeHash)) return json(401, { error: "Not authorized." });
+  if (body.token && !body.passcode) {
+    // logged-in portal path (broker previews are rejected on purpose — no fake stats)
+    if (!(await clientHoldsPackage(slug, String(body.token)))) return json(401, { error: "Not authorized." });
+  } else if (!body.passcode || !safeEq(hashPass(body.passcode, pkg.salt), pkg.passcodeHash)) {
+    return json(401, { error: "Not authorized." });
+  }
 
   const now = new Date().toISOString();
   try {

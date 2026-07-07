@@ -591,6 +591,10 @@ window.DF = (function(){
   function showApp(session){
     $('authGate').style.display='none';
     me=session.user;
+    // tenant-portal users don't belong in the deal pipeline — send them to their
+    // portal. (RLS already hides all broker data; this is UX, not security.)
+    try{ sb.from('profiles').select('role').eq('id',me.id).single()
+      .then(function(r){ if(r&&r.data&&r.data.role==='client') location.replace('portal.html'); }); }catch(e){}
     var chip=$('userChip'); if(chip){ chip.style.display='inline-flex'; $('userEmail').textContent=me.email||''; }
     try{ _view=localStorage.getItem('vantage_deal_view')||'board'; }catch(e){}
     try{ loadPortalBuildings(); }catch(e){}
@@ -942,7 +946,7 @@ window.DF = (function(){
       var docs=await q(sb.from('documents').select('*').eq('deal_id',id).order('created_at'));
       var tours=await q(sb.from('tour_stops').select('*').eq('deal_id',id).order('scheduled_at',{ascending:true,nullsFirst:false}));
       var abstracts=await q(sb.from('lease_abstracts').select('*').eq('deal_id',id).order('created_at'));
-      var events=[]; try{ events=await q(sb.from('deal_events').select('type,created_at').eq('deal_id',id).order('created_at',{ascending:false})); }catch(e){}
+      var events=[]; try{ events=await q(sb.from('deal_events').select('type,detail,created_at').eq('deal_id',id).order('created_at',{ascending:false})); }catch(e){}
       var steps=[]; try{ steps=await q(sb.from('deal_steps').select('*').eq('deal_id',id).order('sort_order')); }catch(e){}
       var tasks=[]; try{ tasks=await q(sb.from('deal_tasks').select('*').eq('deal_id',id).order('due_date',{ascending:true,nullsFirst:false})); }catch(e){}
       try{ syncDealModel(id, proposals, rounds, abstracts[0]||null); }catch(e){}
@@ -956,7 +960,18 @@ window.DF = (function(){
     var ev=events||[];
     var opens=ev.filter(function(e){return e.type==='open';}).length;
     var dls=ev.filter(function(e){return e.type==='download';}).length;
-    var engLine = ev.length ? '<div class="meta" style="margin-top:3px"><span style="color:var(--accent)">👁 Client opened '+opens+'×</span>'+(ev[0]?' · last '+ago(ev[0].created_at):'')+(dls?' · '+dls+' PDF download'+(dls>1?'s':''):'')+'</div>' : '';
+    // portal events carry WHO in detail ("email" or "email · xlsx"); passcode-link
+    // events have no identity. Show per-person counts when we have them.
+    var byWho={};
+    ev.forEach(function(e){
+      var m=/^([^\s·]+@[^\s·]+)/.exec(e.detail||'');
+      if(m){ var w=byWho[m[1]]=byWho[m[1]]||{opens:0,last:null}; if(e.type==='open') w.opens++; if(!w.last) w.last=e.created_at; }
+    });
+    var whoBits=Object.keys(byWho).slice(0,3).map(function(w){
+      return esc(w)+(byWho[w].opens?' '+byWho[w].opens+'×':'')+(byWho[w].last?' ('+ago(byWho[w].last)+')':'');
+    });
+    var engLine = ev.length ? '<div class="meta" style="margin-top:3px"><span style="color:var(--accent)">👁 Client opened '+opens+'×</span>'+(ev[0]?' · last '+ago(ev[0].created_at):'')+(dls?' · '+dls+' download'+(dls>1?'s':''):'')
+      +(whoBits.length?'<br><span style="color:var(--ink-faint)">Portal: '+whoBits.join(' · ')+'</span>':'')+'</div>' : '';
     var stageOpts=Object.keys(STAGE_LABEL).map(function(k){
       return '<option value="'+k+'"'+(d.stage===k?' selected':'')+'>'+STAGE_LABEL[k]+'</option>';
     }).join('');

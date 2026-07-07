@@ -252,6 +252,13 @@
     $('gate').style.display='none';
     $('ptTop').style.display='flex'; $('ptView').style.display='block';
     if(data.preview) $('previewBar').style.display='block';
+    // "new since your last visit" — client-side only, per browser (never in preview)
+    var lastSeen=0;
+    if(!data.preview){
+      try{ lastSeen=Number(localStorage.getItem('vantage_portal_seen'))||0; localStorage.setItem('vantage_portal_seen', String(Date.now())); }catch(e){}
+    }
+    function isNew(iso){ return lastSeen>0 && iso && new Date(iso).getTime()>lastSeen; }
+    var newBadge='<span style="font:700 9px Inter;text-transform:uppercase;letter-spacing:.06em;color:#fff;background:var(--accent);border-radius:5px;padding:2px 6px;margin-left:7px;vertical-align:2px">New</span>';
     $('ptUser').innerHTML=(data.user&&data.user.email?'<b>'+esc(data.user.email)+'</b>':'')
       +'<button class="pt-out" id="ptOut">Sign out</button>';
     $('ptOut').addEventListener('click',function(){
@@ -282,7 +289,7 @@
           if(d.shared_proposals) facts+='<span class="fact">Proposals<b>'+d.shared_proposals+'</b></span>';
           if(d.has_abstract&&d.lease_expiration) facts+='<span class="fact">Lease expires<b>'+esc(fmtDate(d.lease_expiration)||'—')+'</b></span>';
           return '<a class="dcard" href="deal-client.html?id='+encodeURIComponent(d.id)+'&via=portal'+(data.preview?'&preview=1':'')+'">'
-            +'<span class="st">'+esc(STAGE_LABEL[d.stage]||d.stage||'')+'</span>'
+            +'<span class="st">'+esc(STAGE_LABEL[d.stage]||d.stage||'')+'</span>'+(isNew(d.updated_at)?newBadge:'')
             +'<div class="nm">'+esc(name)+'</div>'
             +(d.buildings&&d.buildings.length?'<div class="bl">'+esc(d.buildings.join(' · '))+'</div>':'')
             +(facts?'<div class="facts">'+facts+'</div>':'')
@@ -322,7 +329,7 @@
           +docs.map(function(dc){
             return '<a class="linkitem" href="'+esc(dc.url)+'" target="_blank" rel="noopener">'
               +'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>'
-              +'<span class="ln">'+esc(dc.filename)+'</span><span class="lm">'+esc(dc.label||'')+'</span></a>';
+              +'<span class="ln">'+esc(dc.filename)+(isNew(dc.created_at)?newBadge:'')+'</span><span class="lm">'+esc(dc.label||'')+'</span></a>';
           }).join('')+'</div></div>';
       }
 
