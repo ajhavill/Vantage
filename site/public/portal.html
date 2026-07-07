@@ -143,7 +143,7 @@
         _refreshing=null;
         if(r.ok&&r.d.access_token){ var ns=sessionFromTokenResponse(r.d); ns.email=ns.email||s.email; saveSession(ns); return ns.access_token; }
         clearSession(); return null;
-      });
+      }).catch(function(){ _refreshing=null; return null; });   // transient network error — fall back to sign-in, don't poison future calls or wipe the session
     }
     return _refreshing;
   }
@@ -194,11 +194,12 @@
       var email=($('gEmail').value||'').trim();
       if(!email){ $('gErr').textContent='Enter your email.'; return; }
       var b=$('gBtn'); b.disabled=true; b.textContent='Sending…'; $('gErr').textContent='';
-      auth('recover',{email:email, options:{redirect_to:location.origin+'/portal.html'}}).then(function(r){
+      // GoTrue reads redirect_to from the QUERY STRING, not a JSON body key
+      auth('recover?redirect_to='+encodeURIComponent(location.origin+'/portal.html'),{email:email}).then(function(r){
         b.disabled=false; b.textContent='Send reset link';
         if(r.ok||r.status===200){ $('gOk').textContent='If that email has portal access, a reset link is on its way.'; return; }
         $('gErr').textContent=(r.d&&(r.d.error_description||r.d.msg))||'Could not send the reset email.';
-      });
+      }).catch(function(){ b.disabled=false; b.textContent='Send reset link'; $('gErr').textContent='Network error — please try again.'; });
     });
     $('gBack').addEventListener('click',function(){ gateSignIn(); });
   }
@@ -225,7 +226,7 @@
       .then(function(r){
         if(!r.ok){ b.disabled=false; b.textContent='Save & enter portal'; $('gErr').textContent=(r.d&&(r.d.msg||r.d.error_description))||'Could not save the password.'; return; }
         saveSession({ access_token:hashTokens.access_token, refresh_token:hashTokens.refresh_token,
-                      expires_at: Math.floor(Date.now()/1000)+3000, email:(r.d&&r.d.email)||'' });
+                      expires_at: hashTokens.expires_at || (Math.floor(Date.now()/1000)+3000), email:(r.d&&r.d.email)||'' });
         history.replaceState(null,'',location.pathname+location.search);
         boot();
       })
@@ -238,7 +239,8 @@
     var p=new URLSearchParams(location.hash.slice(1));
     if(p.get('error_description')) return { error:p.get('error_description') };
     if(!p.get('access_token')) return null;
-    return { access_token:p.get('access_token'), refresh_token:p.get('refresh_token')||null, type:p.get('type')||'' };
+    var ein=Number(p.get('expires_in'))||3000;   // real token lifetime from GoTrue, not a guess
+    return { access_token:p.get('access_token'), refresh_token:p.get('refresh_token')||null, type:p.get('type')||'', expires_at: Math.floor(Date.now()/1000)+ein };
   }
 
   /* ---------- portal home ---------- */
@@ -360,7 +362,7 @@
       .then(function(res){ return res.json().then(function(d){ return {status:res.status,d:d}; }); })
       .then(function(r){
         if(r.status===200){ renderHome(r.d); return; }
-        if(r.status===401){ clearSession(); gateSignIn('Your session expired — please sign in again.'); return; }
+        if(r.status===401){ if(!previewCompanyId) clearSession(); gateSignIn(previewCompanyId?'Sign in to the Cockpit first, then reopen this preview.':'Your session expired — please sign in again.'); return; }
         gateSignIn((r.d&&r.d.error)||'Could not load your portal.');
       })
       .catch(function(){ gateSignIn('Network error — please try again.'); });
@@ -373,7 +375,7 @@
       if(hash.error){ gateSignIn(esc(hash.error)); history.replaceState(null,'',location.pathname+location.search); return; }
       if(hash.type==='invite'||hash.type==='signup'||hash.type==='recovery'){ gateSetPassword(hash, hash.type==='recovery'?'recovery':'invite'); return; }
       // magic-link style landing (no explicit type) — accept the session directly
-      saveSession({access_token:hash.access_token, refresh_token:hash.refresh_token, expires_at:Math.floor(Date.now()/1000)+3000, email:''});
+      saveSession({access_token:hash.access_token, refresh_token:hash.refresh_token, expires_at:hash.expires_at||(Math.floor(Date.now()/1000)+3000), email:''});
       history.replaceState(null,'',location.pathname+location.search);
     }
     // 2) broker preview mode uses the Cockpit session
@@ -386,7 +388,7 @@
     // 3) normal client session
     getToken().then(function(t){
       if(t) loadHome(t); else gateSignIn();
-    });
+    }).catch(function(){ gateSignIn(); });
   }
 
   boot();

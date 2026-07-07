@@ -97,13 +97,15 @@ async function companyPayload(orgId, hsCompanyId, clientName) {
     const propTitle = {}; visProposals.forEach((p) => { propTitle[p.id] = p.title || null; });
     const docRows = [].concat(Array.isArray(dealDocs.data) ? dealDocs.data : [], Array.isArray(propDocs.data) ? propDocs.data : [])
       .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).slice(0, 50);
-    for (const doc of docRows) {
-      const url = await signUrl(doc.storage_path, 1800);   // 30-minute links; refresh the page for new ones
-      if (url) out.documents.push({
+    // Sign in PARALLEL — serial signing of up to 50 docs × up to 5 companies could
+    // blow Netlify's 10s function limit precisely for the most active clients.
+    const signed = await Promise.all(docRows.map((doc) => signUrl(doc.storage_path, 1800)));  // 30-min links; refresh for new
+    docRows.forEach((doc, i) => {
+      if (signed[i]) out.documents.push({
         id: doc.id, deal_id: doc.deal_id, filename: doc.filename, created_at: doc.created_at,
-        label: doc.proposal_id ? (propTitle[doc.proposal_id] || "Proposal") : "Deal document", url: url
+        label: doc.proposal_id ? (propTitle[doc.proposal_id] || "Proposal") : "Deal document", url: signed[i]
       });
-    }
+    });
   }
 
   // attached option packages (the "brochure" phase — packages themselves live in Blobs)
@@ -149,10 +151,11 @@ exports.handler = async (event) => {
     preview = true;
   }
 
-  const companies = [];
-  for (const g of grants.slice(0, 5)) {
-    companies.push(await companyPayload(g.org_id, g.hs_company_id, g.client_name || null));
-  }
+  // Most clients have ONE grant; build the (usually 1, max 5) in parallel so a
+  // multi-company client doesn't pay the round-trips serially.
+  const companies = await Promise.all(
+    grants.slice(0, 5).map((g) => companyPayload(g.org_id, g.hs_company_id, g.client_name || null))
+  );
 
   return json(200, {
     preview: preview,

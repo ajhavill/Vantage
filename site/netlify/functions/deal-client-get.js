@@ -56,7 +56,9 @@ async function dealFromToken(dealId, token) {
   const deal = (dr.ok && Array.isArray(dr.data) && dr.data[0]) || null;
   if (!deal) return null;
   if (me.role === "client") {
-    if (!deal.hs_company_id || !deal.org_id) return null;
+    // dead deals go dark on the portal — a stale deal-client.html?id= link a client
+    // kept from before the deal died must not keep resolving
+    if (!deal.hs_company_id || !deal.org_id || deal.stage === "dead") return null;
     const g = await sb.rest("client_access?user_id=eq." + encodeURIComponent(user.id) +
       "&org_id=eq." + encodeURIComponent(deal.org_id) +
       "&hs_company_id=eq." + encodeURIComponent(deal.hs_company_id) + "&active=eq.true&select=id&limit=1");
@@ -120,19 +122,20 @@ exports.handler = async (event) => {
     const dr = await sb.rest("documents?proposal_id=in.(" + ids.join(",") + ")&client_visible=eq.true" +
       "&select=id,proposal_id,filename,storage_path&order=created_at");
     const docRows = dr.data || [];
-    for (const doc of docRows) {
-      const url = await signUrl(doc.storage_path, 600);   // 10-minute link
-      if (url) documents.push({ id: doc.id, proposal_id: doc.proposal_id, filename: doc.filename, url: url });
-    }
+    const urls = await Promise.all(docRows.map((doc) => signUrl(doc.storage_path, 600)));   // 10-min links, signed in parallel
+    docRows.forEach((doc, i) => {
+      if (urls[i]) documents.push({ id: doc.id, proposal_id: doc.proposal_id, filename: doc.filename, url: urls[i] });
+    });
   }
 
   // client-visible deal-level / lease documents (not tied to a proposal — e.g. the signed lease)
   const ldr = await sb.rest("documents?deal_id=eq." + id + "&proposal_id=is.null&client_visible=eq.true" +
     "&select=id,proposal_id,filename,storage_path&order=created_at");
-  for (const doc of (ldr.data || [])) {
-    const url = await signUrl(doc.storage_path, 600);
-    if (url) documents.push({ id: doc.id, proposal_id: null, filename: doc.filename, url: url });
-  }
+  const leaseRows = ldr.data || [];
+  const leaseUrls = await Promise.all(leaseRows.map((doc) => signUrl(doc.storage_path, 600)));
+  leaseRows.forEach((doc, i) => {
+    if (leaseUrls[i]) documents.push({ id: doc.id, proposal_id: null, filename: doc.filename, url: leaseUrls[i] });
+  });
 
   return json(200, {
     client_name: deal.client_name || null,

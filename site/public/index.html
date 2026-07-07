@@ -2504,7 +2504,10 @@
   };
   window.clientsPortalRevoke=async function(grantId,key,makeActive){
     var c=(chRoster||[]).filter(function(x){return x.key===key;})[0]; if(!c) return;
-    try{ await window.vantageSB.from('client_access').update({active:makeActive==='true'||makeActive===true}).eq('id',grantId); }catch(e){}
+    // supabase-js RESOLVES with {error} on failure (doesn't throw) — check it, or a
+    // rejected revoke would silently leave the grant looking unchanged
+    var r=await window.vantageSB.from('client_access').update({active:makeActive==='true'||makeActive===true}).eq('id',grantId);
+    if(r&&r.error){ var m=document.getElementById('clPtMsg'); if(m){ m.textContent='Could not update access: '+r.error.message; m.style.color='#C2453F'; } return; }
     clLoadPortal(c);
   };
   // Phase 2: pull a client's proposals & leases from the Deals section by HubSpot

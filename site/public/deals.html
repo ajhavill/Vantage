@@ -2194,7 +2194,7 @@ window.DF = (function(){
     var avail=ptLoadPackages().filter(function(p){ return p.slug && !linkedSlugs[p.slug]; });
     var attach = avail.length
       ? '<div style="display:flex;gap:8px;align-items:center;margin-top:6px"><select id="pt_pkg" class="fld" style="flex:1">'
-        + avail.map(function(p,i){ return '<option value="'+i+'">'+esc(ptPkgLabel(p))+'</option>'; }).join('')
+        + avail.map(function(p){ return '<option value="'+esc(p.slug)+'">'+esc(ptPkgLabel(p))+'</option>'; }).join('')
         + '</select><button class="miniadd" onclick="DF.portalAttach()">+ Attach</button></div>'
         + '<div style="font-size:11px;color:var(--ink-faint);margin-top:5px">Packages this browser created in the Cockpit. Attaching lets portal users open the interactive shortlist without a passcode.</div>'
       : (links.length?'':'<div style="font-size:11.5px;color:var(--ink-faint)">No packages found in this browser — create one in the Cockpit first, then attach it here.</div>');
@@ -2258,10 +2258,13 @@ window.DF = (function(){
   async function portalAttach(){
     var d=deals.filter(function(x){return x.id===_ptDealId;})[0]; if(!d) return;
     var selEl=$('pt_pkg'); if(!selEl) return;
-    var linkedSlugs={};
-    try{ (await q(sb.from('portal_package_links').select('slug').eq('hs_company_id',d.hs_company_id))).forEach(function(l){ linkedSlugs[l.slug]=1; }); }catch(e){}
-    var avail=ptLoadPackages().filter(function(p){ return p.slug && !linkedSlugs[p.slug]; });
-    var p=avail[Number(selEl.value)]; if(!p) return;
+    // resolve the package by SLUG (the option value), never by list index — the
+    // available list can shift between render and click, and an index would then
+    // attach the WRONG client's shortlist. The DB unique constraint + insert also
+    // reject an already-linked slug, so double-attach is safe.
+    var slug=selEl.value;
+    var p=ptLoadPackages().filter(function(x){ return x.slug===slug; })[0];
+    if(!p){ var e0=$('pt_err'); if(e0) e0.textContent='That package is no longer available in this browser.'; return; }
     try{
       await q(sb.from('portal_package_links').insert({org_id:d.org_id, hs_company_id:d.hs_company_id, slug:p.slug, label:ptPkgLabel(p), created_by:me.id}).select());
       openPortal(_ptDealId);

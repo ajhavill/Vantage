@@ -583,10 +583,16 @@
     document.getElementById('gatePass').style.display='none';
     document.getElementById('gateBtn').style.display='none';
     fetch('/.netlify/functions/get-package',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slug:slug,token:tok})})
-      .then(function(r){ return r.text().then(function(t){ var d=null; try{d=JSON.parse(t);}catch(e){} if(!r.ok) throw new Error((d&&d.error)||('Error '+r.status)); return d; }); })
-      .then(function(d){ PKG=d; portalTok=tok; VV.setCommuteAuth({token:tok}); boot(); })
-      .catch(function(e){
-        document.getElementById('gateErr').textContent=/failed to fetch|networkerror|load failed/i.test(e.message)?'Can’t reach the server. This viewer runs on the deployed site.':e.message;
+      .then(function(r){ return r.text().then(function(t){ var d=null; try{d=JSON.parse(t);}catch(e){} return {status:r.status, ok:r.ok, d:d}; }); })
+      .then(function(r){
+        if(r.ok){ PKG=r.d; portalTok=tok; VV.setCommuteAuth({token:tok}); boot(); return; }
+        // stale/insufficient session — bounce back to the portal to re-auth rather
+        // than dead-ending with the passcode UI hidden
+        if(r.status===401){ location.href='portal.html'; return; }
+        document.getElementById('gateErr').textContent=(r.d&&r.d.error)||('Could not open this shortlist ('+r.status+').');
+      })
+      .catch(function(){
+        document.getElementById('gateErr').textContent='Can’t reach the server. This viewer runs on the deployed site.';
       });
   }
 
