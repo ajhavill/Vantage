@@ -1613,7 +1613,7 @@ window.DF = (function(){
     if(!matches.length) return '';
     return '<div class="qnr-match"><div class="qnr-match-h">✨ Best-fit buildings <span class="qnr-hint">matched from their answers — amenities, size &amp; budget</span></div>'
       + matches.map(function(m){
-          return '<div class="cd-row" style="cursor:default"><span class="cd-row-nm nm-link" onclick="DF.viewBuilding(\''+esc(m.b.id)+'\')" title="See building details">'+esc(m.b.name)+' ↗ <span class="qnr-fit">fit '+m.score+'</span></span>'
+          return '<div class="cd-row" style="cursor:default"><span class="cd-row-nm nm-link" onclick="DF.viewBuilding(\''+esc(m.b.id)+'\',\''+dealId+'\')" title="See building details">'+esc(m.b.name)+' ↗ <span class="qnr-fit">fit '+m.score+'</span></span>'
             + '<span class="cd-row-meta">'+esc(m.b.submarket||'')+(m.reasons.length?' · '+esc(m.reasons.slice(0,2).join(', ')):'')+'</span>'
             + '<button class="qnr-add" onclick="DF.addMatchToDeal(\''+dealId+'\',\''+esc(m.b.id)+'\',this)">+ Add to deal</button></div>';
         }).join('')
@@ -2096,7 +2096,7 @@ window.DF = (function(){
     var canView=!!p.building_id;
     var acts='<button class="miniadd" onclick="DF.setPropStatus(\''+p.id+'\',\'shortlisted\',\''+dealId+'\')" title="Curate into the market report">→ Add to market report</button>'
       + (inTour?'<span class="ptag-in">✓ in tour</span>':'<button class="miniadd" onclick="DF.addToTour(\''+p.id+'\',\''+dealId+'\')">+ Add to tour</button>');
-    var nm=canView?'<div class="nm nm-link" onclick="DF.viewBuilding(\''+esc(p.building_id)+'\')" title="See building details">'+esc(p.name||'Untitled building')+' ↗</div>':'<div class="nm">'+esc(p.name||'Untitled building')+'</div>';
+    var nm=canView?'<div class="nm nm-link" onclick="DF.viewBuilding(\''+esc(p.building_id)+'\',\''+dealId+'\')" title="See building details">'+esc(p.name||'Untitled building')+' ↗</div>':'<div class="nm">'+esc(p.name||'Untitled building')+'</div>';
     return '<div class="pcard"><div class="top"><div>'+nm
       + (p.address?'<div class="ad">'+esc(p.address)+'</div>':'')
       + (contact?'<div class="ad" style="color:var(--ink-faint)">Listing: '+esc(contact.name||'')+(contact.company?', '+esc(contact.company):'')+(contact.email?' · '+esc(contact.email):'')+'</div>':'')
@@ -2122,33 +2122,13 @@ window.DF = (function(){
   async function addToTour(propId, dealId){ await ensureTourStop(propId, dealId); openDeal(dealId); }
 
   /* ---------- building detail (click any building to see the full dossier) ---------- */
-  function _bSpec(l,v){ return v?('<div class="bd-spec"><span class="bd-spec-l">'+l+'</span><span class="bd-spec-v">'+esc(v)+'</span></div>'):''; }
-  function viewBuilding(id){
-    if(!id){ alert('This building isn’t in the market catalog, so there’s no detail sheet for it.'); return; }
-    var b=(_portalBuildings||[]).filter(function(x){return x.id===id;})[0];
-    if(!b){ loadPortalBuildings().then(function(){ if((_portalBuildings||[]).some(function(x){return x.id===id;})) viewBuilding(id); else alert('Building details not found.'); }); return; }
-    var cs=_cscore(b);
-    var specs=_bSpec('Class',b.class)+_bSpec('Size',b.size?b.size+' SF':'')+_bSpec('Built',b.yearBuilt)+_bSpec('Renovated',b.renovated)+_bSpec('Floors',b.floors)+_bSpec('Floor plate',b.floorPlate?b.floorPlate+' SF':'')+_bSpec('Parking',b.parking);
-    var avail = (b.availabilities&&b.availabilities.length)
-      ? '<table class="bd-avail"><thead><tr><th>Suite</th><th>Floor</th><th class="num">SF</th><th>Rent</th></tr></thead><tbody>'
-        + b.availabilities.map(function(a){ return '<tr><td>'+esc(a.suite||'—')+'</td><td>'+esc(a.floor||'—')+'</td><td class="num">'+(a.sf?Number(a.sf).toLocaleString():'—')+'</td><td>'+esc(a.rent||b.rent||'—')+'</td></tr>'; }).join('')
-        + '</tbody></table>'
-      : (b.avail?'<div class="bd-p">'+esc(b.avail)+' SF available'+(b.rent?' · '+esc(b.rent):'')+'</div>':'<div class="bd-p" style="color:var(--ink-faint)">No current availability listed.</div>');
-    var amenBars=MATCH_CATS.map(function(c){ var s=cs[c[0]]||0; return '<div class="bd-amen"><span class="bd-amen-l">'+c[1]+'</span><span class="bd-bar"><i style="width:'+Math.round(s*10)+'%"></i></span><b>'+s.toFixed(1)+'</b></div>'; }).join('');
-    var access = b.access ? Object.keys(b.access).map(function(k){ return '<div class="bd-p"><b>'+esc(k)+':</b> '+esc(b.access[k])+'</div>'; }).join('') : '';
-    var feats = (b.features&&b.features.length)?'<div class="bd-feats">'+b.features.map(function(f){return '<span class="bd-feat">'+esc(f)+'</span>';}).join('')+'</div>':'';
-    var c=b.leasingContact;
-    openSheet('<h3>'+esc(b.name||'Building')+'</h3>'
-      + '<div class="ssub">'+esc([b.class?'Class '+b.class:'', b.submarket, b.addr].filter(Boolean).join(' · '))+'</div>'
-      + (specs?'<div class="bd-specs">'+specs+'</div>':'')
-      + '<div class="bd-h">Availability</div>'+avail
-      + '<div class="bd-h">Walkable amenities</div><div class="bd-amens">'+amenBars+'</div>'
-      + (b.read?'<div class="bd-h">The neighborhood</div><div class="bd-p">'+esc(b.read)+'</div>':'')
-      + (access?'<div class="bd-h">Access</div>'+access:'')
-      + (feats?'<div class="bd-h">Building features</div>'+feats:'')
-      + (c?'<div class="bd-h">Listing contact</div><div class="bd-p">'+esc(c.name||'')+(c.company?', '+esc(c.company):'')+(c.phone?' · '+esc(c.phone):'')+(c.email?' · '+esc(c.email):'')+'</div>':'')
-      + '<div class="srow"><button class="btn" onclick="DF.close()">Close</button>'
-      + '<a class="btn" href="https://www.google.com/maps/search/?api=1&query='+encodeURIComponent((b.name||'')+' '+(b.addr||''))+'" target="_blank" rel="noopener" style="text-decoration:none">View on map ↗</a></div>');
+  // Open the FULL building dossier (photos, floor plans, amenity map, Street View,
+  // leasing, features) on the dedicated building page. Passing the deal id lets the
+  // page's "Back to deal" return here exactly. openDeal reads ?deal= on load.
+  function viewBuilding(id, dealId){
+    if(!id){ alert('This building isn’t in the market catalog, so there’s no dossier for it.'); return; }
+    var url='building.html?b='+encodeURIComponent(id)+(dealId?'&deal='+encodeURIComponent(dealId):'');
+    location.href=url;
   }
 
   /* ---------- market report: broker-curated shortlist (deal_property.status
@@ -2156,10 +2136,10 @@ window.DF = (function(){
   function reportCard(p, dealId){
     var canView=!!p.building_id;
     return '<div class="pcard"><div class="top"><div>'
-      + (canView?'<div class="nm" style="cursor:pointer" onclick="DF.viewBuilding(\''+esc(p.building_id)+'\')" title="See building details">'+esc(p.name||'Building')+' ↗</div>':'<div class="nm">'+esc(p.name||'Building')+'</div>')
+      + (canView?'<div class="nm nm-link" onclick="DF.viewBuilding(\''+esc(p.building_id)+'\',\''+dealId+'\')" title="See building details">'+esc(p.name||'Building')+' ↗</div>':'<div class="nm">'+esc(p.name||'Building')+'</div>')
       + (p.address?'<div class="ad">'+esc(p.address)+'</div>':'')+'</div></div>'
       + '<div class="pactions">'
-      + (canView?'<button class="miniadd" onclick="DF.viewBuilding(\''+esc(p.building_id)+'\')">View details</button>':'')
+      + (canView?'<button class="miniadd" onclick="DF.viewBuilding(\''+esc(p.building_id)+'\',\''+dealId+'\')">View details</button>':'')
       + '<button class="miniadd" onclick="DF.addToTour(\''+p.id+'\',\''+dealId+'\')">+ Add to tour</button>'
       + '<button class="miniadd" onclick="DF.setPropStatus(\''+p.id+'\',\'considering\',\''+dealId+'\')" title="Move back to Buildings">↩ Remove from report</button>'
       + '</div></div>';

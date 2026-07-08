@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vantage — Building</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+<link rel="stylesheet" href="assets/vantage.css"/>
+<style>
+  /* standalone building-dossier chrome (everything else comes from vantage.css) */
+  .bd-topbar{position:sticky;top:0;z-index:900;display:flex;align-items:center;gap:16px;
+    padding:11px 22px;background:rgba(252,251,248,.92);backdrop-filter:saturate(1.4) blur(8px);
+    border-bottom:1px solid var(--line)}
+  .bd-back{display:inline-flex;align-items:center;gap:7px;font:600 13px Inter;color:var(--ink);
+    background:var(--paper-2);border:1px solid var(--line-2);border-radius:9px;padding:8px 13px;cursor:pointer}
+  .bd-back:hover{border-color:var(--ink-soft)}
+  .bd-back svg{transform:rotate(180deg)}
+  .bd-logo{font:800 19px/1 'Bricolage Grotesque',sans-serif;color:var(--ink);letter-spacing:-.01em}
+  .bd-logo .dot{color:var(--accent)}
+  .bd-crumb{margin-left:auto;font:600 12.5px Inter;color:var(--ink-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46vw}
+  #viewDetail.detail{height:calc(100vh - 57px)}
+  .bd-load{display:flex;align-items:center;justify-content:center;height:60vh;font:600 15px Inter;color:var(--ink-faint)}
+  @media(max-width:900px){#viewDetail.detail{height:auto}.bd-crumb{display:none}}
+</style>
+</head>
+<body>
+
+<div class="bd-topbar">
+  <button class="bd-back" id="bdBack">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+    Back to deal
+  </button>
+  <span class="bd-logo">Vantage<span class="dot">.</span></span>
+  <span class="bd-crumb" id="bdCrumb"></span>
+</div>
+
+<div class="bd-load" id="bdLoad">Loading building…</div>
+
+<!-- DETAIL (dossier — identical IDs to the Cockpit/Client Viewer, painted by vantage-view.js) -->
+<section class="detail" id="viewDetail" style="display:none">
+  <div class="dsr-bar">
+    <span class="dsr-name" id="dsrName"></span>
+    <button class="dsr-back" id="dsrBack">Back to deal
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+    </button>
+  </div>
+  <div class="dsr-hero" id="dHero"></div>
+  <div class="dsr-specs" id="dSpecs"></div>
+  <div class="dsr-body">
+    <section class="dsr-sec">
+      <div class="dsr-h"><h3 class="display">Available spaces</h3></div>
+      <div id="dSuites" class="dsr-suites"></div>
+    </section>
+    <section class="dsr-sec">
+      <div class="dsr-h"><h3 class="display">Tenants in the building</h3></div>
+      <div id="dTenants"></div>
+    </section>
+    <section class="dsr-sec">
+      <div class="dsr-h"><h3 class="display">Neighborhood &amp; access</h3></div>
+      <div class="dsr-nbhd">
+        <div class="dsr-nbhd-left">
+          <div class="scorechips" id="dScores"></div>
+          <div class="access" id="dAccess" style="display:none"></div>
+          <div class="read"><div class="e"><span class="ai-dot"></span>Neighborhood read</div><p id="dRead"></p></div>
+          <div class="catdd" id="catDd" style="margin-top:14px">
+            <button class="catdd-btn" id="catDdBtn" type="button" aria-expanded="false">
+              <span id="catDdLabel">All categories</span>
+              <svg class="catdd-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <div class="catdd-panel" id="catDdPanel">
+              <label class="catdd-row catdd-allrow"><input type="checkbox" id="catDdAll" checked><span class="catdd-name">Select all</span></label>
+              <div class="catdd-sep"></div>
+              <div id="catDdList"></div>
+            </div>
+          </div>
+          <div class="list-head"><h3 class="display">Walkable amenities</h3><span class="count" id="dCount"></span></div>
+          <div id="dList" class="dsr-amlist"></div>
+        </div>
+        <div class="dsr-map">
+          <div id="detailMap"></div>
+          <div class="mapctrl">
+            <div class="layertog" id="layertog">
+              <button data-layer="map" class="on">Map</button>
+              <button data-layer="sat">Satellite</button>
+            </div>
+            <button class="svbtn" id="svOpenBtn" title="Look around this building">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path></svg>
+              Street View
+            </button>
+          </div>
+          <div class="maptag" id="detailLegend"></div>
+          <div class="svpanel" id="svPanel">
+            <div class="svhead">
+              <div style="flex:1;min-width:0"><div class="svt" id="svTitle">Street View</div><div class="svloc" id="svLoc"></div></div>
+              <button class="lk" id="svPop" title="Open full Street View in Google Maps">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                Open in Google
+              </button>
+              <button class="x" id="svClose" aria-label="Close Street View">×</button>
+            </div>
+            <div class="svbody" id="svBody"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="dsr-sec" id="dLeaseSec"><div class="dsr-twocol" id="dLeaseWrap"></div></section>
+    <section class="dsr-sec" id="dMediaSec"></section>
+  </div>
+  <div class="lightbox" id="lightbox">
+    <button class="lb-x" id="lbX" aria-label="Close">×</button>
+    <button class="lb-nav lb-prev" id="lbPrev" aria-label="Previous">‹</button>
+    <button class="lb-nav lb-next" id="lbNext" aria-label="Next">›</button>
+    <img id="lbImg" src="" alt="">
+    <div class="lb-cap" id="lbCap"></div>
+  </div>
+</section>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="assets/vantage-view.js"></script>
+<script>
+(function(){
+  "use strict";
+  function qp(k){ try{ return new URLSearchParams(location.search).get(k); }catch(e){ return null; } }
+  var buildingId = qp('b');
+  var dealId = qp('deal');
+
+  // Back always returns to the originating deal (openDeal reads ?deal= on load),
+  // falling back to browser history, then the pipeline.
+  function goBack(){
+    if(dealId){ location.href = 'deals.html?deal=' + encodeURIComponent(dealId); return; }
+    if(document.referrer && document.referrer.indexOf(location.origin) === 0){ history.back(); return; }
+    location.href = 'deals.html';
+  }
+  document.getElementById('bdBack').addEventListener('click', goBack);
+  var dsrBack = document.getElementById('dsrBack'); if(dsrBack) dsrBack.addEventListener('click', goBack);
+
+  function fail(msg){
+    var l = document.getElementById('bdLoad');
+    l.style.display = 'flex';
+    l.innerHTML = '<div style="text-align:center"><div>' + msg + '</div>'
+      + '<button class="bd-back" style="margin-top:14px" onclick="history.length>1?history.back():(location.href=\'deals.html\')">Go back</button></div>';
+  }
+
+  if(!buildingId){ fail("No building specified."); return; }
+
+  fetch('vantage-data.json', { cache: 'no-store' })
+    .then(function(r){ if(!r.ok) throw new Error('data ' + r.status); return r.json(); })
+    .then(function(data){
+      VV.setData({ buildings: data.buildings || [], categories: data.categories || [], industries: data.industries || [] });
+      var b = (data.buildings || []).filter(function(x){ return x.id === buildingId; })[0];
+      if(!b){ fail("That building isn't in the catalog."); return; }
+      document.getElementById('bdLoad').style.display = 'none';
+      var sec = document.getElementById('viewDetail');
+      sec.style.display = 'block';
+      sec.classList.add('show');
+      VV.openDossier(buildingId);
+      VV.invalidateMap && setTimeout(function(){ VV.invalidateMap(); }, 120);
+      var nm = b.name || 'Building';
+      document.title = 'Vantage — ' + nm;
+      document.getElementById('bdCrumb').textContent = nm + (b.submarket ? '  ·  ' + b.submarket : '');
+    })
+    .catch(function(e){ fail("Couldn't load building data. " + (e.message || e)); });
+})();
+</script>
+</body>
+</html>
