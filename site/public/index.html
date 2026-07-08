@@ -68,7 +68,7 @@
     <button class="vnav-subitem" data-sv="commute" onclick="marketSub('commute')">Commute</button>
     <button class="vnav-subitem" data-sv="comps" onclick="marketSub('comps')">Comps</button>
   </div>
-  <button class="vnav-item" data-m="clients" onclick="showModule('clients')" title="Clients"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 6.6a3 3 0 0 1 0 5.8M20.5 20a5 5 0 0 0-4-4.9"/></svg><span>Clients</span></button>
+  <a class="vnav-item" data-m="clients" href="deals.html?view=clients" title="Clients"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 6.6a3 3 0 0 1 0 5.8M20.5 20a5 5 0 0 0-4-4.9"/></svg><span>Clients</span></a>
   <a class="vnav-item" data-m="deals" href="deals.html" title="Deals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg><span>Deals</span></a>
   <button class="vnav-item" data-m="settings" onclick="showModule('settings')" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 0 1-4 0v-.2A1.7 1.7 0 0 0 7 19.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H3a2 2 0 0 1 0-4h.1A1.7 1.7 0 0 0 4.6 7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 4.6V4a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg><span>Settings</span></button>
   <div class="vnav-spacer"></div>
@@ -2260,6 +2260,9 @@
     if(sv==='tenants') showCompetition(); else if(sv==='commute') showCommute(); else if(sv==='comps') showComps(); else showPortfolio();
   };
   window.showModule=function(m){
+    // Clients now live in the unified Deals workspace (Phase 2 merge). Any path to
+    // "clients" — the nav tab, home cards, or a ?m=clients deep link — goes there.
+    if(m==='clients'){ location.href='deals.html?view=clients'; return; }
     var map={home:'homeView',market:'marketModule',clients:'clientsView',settings:'settingsView'};
     Object.keys(map).forEach(function(k){ var el=document.getElementById(map[k]); if(el) el.style.display=(k===m)?'':'none'; });
     document.querySelectorAll('#vnav .vnav-item').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-m')===m); });

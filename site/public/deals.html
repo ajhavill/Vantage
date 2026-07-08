@@ -143,6 +143,25 @@
   .act-btn.danger.solid:hover{background:#a83a35}
   .delconfirm{display:inline-flex;align-items:center;gap:8px;font:600 12px Inter;color:#C2453F}
   .delconfirm.err{color:#C2453F}
+
+  /* clients roster */
+  .rost-search{font:500 13px Inter;padding:9px 13px;border:1px solid var(--line-2);border-radius:9px;background:var(--paper);min-width:200px}
+  .rost-search:focus{outline:none;border-color:var(--accent)}
+  .rost-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-top:18px}
+  .rost-card{border:1px solid var(--line);border-radius:13px;background:var(--paper-2);padding:15px 16px}
+  .rost-nm{font:700 15.5px 'Bricolage Grotesque',sans-serif;color:var(--ink);display:flex;align-items:center;gap:8px}
+  .rost-hs{font:700 9px Inter;text-transform:uppercase;letter-spacing:.05em;color:#fff;background:var(--building);border-radius:5px;padding:2px 6px}
+  .rost-sub{font:500 12px Inter;color:var(--ink-soft);margin-top:2px}
+  .rost-deals{margin-top:11px;display:flex;flex-direction:column;gap:6px}
+  .rost-deal{display:flex;align-items:center;gap:9px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--paper);cursor:pointer}
+  .rost-deal:hover{border-color:var(--accent)}
+  .rost-stage{font:700 10px Inter;text-transform:uppercase;letter-spacing:.04em;color:var(--accent);background:rgba(45,110,126,.09);border-radius:5px;padding:3px 7px;white-space:nowrap}
+  .rost-deal-meta{font:500 11.5px Inter;color:var(--ink-faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rost-go{margin-left:auto;font:600 11.5px Inter;color:var(--accent);white-space:nowrap}
+  .rost-more{font:500 11.5px Inter;color:var(--ink-faint);padding:2px 2px}
+  .rost-nodeal{margin-top:11px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font:500 12px Inter;color:var(--ink-faint)}
+  .rost-start{font:600 11.5px Inter;color:var(--accent);background:none;border:1px dashed var(--line-2);border-radius:8px;padding:5px 10px;cursor:pointer}
+  .rost-start:hover{border-color:var(--accent);border-style:solid}
   .vis{font:600 10.5px Inter;border:1px solid var(--line-2);background:var(--paper);color:var(--ink-faint);border-radius:999px;padding:4px 11px;cursor:pointer;white-space:nowrap}
   .vis:hover{border-color:var(--ink-faint)}
   .vis.on{background:rgba(63,143,107,.12);border-color:rgba(63,143,107,.4);color:var(--fitness)}
@@ -459,6 +478,7 @@
 <main>
   <div class="subnav" id="subnav">
     <button data-view="dashboard" onclick="DF.showDashboard()">Dashboard</button>
+    <button data-view="clients" onclick="DF.showClients()">Clients</button>
     <button data-view="pipeline" onclick="DF.showPipeline()">Pipeline</button>
     <button data-view="emails" onclick="DF.showEmails()">Emails</button>
   </div>
@@ -488,6 +508,9 @@
     <div id="dealTable" style="display:none"></div>
     <div id="closed"></div>
   </section>
+
+  <!-- CLIENTS ROSTER -->
+  <section id="clientsView" class="wrap" style="display:none"></section>
 
   <!-- DETAIL -->
   <section id="dealView" class="wrap" style="display:none"></section>
@@ -657,6 +680,7 @@ window.DF = (function(){
       var qp=new URLSearchParams(location.search);
       var dl=qp.get('deal');
       if(dl && deals.some(function(d){return d.id===dl;})){ openDeal(dl); if(qp.get('model')==='1') setTimeout(function(){ openModel(dl); },60); }
+      else if(qp.get('view')==='clients') showClients();
       else if(qp.get('view')==='emails') showEmails();
       else if(qp.get('view')==='pipeline') showPipeline();
       else showDashboard();
@@ -698,7 +722,14 @@ window.DF = (function(){
         if(doAct) recGo(doAct, dl, doTask); else openDeal(dl);
         if(wantModel) setTimeout(function(){ openModel(dl); }, 90);
       }
-      else { showDashboard(); if(doAct) recGo(doAct, null, doTask); }
+      else {
+        var view=qp.get('view');
+        if(view==='clients') showClients();
+        else if(view==='pipeline') showPipeline();
+        else if(view==='emails') showEmails();
+        else showDashboard();
+        if(doAct) recGo(doAct, null, doTask);
+      }
     }catch(e){ $('pipe').innerHTML='<div class="loading">Could not load deals: '+esc(e.message)+'</div>'; }
   }
 
@@ -709,6 +740,7 @@ window.DF = (function(){
     $('dashboardView').style.display='none';
     var mv1=$('modelView'); if(mv1) mv1.style.display='none';
     var ev1=$('emailsView'); if(ev1) ev1.style.display='none';
+    var cvP=$('clientsView'); if(cvP) cvP.style.display='none';
     $('pipelineView').style.display='block';
     $('crumb').innerHTML='Deal flow';
     setSubnav('pipeline');
@@ -825,10 +857,119 @@ window.DF = (function(){
     var mv2=$('modelView'); if(mv2) mv2.style.display='none';
     var ev2=$('emailsView'); if(ev2) ev2.style.display='none';
     $('dashboardView').style.display='block';
+    var cvD=$('clientsView'); if(cvD) cvD.style.display='none';
     $('crumb').innerHTML='Deal flow';
     setSubnav('dashboard');
     if(window.Van) Van.setContext({dealId:null, label:'your pipeline'});
     renderDashboard();
+  }
+
+  /* ==================================================================
+     CLIENTS ROSTER (Phase 2 of merging Clients into Deals)
+     A "Clients" lens on the same data: every client (HubSpot companies +
+     anyone with a deal), grouped, each showing their deal(s). Click a
+     deal to open the unified client+deal page; start one if there's none.
+     ================================================================== */
+  var _roster=[], _rosterQ='', _companiesConfigured=null;
+
+  async function buildRoster(){
+    await loadCompanies();           // fills _companies (HubSpot); [] if not connected
+    var byKey={};
+    // seed from HubSpot companies so clients WITHOUT a deal still appear
+    (_companies||[]).forEach(function(c){
+      var k='hs:'+c.id;
+      byKey[k]={ key:k, hs_company_id:c.id, name:c.name||'(unnamed)', industry:c.industry||null, city:c.city||null, inHubspot:true, deals:[] };
+    });
+    // fold in deals (skip dead — they're archived)
+    deals.forEach(function(d){
+      if(d.stage==='dead') return;
+      var k=d.hs_company_id ? ('hs:'+d.hs_company_id) : ('nm:'+String(d.client_name||'').trim().toLowerCase());
+      if(!byKey[k]) byKey[k]={ key:k, hs_company_id:d.hs_company_id||null, name:d.client_name||'(unnamed)', industry:null, city:null, inHubspot:!!d.hs_company_id, deals:[] };
+      byKey[k].deals.push(d);
+    });
+    var arr=Object.keys(byKey).map(function(k){ return byKey[k]; });
+    arr.forEach(function(c,i){
+      c.key='rk'+i;   // stable, quote-safe id for onclick handlers
+      c.deals.sort(function(a,b){ return String(b.updated_at||b.created_at).localeCompare(String(a.updated_at||a.created_at)); });
+    });
+    // clients with deals first (most-recent activity), then the rest alphabetically
+    arr.sort(function(a,b){
+      if(a.deals.length && !b.deals.length) return -1;
+      if(!a.deals.length && b.deals.length) return 1;
+      if(a.deals.length && b.deals.length) return String(b.deals[0].updated_at||b.deals[0].created_at).localeCompare(String(a.deals[0].updated_at||a.deals[0].created_at));
+      return String(a.name||'').localeCompare(String(b.name||''));
+    });
+    return arr;
+  }
+
+  async function showClients(){
+    _navTo('view=clients');
+    $('pipelineView').style.display='none'; $('dashboardView').style.display='none'; $('dealView').style.display='none';
+    var mv=$('modelView'); if(mv) mv.style.display='none'; var ev=$('emailsView'); if(ev) ev.style.display='none';
+    $('clientsView').style.display='block';
+    $('crumb').innerHTML='Deal flow <b>›</b> Clients';
+    setSubnav('clients');
+    if(window.Van) Van.setContext({dealId:null, label:'your clients'});
+    $('clientsView').innerHTML='<div class="loading">Loading clients…</div>';
+    try{
+      _roster=await buildRoster();
+      renderClientsShell();
+    }catch(e){ $('clientsView').innerHTML='<div class="loading">Could not load clients: '+esc(e.message||e)+'</div>'; }
+  }
+
+  function renderClientsShell(){
+    $('clientsView').innerHTML=
+      '<div class="vhead"><div><h1>Clients</h1><div class="sub" id="rostCount"></div></div>'
+      + '<div style="display:flex;gap:12px;align-items:center">'
+      +   '<input id="rostSearch" class="rost-search" placeholder="Search clients…" oninput="DF.rosterSearch(this.value)">'
+      +   '<button class="share-btn" onclick="DF.newDeal()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> New deal</button>'
+      + '</div></div>'
+      + '<div class="rost-grid" id="rostGrid"></div>';
+    var si=$('rostSearch'); if(si){ si.value=_rosterQ||''; }
+    renderRosterGrid();
+  }
+
+  function renderRosterGrid(){
+    var q0=(_rosterQ||'').trim().toLowerCase();
+    var list=_roster.filter(function(c){
+      return !q0 || (c.name||'').toLowerCase().indexOf(q0)>=0 || (c.industry||'').toLowerCase().indexOf(q0)>=0 || (c.city||'').toLowerCase().indexOf(q0)>=0;
+    });
+    var g=$('rostGrid'); if(g) g.innerHTML=list.map(rosterCard).join('') || '<div class="loading" style="grid-column:1/-1">No clients match “'+esc(_rosterQ)+'”.</div>';
+    var cnt=$('rostCount'); if(cnt) cnt.textContent=list.length+' client'+(list.length===1?'':'s')+(_companies&&!_companies.length?' · connect HubSpot to see all companies':'');
+  }
+  function rosterSearch(v){ _rosterQ=v; renderRosterGrid(); }
+
+  function rosterCard(c){
+    var meta=[c.industry, c.city].filter(Boolean).join(' · ');
+    var body;
+    if(c.deals.length){
+      body='<div class="rost-deals">'+c.deals.slice(0,4).map(function(d){
+        var comm=d.commission_amount!=null?money(d.commission_amount):(num(d.commission_pct)!=null?d.commission_pct+'%':'');
+        return '<div class="rost-deal" onclick="DF.openDeal(\''+d.id+'\')">'
+          + '<span class="rost-stage">'+esc(STAGE_LABEL[d.stage]||d.stage)+'</span>'
+          + '<span class="rost-deal-meta">'+(comm?esc(comm)+' · ':'')+ago(d.updated_at||d.created_at)+'</span>'
+          + '<span class="rost-go">Open →</span></div>';
+      }).join('')
+      + (c.deals.length>4?'<div class="rost-more">+'+(c.deals.length-4)+' more</div>':'')
+      + '</div>';
+    } else {
+      body='<div class="rost-nodeal">No active deal <button class="rost-start" onclick="DF.rosterStartDeal(\''+c.key+'\')">+ Start a deal</button></div>';
+    }
+    return '<div class="rost-card">'
+      + '<div class="rost-nm">'+esc(c.name)+(c.inHubspot?' <span class="rost-hs">HubSpot</span>':'')+'</div>'
+      + (meta?'<div class="rost-sub">'+esc(meta)+'</div>':'')
+      + body + '</div>';
+  }
+
+  async function rosterStartDeal(key){
+    var c=_roster.filter(function(x){return x.key===key;})[0]; if(!c) return;
+    try{
+      var row;
+      try{ row=await q(sb.from('deals').insert({owner_id:me.id, client_name:c.name, stage:'needs'}).select().single()); }
+      catch(stageErr){ row=await q(sb.from('deals').insert({owner_id:me.id, client_name:c.name, stage:'touring'}).select().single()); }
+      if(c.hs_company_id){ try{ await q(sb.from('deals').update({hs_company_id:c.hs_company_id}).eq('id',row.id)); row.hs_company_id=c.hs_company_id; }catch(e){} }
+      deals.unshift(row); openDeal(row.id);
+    }catch(e){ alert('Could not start the deal: '+(e.message||e)); }
   }
 
   async function loadDashData(){
@@ -1003,6 +1144,7 @@ window.DF = (function(){
     $('dashboardView').style.display='none';
     var mv3=$('modelView'); if(mv3) mv3.style.display='none';
     var ev3=$('emailsView'); if(ev3) ev3.style.display='none';
+    var cvO=$('clientsView'); if(cvO) cvO.style.display='none';
     setSubnav('deal');
     if(window.Van) Van.setContext({dealId:id, label:(d.client_name||'this deal')});
     var v=$('dealView'); v.style.display='block';
@@ -2777,6 +2919,7 @@ window.DF = (function(){
     if(!window.VModel){ alert('The modeling engine failed to load. Refresh and try again.'); return; }
     _navTo('deal='+encodeURIComponent(dealId)+'&model=1');
     _modelDeal=dealId; _model=loadModel(dealId);
+    var cvM=$('clientsView'); if(cvM) cvM.style.display='none';
     $('pipelineView').style.display='none'; $('dashboardView').style.display='none'; $('dealView').style.display='none';
     var evm=$('emailsView'); if(evm) evm.style.display='none';
     $('modelView').style.display='block';
@@ -2996,6 +3139,7 @@ window.DF = (function(){
   var _emailCache=[];
   async function showEmails(){
     _navTo('view=emails');
+    var cvE=$('clientsView'); if(cvE) cvE.style.display='none';
     $('dashboardView').style.display='none'; $('pipelineView').style.display='none'; $('dealView').style.display='none';
     var mv=$('modelView'); if(mv) mv.style.display='none';
     $('emailsView').style.display='block';
@@ -3424,6 +3568,7 @@ window.DF = (function(){
     showDashboard:showDashboard, showPipeline:showPipeline, setPipeView:setPipeView, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, cmpExcel:cmpExcel, toggleClosed:toggleClosed,
     openPortal:openPortal, portalCoSuggest:portalCoSuggest, portalCoPick:portalCoPick, portalInvite:portalInvite, portalRevoke:portalRevoke, portalAttach:portalAttach, portalDetach:portalDetach, portalNotify:portalNotify,
     clientLinkCompany:clientLinkCompany, clientCoSuggest:clientCoSuggest, clientCoPick:clientCoPick, sendQuestionnaire:sendQuestionnaire,
+    showClients:showClients, rosterSearch:rosterSearch, rosterStartDeal:rosterStartDeal,
     deleteDealAsk:deleteDealAsk, deleteDealCancel:deleteDealCancel, deleteDealDo:deleteDealDo,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask, recGo:recGo,
