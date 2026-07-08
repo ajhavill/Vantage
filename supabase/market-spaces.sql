@@ -4,19 +4,24 @@
 -- One row = one available space in the market, held INTERNALLY for broker use.
 --
 -- SOURCING / FIREWALL (see costar-sourcing-rule memory, updated 2026-07-08):
--- rows may originate from CoStar availability reports and alert emails, which
--- Andrew has authorized for INTERNAL use only. Therefore this table must NEVER
--- feed the public market layer (vantage-data.json), client packages, or the
--- client portal. Enforcement:
+-- rows may originate from CoStar availability reports and alert emails. Andrew
+-- holds CoStar's (verbal) approval to use them in Vantage AS AN INTERNAL TOOL
+-- that is not licensed out. Operating rules:
+--   * CoStar-sourced rows MAY be displayed anywhere behind the broker login
+--     (Cockpit, Market module, deal pages) — rendered from this table.
+--   * They stay OUT of vantage-data.json (served anonymously to the public
+--     internet — not "internal" under the approval's condition) and OUT of
+--     client-facing surfaces (packages, portal) unless Andrew explicitly
+--     extends it. No service_role function may expose this table to portal or
+--     package viewers; there is deliberately NO client_visible column.
 --   * RLS below is org-scoped (org_id = current_org()); client-portal profiles
 --     carry org_id = NULL so every policy fails closed for clients.
---   * There is deliberately NO client_visible column — nothing here is
---     client-facing, and no service_role function may expose it to portal or
---     package viewers.
---   * A row "graduates" out of the firewall only when a listing broker
---     independently confirms it: the ingester/UI re-sources it
---     (source = 'listing-broker', broker_verified = true), at which point the
---     record is Andrew's own work product and MAY be published.
+--   * A row "graduates" past those limits when a listing broker independently
+--     confirms it: the ingester/UI re-sources it (source = 'listing-broker',
+--     broker_verified = true) — then it's the firm's own work product and may
+--     be published anywhere.
+--   * LICENSING TRIPWIRE: the approval's condition breaks if Vantage is ever
+--     licensed to another firm — re-read costar-sourcing-rule before that.
 --
 -- source values:
 --   'costar-alert'   — parsed from a CoStar saved-search alert email (internal only)
