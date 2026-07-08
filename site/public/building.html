@@ -24,7 +24,40 @@
   .bd-crumb{margin-left:auto;font:600 12.5px Inter;color:var(--ink-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46vw}
   #viewDetail.detail{height:calc(100vh - 57px)}
   .bd-load{display:flex;align-items:center;justify-content:center;height:60vh;font:600 15px Inter;color:var(--ink-faint)}
+  .bd-manage{display:inline-flex;align-items:center;gap:6px;font:600 12.5px Inter;color:#fff;
+    background:var(--accent);border:0;border-radius:9px;padding:8px 13px;cursor:pointer}
+  .bd-manage:hover{filter:brightness(.94)}
   @media(max-width:900px){#viewDetail.detail{height:auto}.bd-crumb{display:none}}
+
+  /* brochure links (reuse the .plans/.plan look from vantage.css floor plans) */
+  #brochureSec .go{white-space:nowrap}
+
+  /* media-manager modal */
+  .mm-scrim{position:fixed;inset:0;z-index:1200;background:rgba(12,18,28,.55);backdrop-filter:blur(3px);
+    display:none;align-items:flex-start;justify-content:center;padding:40px 18px;overflow-y:auto}
+  .mm-scrim.open{display:flex}
+  .mm{width:min(560px,100%);background:var(--paper-2);border:1px solid var(--line);border-radius:16px;
+    box-shadow:0 30px 80px rgba(0,0,0,.4);overflow:hidden}
+  .mm-h{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line)}
+  .mm-h h3{font:800 17px 'Bricolage Grotesque',sans-serif;color:var(--ink);margin:0}
+  .mm-h .x{font-size:22px;line-height:1;color:var(--ink-soft);background:none;border:0;cursor:pointer}
+  .mm-body{padding:16px 20px 20px;display:flex;flex-direction:column;gap:18px}
+  .mm-up{border:1px solid var(--line);border-radius:12px;padding:13px 14px;background:var(--paper)}
+  .mm-up-h{font:700 12px Inter;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);margin-bottom:9px}
+  .mm-up input[type=file]{font:500 12px Inter;color:var(--ink-soft);width:100%;margin-bottom:8px}
+  .mm-up input[type=text]{width:100%;font:500 13px Inter;padding:8px 10px;border:1px solid var(--line-2);
+    border-radius:8px;background:var(--paper-2);color:var(--ink);margin-bottom:8px}
+  .mm-btn{font:600 12.5px Inter;color:#fff;background:var(--accent);border:0;border-radius:8px;padding:8px 14px;cursor:pointer}
+  .mm-btn:disabled{opacity:.5;cursor:default}
+  .mm-existing{display:flex;flex-direction:column;gap:6px}
+  .mm-row{display:flex;align-items:center;gap:10px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:var(--paper)}
+  .mm-row .thumb{width:40px;height:30px;border-radius:5px;object-fit:cover;background:var(--line);flex:none}
+  .mm-row .k{font:600 10px Inter;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);flex:none;width:64px}
+  .mm-row .nm{font:500 12.5px Inter;color:var(--ink);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mm-row .del{font:600 11px Inter;color:#c0392b;background:none;border:0;cursor:pointer;flex:none}
+  .mm-empty{font:500 12px Inter;color:var(--ink-faint);padding:4px 2px}
+  .mm-status{font:500 12px Inter;color:var(--ink-soft);min-height:16px}
+  .mm-status.err{color:#c0392b}
 </style>
 </head>
 <body>
@@ -36,6 +69,10 @@
   </button>
   <span class="bd-logo">Vantage<span class="dot">.</span></span>
   <span class="bd-crumb" id="bdCrumb"></span>
+  <button class="bd-manage" id="bdManage" style="display:none">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+    Manage media
+  </button>
 </div>
 
 <div class="bd-load" id="bdLoad">Loading building…</div>
@@ -108,6 +145,10 @@
       </div>
     </section>
     <section class="dsr-sec" id="dLeaseSec"><div class="dsr-twocol" id="dLeaseWrap"></div></section>
+    <section class="dsr-sec" id="brochureSec" style="display:none">
+      <div class="dsr-h"><h3 class="display">Brochures</h3></div>
+      <div id="brochureList" class="plans"></div>
+    </section>
     <section class="dsr-sec" id="dMediaSec"></section>
   </div>
   <div class="lightbox" id="lightbox">
@@ -119,15 +160,55 @@
   </div>
 </section>
 
+<!-- media-manager modal (broker only) -->
+<div class="mm-scrim" id="mmScrim">
+  <div class="mm" role="dialog" aria-label="Manage building media">
+    <div class="mm-h"><h3>Manage media</h3><button class="x" id="mmClose" aria-label="Close">×</button></div>
+    <div class="mm-body">
+      <div class="mm-status" id="mmStatus"></div>
+      <div class="mm-up">
+        <div class="mm-up-h">Photos</div>
+        <input type="file" id="upPhotos" accept="image/*" multiple>
+        <button class="mm-btn" id="upPhotosBtn" data-kind="photo">Upload photos</button>
+      </div>
+      <div class="mm-up">
+        <div class="mm-up-h">Floor plans</div>
+        <input type="file" id="upPlans" accept="application/pdf,image/*" multiple>
+        <input type="text" id="upPlansLabel" placeholder="Label (optional) — e.g. “Suite 500 — full floor”">
+        <button class="mm-btn" id="upPlansBtn" data-kind="floorplan">Upload floor plans</button>
+      </div>
+      <div class="mm-up">
+        <div class="mm-up-h">Brochure</div>
+        <input type="file" id="upBrochure" accept="application/pdf">
+        <input type="text" id="upBrochureLabel" placeholder="Label (optional) — e.g. “Marketing brochure”">
+        <button class="mm-btn" id="upBrochureBtn" data-kind="brochure">Upload brochure</button>
+      </div>
+      <div>
+        <div class="mm-up-h" style="margin-bottom:8px">Uploaded media</div>
+        <div class="mm-existing" id="mmExisting"><div class="mm-empty">Nothing uploaded yet.</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script src="assets/vantage-view.js"></script>
 <script>
 (function(){
   "use strict";
+  var SUPA_URL  = "https://siaoqjvvxuckyxpxftwt.supabase.co";
+  var SUPA_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNpYW9xanZ2eHVja3l4cHhmdHd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2OTU5MTMsImV4cCI6MjA5ODI3MTkxM30.HgWjVlB9e0rYgX-MCTee16UV5tZ6m-pCXXjwY1cu3b0";
+  var BUCKET = "building-media";
+  var sb = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(SUPA_URL, SUPA_ANON) : null;
+
+  function $(id){ return document.getElementById(id); }
+  function esc(s){ return VV.esc(s); }
   function qp(k){ try{ return new URLSearchParams(location.search).get(k); }catch(e){ return null; } }
   var buildingId = qp('b');
   var dealId = qp('deal');
+  var STATIC_PHOTOS = [], STATIC_PLANS = [], theBuilding = null, isBroker = false;
 
   // Back always returns to the originating deal (openDeal reads ?deal= on load),
   // falling back to browser history, then the pipeline.
@@ -136,33 +217,158 @@
     if(document.referrer && document.referrer.indexOf(location.origin) === 0){ history.back(); return; }
     location.href = 'deals.html';
   }
-  document.getElementById('bdBack').addEventListener('click', goBack);
-  var dsrBack = document.getElementById('dsrBack'); if(dsrBack) dsrBack.addEventListener('click', goBack);
+  $('bdBack').addEventListener('click', goBack);
+  var dsrBack = $('dsrBack'); if(dsrBack) dsrBack.addEventListener('click', goBack);
 
   function fail(msg){
-    var l = document.getElementById('bdLoad');
+    var l = $('bdLoad');
     l.style.display = 'flex';
     l.innerHTML = '<div style="text-align:center"><div>' + msg + '</div>'
       + '<button class="bd-back" style="margin-top:14px" onclick="history.length>1?history.back():(location.href=\'deals.html\')">Go back</button></div>';
   }
 
-  if(!buildingId){ fail("No building specified."); return; }
+  // Pull broker-uploaded media for this building and shape it for the dossier.
+  // Returns {photos:[{url,caption}], plans:[{label,url}], brochures:[{title,url}], rows:[...]}.
+  function fetchMedia(){
+    if(!sb || !isBroker) return Promise.resolve({ photos:[], plans:[], brochures:[], rows:[] });
+    return sb.from('building_media').select('*').eq('building_id', buildingId).order('sort_order').order('created_at')
+      .then(function(res){
+        if(res.error || !res.data) return { photos:[], plans:[], brochures:[], rows:[] };
+        var rows = res.data;
+        return {
+          photos: rows.filter(function(r){return r.kind==='photo';}).map(function(r){ return { url:r.url, caption:r.title||'' }; }),
+          plans:  rows.filter(function(r){return r.kind==='floorplan';}).map(function(r){ return { label:r.title||'Floor plan', url:r.url }; }),
+          brochures: rows.filter(function(r){return r.kind==='brochure';}).map(function(r){ return { title:r.title||'Brochure', url:r.url }; }),
+          rows: rows
+        };
+      })
+      .catch(function(){ return { photos:[], plans:[], brochures:[], rows:[] }; });
+  }
 
-  fetch('vantage-data.json', { cache: 'no-store' })
+  function renderBrochures(brochures){
+    var sec = $('brochureSec'), list = $('brochureList');
+    if(!brochures || !brochures.length){ sec.style.display='none'; list.innerHTML=''; return; }
+    var FILE = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+    list.innerHTML = brochures.map(function(p){
+      return '<a class="plan" href="'+esc(p.url)+'" target="_blank" rel="noopener"><span class="ic">'+FILE+'</span><span class="pl">'+esc(p.title)+'</span><span class="go">Open ↗</span></a>';
+    }).join('');
+    sec.style.display = '';
+  }
+
+  function renderExisting(rows){
+    var el = $('mmExisting');
+    if(!rows || !rows.length){ el.innerHTML = '<div class="mm-empty">Nothing uploaded yet.</div>'; return; }
+    el.innerHTML = rows.map(function(r){
+      var thumb = r.kind==='photo' ? '<img class="thumb" src="'+esc(r.url)+'" alt="" onerror="this.style.visibility=\'hidden\'">' : '<span class="thumb"></span>';
+      return '<div class="mm-row">'+thumb
+        + '<span class="k">'+esc(r.kind)+'</span>'
+        + '<span class="nm">'+esc(r.title || (r.storage_path||'').split('/').pop() || 'Untitled')+'</span>'
+        + '<button class="del" data-id="'+esc(r.id)+'" data-path="'+esc(r.storage_path)+'">Delete</button></div>';
+    }).join('');
+    Array.prototype.forEach.call(el.querySelectorAll('.del'), function(btn){
+      btn.addEventListener('click', function(){ removeMedia(btn.getAttribute('data-id'), btn.getAttribute('data-path'), btn); });
+    });
+  }
+
+  // Re-fetch, re-merge onto the static JSON media, and re-paint the dossier + manager.
+  function refresh(){
+    return fetchMedia().then(function(m){
+      if(theBuilding){
+        theBuilding.photos = STATIC_PHOTOS.concat(m.photos);
+        theBuilding.floorplans = STATIC_PLANS.concat(m.plans);
+        VV.openDossier(buildingId);                 // re-render hero + media band with merged media
+        VV.invalidateMap && setTimeout(function(){ VV.invalidateMap(); }, 120);
+      }
+      renderBrochures(m.brochures);
+      renderExisting(m.rows);
+      return m;
+    });
+  }
+
+  function setStatus(msg, isErr){ var s=$('mmStatus'); s.textContent=msg||''; s.className='mm-status'+(isErr?' err':''); }
+
+  function safeName(n){ return String(n||'file').replace(/[^a-zA-Z0-9._-]/g,'_').slice(-80); }
+  // deterministic-ish unique suffix without Date.now()/Math.random dependence issues in this scope
+  var _seq = 0;
+  function uniq(){ _seq++; return (performance && performance.now ? Math.floor(performance.now()) : _seq) + '-' + _seq; }
+
+  function uploadFiles(kind, files, label, btn){
+    if(!sb || !isBroker){ setStatus('You must be signed in to upload.', true); return; }
+    if(!files || !files.length){ setStatus('Choose a file first.', true); return; }
+    btn.disabled = true;
+    var arr = Array.prototype.slice.call(files);
+    setStatus('Uploading '+arr.length+' file'+(arr.length===1?'':'s')+'…');
+    var i = 0;
+    function next(){
+      if(i >= arr.length){
+        setStatus('Uploaded ✓');
+        btn.disabled = false;
+        refresh();
+        return;
+      }
+      var file = arr[i++];
+      var path = buildingId + '/' + kind + '/' + uniq() + '_' + safeName(file.name);
+      sb.storage.from(BUCKET).upload(path, file, { upsert:false, contentType:file.type||undefined })
+        .then(function(up){
+          if(up.error) throw up.error;
+          var pub = sb.storage.from(BUCKET).getPublicUrl(path);
+          var url = pub && pub.data ? pub.data.publicUrl : null;
+          return sb.from('building_media').insert({ building_id:buildingId, kind:kind, storage_path:path, url:url, title:(label||null) });
+        })
+        .then(function(ins){ if(ins && ins.error) throw ins.error; next(); })
+        .catch(function(e){ setStatus('Upload failed: '+(e.message||e), true); btn.disabled=false; });
+    }
+    next();
+  }
+
+  function removeMedia(id, path, btn){
+    if(!sb) return;
+    btn.disabled = true; setStatus('Removing…');
+    sb.from('building_media').delete().eq('id', id)
+      .then(function(res){ if(res.error) throw res.error; if(path) return sb.storage.from(BUCKET).remove([path]); })
+      .then(function(){ setStatus('Removed ✓'); refresh(); })
+      .catch(function(e){ setStatus('Could not remove: '+(e.message||e), true); btn.disabled=false; });
+  }
+
+  function wireManager(){
+    var scrim = $('mmScrim');
+    $('bdManage').addEventListener('click', function(){ scrim.classList.add('open'); setStatus(''); refresh(); });
+    $('mmClose').addEventListener('click', function(){ scrim.classList.remove('open'); });
+    scrim.addEventListener('click', function(e){ if(e.target===scrim) scrim.classList.remove('open'); });
+    $('upPhotosBtn').addEventListener('click', function(){ uploadFiles('photo', $('upPhotos').files, null, this); });
+    $('upPlansBtn').addEventListener('click', function(){ uploadFiles('floorplan', $('upPlans').files, $('upPlansLabel').value.trim(), this); });
+    $('upBrochureBtn').addEventListener('click', function(){ uploadFiles('brochure', $('upBrochure').files, $('upBrochureLabel').value.trim(), this); });
+  }
+
+  if(!buildingId){ fail("No building specified."); return; }
+  if(!sb){ fail("Couldn't initialize. Please reload."); return; }
+
+  // Is a broker signed in? (session persists across the origin from deals.html)
+  sb.auth.getSession()
+    .then(function(r){ isBroker = !!(r && r.data && r.data.session); })
+    .catch(function(){ isBroker = false; })
+    .then(function(){
+      return fetch('vantage-data.json', { cache: 'no-store' });
+    })
     .then(function(r){ if(!r.ok) throw new Error('data ' + r.status); return r.json(); })
     .then(function(data){
       VV.setData({ buildings: data.buildings || [], categories: data.categories || [], industries: data.industries || [] });
       var b = (data.buildings || []).filter(function(x){ return x.id === buildingId; })[0];
       if(!b){ fail("That building isn't in the catalog."); return; }
-      document.getElementById('bdLoad').style.display = 'none';
-      var sec = document.getElementById('viewDetail');
+      theBuilding = b;
+      STATIC_PHOTOS = (b.photos || []).slice();
+      STATIC_PLANS = (b.floorplans || []).slice();
+      $('bdLoad').style.display = 'none';
+      var sec = $('viewDetail');
       sec.style.display = 'block';
       sec.classList.add('show');
       VV.openDossier(buildingId);
       VV.invalidateMap && setTimeout(function(){ VV.invalidateMap(); }, 120);
       var nm = b.name || 'Building';
       document.title = 'Vantage — ' + nm;
-      document.getElementById('bdCrumb').textContent = nm + (b.submarket ? '  ·  ' + b.submarket : '');
+      $('bdCrumb').textContent = nm + (b.submarket ? '  ·  ' + b.submarket : '');
+      if(isBroker){ $('bdManage').style.display = 'inline-flex'; wireManager(); }
+      refresh();     // pulls uploaded media (if broker) and merges it in
     })
     .catch(function(e){ fail("Couldn't load building data. " + (e.message || e)); });
 })();
