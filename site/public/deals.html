@@ -161,6 +161,9 @@
   .bulkbar .bulkcount{font:600 11.5px Inter;color:var(--ink-faint)}
   .bulkbar .bulkgo{margin-left:auto;font:700 12px Inter;color:var(--accent);background:none;border:0;cursor:pointer;padding:6px 2px}
   .bulkbar .bulkgo:disabled{opacity:.4;cursor:default}
+  .bulkbar .bulkdel{font:700 12px Inter;color:#b23b3b;background:none;border:0;cursor:pointer;padding:6px 9px;border-radius:7px}
+  .bulkbar .bulkdel:disabled{opacity:.4;cursor:default}
+  .bulkbar .bulkdel.armed{background:#b23b3b;color:#fff}
   .bsel,.rsel,.tsel,.bulkall input{width:16px;height:16px;accent-color:var(--accent);cursor:pointer;flex:none;margin:0}
   .pcard .top > .bselwrap{display:flex;align-items:center;padding-top:2px}
   .tcard .tselwrap{float:right;margin-left:10px}
@@ -1384,6 +1387,7 @@ window.DF = (function(){
 
   async function openDeal(id){
     var d=deals.filter(function(x){return x.id===id;})[0]; if(!d) return;
+    _delArm=null; if(_delTimer){ clearTimeout(_delTimer); _delTimer=null; }   // reset any armed bulk-delete
     _navTo('deal='+encodeURIComponent(id));
     $('pipelineView').style.display='none';
     $('dashboardView').style.display='none';
@@ -2032,7 +2036,7 @@ window.DF = (function(){
     var stLabel = (TOUR_STATUS.filter(function(x){return x[0]===s.status;})[0]||['','—'])[1];
     var visBtn='<button class="vis '+(s.client_visible?'on':'')+'" onclick="DF.toggleTourVisible(\''+s.id+'\','+(s.client_visible?'false':'true')+',\''+dealId+'\')" title="Toggle whether the client sees this stop">'+(s.client_visible?'● Client':'○ Hidden')+'</button>';
     return '<div class="tcard">'
-      + '<span class="tselwrap"><input type="checkbox" class="tsel" data-pid="'+(s.property_id||'')+'" data-name="'+esc(name)+'" onchange="DF.bulkSync(\'touring\')" title="Select to start a proposal"></span>'
+      + '<span class="tselwrap"><input type="checkbox" class="tsel" data-sid="'+s.id+'" data-pid="'+(s.property_id||'')+'" data-name="'+esc(name)+'" onchange="DF.bulkSync(\'touring\')" title="Select to start a proposal or delete"></span>'
       + '<div class="tw">'+esc(when)+'</div>'
       + '<div class="tn">'+esc(name)+'</div>'
       + (s.notes?'<div class="tnotes">'+esc(s.notes)+'</div>':'')
@@ -2219,17 +2223,49 @@ window.DF = (function(){
       + '<label class="bulkall"><input type="checkbox" onchange="DF.bulkAll(\''+scope+'\',this.checked)"> Select all</label>'
       + '<span class="bulkcount" id="bulkcount_'+scope+'">0 selected</span>'
       + '<button class="bulkgo" id="bulkgo_'+scope+'" disabled onclick="DF.bulkMove(\''+scope+'\',\''+dealId+'\')">'+label+'</button>'
+      + '<button class="bulkdel" id="bulkdel_'+scope+'" disabled onclick="DF.bulkDelete(\''+scope+'\',\''+dealId+'\')">🗑 Delete selected</button>'
       + '</div>';
   }
   function bulkSel(scope){ return scope==='buildings'?'.bsel':(scope==='report'?'.rsel':'.tsel'); }
+  function bulkDelLabel(){ return '🗑 Delete selected'; }
+  function bulkDisarm(scope){ _delArm=null; if(_delTimer){ clearTimeout(_delTimer); _delTimer=null; } var b=$('bulkdel_'+scope); if(b){ b.textContent=bulkDelLabel(); b.classList.remove('armed'); } }
   function bulkSync(scope){
     var n=0; Array.prototype.forEach.call(document.querySelectorAll(bulkSel(scope)), function(b){ if(b.checked) n++; });
     var c=$('bulkcount_'+scope); if(c) c.textContent=n+' selected';
     var g=$('bulkgo_'+scope); if(g) g.disabled=(n===0);
+    var dl=$('bulkdel_'+scope); if(dl) dl.disabled=(n===0);
+    if(n===0 && _delArm===scope) bulkDisarm(scope);
   }
   function bulkAll(scope, checked){
     Array.prototype.forEach.call(document.querySelectorAll(bulkSel(scope)), function(b){ b.checked=checked; });
     bulkSync(scope);
+  }
+  // Two-click delete: first click arms (button turns red "Click again…"), second confirms.
+  var _delArm=null, _delTimer=null;
+  async function bulkDelete(scope, dealId){
+    var boxes=Array.prototype.slice.call(document.querySelectorAll(bulkSel(scope)+':checked'));
+    if(!boxes.length) return;
+    var btn=$('bulkdel_'+scope);
+    if(_delArm!==scope){
+      if(_delArm) bulkDisarm(_delArm);
+      _delArm=scope;
+      if(btn){ btn.textContent='Click again to delete '+boxes.length; btn.classList.add('armed'); }
+      _delTimer=setTimeout(function(){ bulkDisarm(scope); }, 3500);
+      return;
+    }
+    bulkDisarm(scope);
+    if(btn){ btn.disabled=true; btn.textContent='Deleting…'; }
+    try{
+      if(scope==='touring'){
+        var sids=boxes.map(function(b){ return b.getAttribute('data-sid'); }).filter(Boolean);
+        if(sids.length) await q(sb.from('tour_stops').delete().in('id',sids));
+      } else {
+        var ids=boxes.map(function(b){ return b.getAttribute('data-id'); });
+        try{ await q(sb.from('tour_stops').delete().in('property_id',ids)); }catch(e){}   // drop any tour stops for these buildings
+        await q(sb.from('deal_properties').delete().in('id',ids));
+      }
+      openDeal(dealId);
+    }catch(e){ alert('Could not delete the selected buildings: '+(e.message||e)); openDeal(dealId); }
   }
   async function bulkMove(scope, dealId){
     var boxes=Array.prototype.slice.call(document.querySelectorAll(bulkSel(scope)+':checked'));
@@ -4229,7 +4265,7 @@ window.DF = (function(){
     deleteDealAsk:deleteDealAsk, deleteDealCancel:deleteDealCancel, deleteDealDo:deleteDealDo,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask, recGo:recGo,
-    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, bulkSync:bulkSync, bulkAll:bulkAll, bulkMove:bulkMove, viewBuilding:viewBuilding, generateMarketReport:generateMarketReport, dealTab:dealTab, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, npMode:npMode, newRound:newRound,
+    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, bulkSync:bulkSync, bulkAll:bulkAll, bulkMove:bulkMove, bulkDelete:bulkDelete, viewBuilding:viewBuilding, generateMarketReport:generateMarketReport, dealTab:dealTab, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, npMode:npMode, newRound:newRound,
     generateRfp:generateRfp, copyRfp:copyRfp, downloadRfp:downloadRfp, sendRfpTo:sendRfpTo,
     setStage:setStage, basisChange:basisChange, marketCheck:marketCheck, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
     proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead,
