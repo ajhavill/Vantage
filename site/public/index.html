@@ -3012,12 +3012,17 @@
   var gate=document.getElementById('authGate');
   function showApp(session){
     gate.style.display='none';
+    var chip=document.getElementById('userChip'), em=document.getElementById('userEmail');
+    if(chip){ chip.style.display='inline-flex'; em.textContent=(session&&session.user&&session.user.email)||''; }
+    // Supabase re-fires onAuthStateChange on TOKEN_REFRESHED (~hourly / on refocus).
+    // Bootstrap ONCE — re-running showModule(initialModule()) here is what used to
+    // snap the user back to the default module out of nowhere.
+    if(showApp._booted) return;
+    showApp._booted=true;
     // tenant-portal users don't belong in the Cockpit — send them to their portal.
     // (RLS already hides all broker data from them; this is UX, not security.)
     try{ sb.from('profiles').select('role').eq('id',session.user.id).single()
       .then(function(r){ if(r&&r.data&&r.data.role==='client') location.replace('portal.html'); }); }catch(e){}
-    var chip=document.getElementById('userChip'), em=document.getElementById('userEmail');
-    if(chip){ chip.style.display='inline-flex'; em.textContent=(session&&session.user&&session.user.email)||''; }
     // land on the right module (supports ?m= deep links), refreshing greeting + attention
     if(window.showModule) showModule(initialModule());
     // email-notification deep link: ?intake=<slug> opens straight to that response
@@ -3027,6 +3032,7 @@
     }
   }
   function showLogin(){
+    showApp._booted=false;
     gate.style.display='flex';
     var chip=document.getElementById('userChip'); if(chip) chip.style.display='none';
   }
