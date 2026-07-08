@@ -188,6 +188,22 @@
   .qa-l{color:var(--ink-faint);min-width:150px;flex:none}
   .qa-v{color:var(--ink)}
   .qa-dim{color:var(--ink-faint)}
+
+  /* questionnaire section: link cards + best-fit match panel */
+  .qnr-card{border:1px solid var(--line);border-radius:12px;background:var(--paper-2);padding:13px 15px;margin-bottom:10px}
+  .qnr-card-h{display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .qnr-co{font:700 13.5px 'Bricolage Grotesque',sans-serif;color:var(--ink)}
+  .qnr-actions{margin-top:9px}
+  .qnr-linkrow{display:flex;gap:8px;align-items:center;margin-top:9px;flex-wrap:wrap}
+  .qnr-linkinput{flex:1;min-width:220px;font:500 12.5px 'JetBrains Mono',monospace;padding:8px 11px;border:1px solid var(--line-2);border-radius:8px;background:var(--paper);color:var(--ink)}
+  .qnr-linkinput:focus{outline:none;border-color:var(--accent)}
+  .qnr-hint{font:400 11.5px Inter;color:var(--ink-faint);margin-top:6px}
+  .qnr-match{margin-top:12px;padding-top:11px;border-top:1px solid var(--line)}
+  .qnr-match-h{font:700 12px Inter;color:var(--ink);margin-bottom:9px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  .qnr-fit{font:700 10px Inter;text-transform:uppercase;letter-spacing:.04em;color:#fff;background:var(--accent);border-radius:5px;padding:2px 6px;margin-left:6px;vertical-align:1px}
+  .qnr-add{margin-left:auto;font:600 11px Inter;color:var(--accent);background:none;border:1px solid var(--line-2);border-radius:8px;padding:5px 10px;cursor:pointer;white-space:nowrap}
+  .qnr-add:hover{border-color:var(--accent)}
+  .qnr-add:disabled{opacity:.7;cursor:default}
   .vis{font:600 10.5px Inter;border:1px solid var(--line-2);background:var(--paper);color:var(--ink-faint);border-radius:999px;padding:4px 11px;cursor:pointer;white-space:nowrap}
   .vis:hover{border-color:var(--ink-faint)}
   .vis.on{background:rgba(63,143,107,.12);border-color:rgba(63,143,107,.4);color:var(--fitness)}
@@ -1495,27 +1511,95 @@ window.DF = (function(){
     var box=$('qnrBody'); if(!box) return;
     var intakes=[];
     try{
-      if(d.hs_company_id) intakes=await q(sb.from('intakes').select('slug,company_name,status,created_at,completed_at').eq('hs_company_id',d.hs_company_id).order('created_at',{ascending:false}));
-      else if(d.client_name) intakes=await q(sb.from('intakes').select('slug,company_name,status,created_at,completed_at').eq('company_name',d.client_name).order('created_at',{ascending:false}));
+      var cols='slug,company_name,status,responses,created_at,completed_at';
+      if(d.hs_company_id) intakes=await q(sb.from('intakes').select(cols).eq('hs_company_id',d.hs_company_id).order('created_at',{ascending:false}));
+      else if(d.client_name) intakes=await q(sb.from('intakes').select(cols).eq('company_name',d.client_name).order('created_at',{ascending:false}));
     }catch(e){}
+    // load the building catalog if there's a completed questionnaire to match against
+    if((intakes||[]).some(function(it){ return it.status==='completed'; })){ try{ await loadPortalBuildings(); }catch(e){} }
     renderQuestionnaireSection(d, intakes||[]);
   }
   function renderQuestionnaireSection(d, intakes){
     var box=$('qnrBody'); if(!box) return;
-    var sendBtn='<button class="share-btn" onclick="DF.sendQuestionnaire(\''+d.id+'\')">'
-      + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg> Send questionnaire</button>';
-    var list = intakes.length ? intakes.map(function(it){
+    var createBtn='<button class="share-btn" onclick="DF.sendQuestionnaire(\''+d.id+'\')">'
+      + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7L12 19"/></svg> Create questionnaire link</button>';
+    var rows = intakes.length ? intakes.map(function(it,i){
       var done=it.status==='completed';
-      return '<div class="cd-row" style="cursor:pointer" onclick="DF.viewQuestionnaire(\''+esc(it.slug)+'\')">'
-        + '<span class="cd-row-nm">'+esc(it.company_name||d.client_name||'Questionnaire')+'</span>'
-        + '<span class="cd-row-meta '+(done?'ok':'')+'">'+(done?'Completed ✓':'Awaiting response')+'</span>'
-        + '<span class="rost-go">'+(done?'View answers →':'View →')+'</span></div>';
-    }).join('') : '<div class="cl-empty" style="padding:6px 0 10px">No questionnaire sent yet — send one to kick off the client’s intake.</div>';
+      var link=location.origin+'/intake.html?i='+encodeURIComponent(it.slug);
+      if(done){
+        return '<div class="qnr-card"><div class="qnr-card-h"><span class="qnr-co">'+esc(it.company_name||d.client_name||'Questionnaire')+'</span>'
+          + '<span class="cd-row-meta ok">Completed ✓'+(it.completed_at?' '+ago(it.completed_at):'')+'</span></div>'
+          + '<div class="qnr-actions"><button class="btn" onclick="DF.viewQuestionnaire(\''+esc(it.slug)+'\')">View answers</button></div>'
+          + renderMatchInline(d.id, it.responses||{})
+          + '</div>';
+      }
+      return '<div class="qnr-card"><div class="qnr-card-h"><span class="qnr-co">'+esc(it.company_name||d.client_name||'Questionnaire')+'</span><span class="cd-row-meta">Awaiting response</span></div>'
+        + '<div class="qnr-linkrow"><input id="qnr_link_'+i+'" class="qnr-linkinput" readonly value="'+esc(link)+'" onclick="this.select()"><button class="btn" onclick="DF.copyFieldById(\'qnr_link_'+i+'\')">Copy link</button></div>'
+        + '<div class="qnr-hint">Copy this link and send it to your client. Their answers — and the best-fit buildings — come back here.</div></div>';
+    }).join('') : '<div class="cl-empty" style="padding:6px 0 10px">No questionnaire yet — create a link to send your client.</div>';
     box.innerHTML =
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
-      + '<div class="sub" style="font-size:12.5px;color:var(--ink-soft);max-width:560px">Send the space-needs questionnaire to your client. Their answers come straight back here, and feed the building match.</div>'
-      + sendBtn + '</div>'
-      + list;
+      + '<div class="sub" style="font-size:12.5px;color:var(--ink-soft);max-width:560px">Create a questionnaire link, copy it, and send it to your client. When they complete it, the best-fit buildings appear right here.</div>'
+      + createBtn + '</div>'
+      + rows;
+  }
+
+  /* ---------- questionnaire → best-fit buildings (the "market AI" match, ported
+     from the Cockpit so it runs right on the deal). Scores every building in the
+     catalog by the client's weighted amenity priorities, size-fit and budget. ---- */
+  var MATCH_RADIUS=1600, MATCH_CATS=[['coffee','Coffee'],['dining','Dining'],['fitness','Fitness'],['grocery','Grocery'],['transit','Transit']];
+  function _mhav(la1,ln1,la2,ln2){ var R=6371000,toR=Math.PI/180; var dLa=(la2-la1)*toR,dLn=(ln2-ln1)*toR; var s=Math.sin(dLa/2)*Math.sin(dLa/2)+Math.cos(la1*toR)*Math.cos(la2*toR)*Math.sin(dLn/2)*Math.sin(dLn/2); return 2*R*Math.asin(Math.sqrt(s)); }
+  function _cscore(b){
+    if(b._cscore) return b._cscore;
+    var cs={};
+    MATCH_CATS.forEach(function(c){
+      var raw=0;
+      (b.amen||[]).forEach(function(a){ if(a[1]===c[0]){ var dd=_mhav(b.lat,b.lng,a[2],a[3]); if(dd<=MATCH_RADIUS){ var pf=Math.min(1,Math.max(0.15,1-dd/MATCH_RADIUS)); raw+=((a[4]||3)/5)*pf; } } });
+      cs[c[0]]=10*(1-Math.exp(-raw/4));
+    });
+    b._cscore=cs; return cs;
+  }
+  function _iqSF(s){ var m=String(s||'').replace(/[^0-9]/g,''); return m?parseInt(m,10):null; }
+  function _iqNeed(r){ var sf=_iqSF(r.sf); if(sf) return sf; var hc=parseInt(r.headcount,10); return hc?hc*200:null; }
+  function _iqBudgetMax(r){ var b=r.budget||''; if(/under\s*\$?3/i.test(b)) return 3; if(/\+/.test(b)) return 999; var n=(b.match(/[\d.]+/g)||[]).map(parseFloat); return n.length?Math.max.apply(null,n):null; }
+  function _iqLowRent(b){ var m=String(b.rent||'').match(/[\d.]+/); return m?parseFloat(m[0]):null; }
+  function matchBuildings(r, buildings){
+    var w={}, anyW=false;
+    MATCH_CATS.forEach(function(c){ var v=(r.amenities&&r.amenities[c[0]]); if(v!=null){ w[c[0]]=v; if(v>0) anyW=true; } });
+    var need=_iqNeed(r), bmax=_iqBudgetMax(r);
+    return (buildings||[]).map(function(b){
+      var cs=_cscore(b), score;
+      if(anyW){ var sum=0,acc=0; MATCH_CATS.forEach(function(c){ var ww=w[c[0]]||0; sum+=ww; acc+=(cs[c[0]]||0)*ww; }); score=sum?Math.round(acc/sum*10):50; }
+      else { var t=0; MATCH_CATS.forEach(function(c){ t+=cs[c[0]]||0; }); score=Math.round(t/MATCH_CATS.length*10); }
+      var reasons=[], availSF=_iqSF(b.avail);
+      if(need && availSF && availSF>=need*0.8) reasons.push('Fits ~'+need.toLocaleString()+' SF');
+      if(bmax){ var lr=_iqLowRent(b); if(lr!=null && lr<=bmax+0.25) reasons.push('Within budget'); }
+      if(anyW){ var strong=MATCH_CATS.filter(function(c){ return (w[c[0]]||0)>=2 && (cs[c[0]]||0)>=6; }).map(function(c){ return c[1].toLowerCase(); }); if(strong.length) reasons.push('Strong '+strong.slice(0,2).join(' & ')); }
+      return {b:b, score:score, reasons:reasons};
+    }).sort(function(x,y){ return y.score-x.score; });
+  }
+  function renderMatchInline(dealId, r){
+    if(!_portalBuildings || !_portalBuildings.length) return '<div class="qnr-hint" style="margin-top:8px">Loading building matches…</div>';
+    var matches=matchBuildings(r, _portalBuildings).slice(0,6);
+    if(!matches.length) return '';
+    return '<div class="qnr-match"><div class="qnr-match-h">✨ Best-fit buildings <span class="qnr-hint">matched from their answers — amenities, size &amp; budget</span></div>'
+      + matches.map(function(m){
+          return '<div class="cd-row" style="cursor:default"><span class="cd-row-nm">'+esc(m.b.name)+' <span class="qnr-fit">fit '+m.score+'</span></span>'
+            + '<span class="cd-row-meta">'+esc(m.b.submarket||'')+(m.reasons.length?' · '+esc(m.reasons.slice(0,2).join(', ')):'')+'</span>'
+            + '<button class="qnr-add" onclick="DF.addMatchToDeal(\''+dealId+'\',\''+esc(m.b.id)+'\',this)">+ Add to deal</button></div>';
+        }).join('')
+      + '</div>';
+  }
+  async function addMatchToDeal(dealId, buildingId, btn){
+    var b=(_portalBuildings||[]).filter(function(x){ return x.id===buildingId; })[0]; if(!b) return;
+    if(btn){ btn.disabled=true; btn.textContent='Adding…'; }
+    try{
+      var ex=await q(sb.from('deal_properties').select('id').eq('deal_id',dealId).eq('building_id',buildingId).limit(1));
+      if(ex && ex.length){ if(btn){ btn.textContent='Already added ✓'; } return; }
+      await q(sb.from('deal_properties').insert({deal_id:dealId, building_id:b.id, name:b.name, address:b.addr||null, status:'considering'}).select().single());
+      if(btn){ btn.textContent='Added ✓'; }
+      if(typeof aiToast==='function') aiToast(b.name+' added to the deal.');
+    }catch(e){ if(btn){ btn.disabled=false; btn.textContent='+ Add to deal'; } alert('Could not add: '+(e.message||e)); }
   }
 
   // Link / relink the deal to a HubSpot company (so the client panel populates).
@@ -1604,7 +1688,7 @@ window.DF = (function(){
     var out=await res.json().catch(function(){return {};});
     if(!res.ok||!out.url) throw new Error(out.error||('Error '+res.status));
     try{ await navigator.clipboard.writeText(out.url); }catch(e){}
-    if(typeof aiToast==='function') aiToast('Questionnaire created — link copied.');
+    if(typeof aiToast==='function') aiToast('Questionnaire link created — also copied to your clipboard.');
     return out.url;
   }
   async function sendQuestionnaire(dealId){
@@ -3802,7 +3886,7 @@ window.DF = (function(){
     openModel:openModel, modelInput:modelInput, modelToggle:modelToggle, modelDeal:modelDeal, modelAdd:modelAdd, modelRemove:modelRemove, modelUnlink:modelUnlink, modelPrint:modelPrint, modelPdf:modelPdf, modelExcel:modelExcel, modelScenario:modelScenario, modelPull:modelPull,
     showDashboard:showDashboard, showPipeline:showPipeline, setPipeView:setPipeView, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, cmpExcel:cmpExcel, toggleClosed:toggleClosed,
     openPortal:openPortal, portalCoSuggest:portalCoSuggest, portalCoPick:portalCoPick, portalInvite:portalInvite, portalRevoke:portalRevoke, portalAttach:portalAttach, portalDetach:portalDetach, portalNotify:portalNotify,
-    clientLinkCompany:clientLinkCompany, clientCoSuggest:clientCoSuggest, clientCoPick:clientCoPick, sendQuestionnaire:sendQuestionnaire, viewQuestionnaire:viewQuestionnaire, copyFieldById:copyFieldById,
+    clientLinkCompany:clientLinkCompany, clientCoSuggest:clientCoSuggest, clientCoPick:clientCoPick, sendQuestionnaire:sendQuestionnaire, viewQuestionnaire:viewQuestionnaire, copyFieldById:copyFieldById, addMatchToDeal:addMatchToDeal,
     showClients:showClients, rosterSearch:rosterSearch, rosterSort:rosterSort, rosterStartDeal:rosterStartDeal, openClientDetail:openClientDetail, openClientByUid:openClientByUid, rosterSendQuestionnaire:rosterSendQuestionnaire,
     deleteDealAsk:deleteDealAsk, deleteDealCancel:deleteDealCancel, deleteDealDo:deleteDealDo,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
