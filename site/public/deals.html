@@ -162,6 +162,20 @@
   .rost-nodeal{margin-top:11px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font:500 12px Inter;color:var(--ink-faint)}
   .rost-start{font:600 11.5px Inter;color:var(--accent);background:none;border:1px dashed var(--line-2);border-radius:8px;padding:5px 10px;cursor:pointer}
   .rost-start:hover{border-color:var(--accent);border-style:solid}
+  .rost-stage.dead{color:var(--ink-faint);background:var(--line)}
+  /* client directory card + detail rows */
+  .cd-cardline{margin-top:9px;min-height:2px}
+  .cd-tag{font:700 10px Inter;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft);background:var(--line);border-radius:5px;padding:3px 8px}
+  .cd-tag.on{color:#fff;background:var(--accent)}
+  .cd-counts{font:500 11.5px Inter;color:var(--ink-faint);margin-top:7px}
+  .cd-row{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line);border-radius:9px;background:var(--paper-2);cursor:pointer;text-decoration:none;margin-bottom:7px}
+  .cd-row:hover{border-color:var(--accent)}
+  .cd-row-nm{font:600 12.5px Inter;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cd-row-meta{font:500 11.5px Inter;color:var(--ink-faint);white-space:nowrap}
+  .cd-row-meta.ok{color:var(--fitness,#2e7d4f)}
+  .cd-chip{font:600 10.5px Inter;color:var(--accent);border:1px solid var(--line-2);border-radius:6px;padding:3px 7px;white-space:nowrap}
+  .cd-chip:hover{border-color:var(--accent)}
+  .cd-row .rost-go{margin-left:auto}
 
   /* questionnaire answers viewer */
   .qa-wrap{border:1px solid var(--line);border-radius:11px;background:var(--paper-2);padding:6px 14px;margin:6px 0 4px;max-height:52vh;overflow:auto}
@@ -488,7 +502,7 @@
   <div class="subnav" id="subnav">
     <button data-view="dashboard" onclick="DF.showDashboard()">Dashboard</button>
     <button data-view="clients" onclick="DF.showClients()">Clients</button>
-    <button data-view="pipeline" onclick="DF.showPipeline()">Pipeline</button>
+    <button data-view="pipeline" onclick="DF.showPipeline()">Active Deals</button>
     <button data-view="emails" onclick="DF.showEmails()">Emails</button>
   </div>
 
@@ -499,7 +513,7 @@
   <section id="pipelineView" class="wrap">
     <div class="vhead">
       <div>
-        <h1>Deal pipeline</h1>
+        <h1>Active deals</h1>
         <div class="sub">Your active client engagements, by stage.</div>
       </div>
       <div style="display:flex;gap:12px;align-items:center">
@@ -689,7 +703,7 @@ window.DF = (function(){
       var qp=new URLSearchParams(location.search);
       var dl=qp.get('deal');
       if(dl && deals.some(function(d){return d.id===dl;})){ openDeal(dl); if(qp.get('model')==='1') setTimeout(function(){ openModel(dl); },60); }
-      else if(qp.get('view')==='clients') showClients();
+      else if(qp.get('view')==='clients'){ var cu=qp.get('c'); if(cu) openClientByUid(cu); else showClients(); }
       else if(qp.get('view')==='emails') showEmails();
       else if(qp.get('view')==='pipeline') showPipeline();
       else showDashboard();
@@ -733,7 +747,7 @@ window.DF = (function(){
       }
       else {
         var view=qp.get('view');
-        if(view==='clients') showClients();
+        if(view==='clients'){ var cu=qp.get('c'); if(cu) openClientByUid(cu); else showClients(); }
         else if(view==='pipeline') showPipeline();
         else if(view==='emails') showEmails();
         else showDashboard();
@@ -881,54 +895,82 @@ window.DF = (function(){
      ================================================================== */
   var _roster=[], _rosterQ='', _companiesConfigured=null;
 
+  function _keyFor(hsId, name){ return hsId ? ('hs:'+hsId) : ('nm:'+String(name||'').trim().toLowerCase()); }
+
+  // Build the client directory: everyone you've ENGAGED — has a deal (active OR
+  // past), a shared package, a questionnaire, or a comp. Enriched with HubSpot info.
   async function buildRoster(){
-    await loadCompanies();           // fills _companies (HubSpot); [] if not connected
+    await loadCompanies();
+    var hsById={}; (_companies||[]).forEach(function(c){ hsById[c.id]=c; });
     var byKey={};
-    // seed from HubSpot companies so clients WITHOUT a deal still appear
-    (_companies||[]).forEach(function(c){
-      var k='hs:'+c.id;
-      byKey[k]={ key:k, hs_company_id:c.id, name:c.name||'(unnamed)', industry:c.industry||null, city:c.city||null, inHubspot:true, deals:[] };
-    });
-    // fold in deals (skip dead — they're archived)
-    deals.forEach(function(d){
-      if(d.stage==='dead') return;
-      var k=d.hs_company_id ? ('hs:'+d.hs_company_id) : ('nm:'+String(d.client_name||'').trim().toLowerCase());
-      if(!byKey[k]) byKey[k]={ key:k, hs_company_id:d.hs_company_id||null, name:d.client_name||'(unnamed)', industry:null, city:null, inHubspot:!!d.hs_company_id, deals:[] };
-      byKey[k].deals.push(d);
-    });
+    function ensure(uid, name, hsId){
+      if(!byKey[uid]){
+        var hs=hsId&&hsById[hsId];
+        byKey[uid]={ uid:uid, hs_company_id:hsId||null, name:(name||(hs&&hs.name)||'(unnamed)'), industry:hs?hs.industry:null, city:hs?hs.city:null, inHubspot:!!hsId, deals:[], intakes:[], packages:[], comps:[] };
+      }
+      return byKey[uid];
+    }
+    // deals — active AND past (the whole book of business)
+    deals.forEach(function(d){ ensure(_keyFor(d.hs_company_id,d.client_name), d.client_name, d.hs_company_id).deals.push(d); });
+    // engagement signals (RLS-scoped to the firm)
+    var intakes=[], pkgs=[], comps=[];
+    try{ intakes=await q(sb.from('intakes').select('slug,company_name,status,hs_company_id,created_at,completed_at').order('created_at',{ascending:false})); }catch(e){}
+    try{ pkgs=await q(sb.from('portal_package_links').select('slug,label,hs_company_id,created_at').order('created_at',{ascending:false})); }catch(e){}
+    try{ comps=await q(sb.from('comps').select('tenant,building_name,address,rsf,execution_date,net_effective_rent_psf').order('execution_date',{ascending:false,nullsFirst:false})); }catch(e){}
+    (intakes||[]).forEach(function(it){ ensure(_keyFor(it.hs_company_id,it.company_name), it.company_name, it.hs_company_id).intakes.push(it); });
+    (pkgs||[]).forEach(function(p){ if(p.hs_company_id) ensure('hs:'+p.hs_company_id, null, p.hs_company_id).packages.push(p); });
+    (comps||[]).forEach(function(cm){ if(cm.tenant) ensure(_keyFor(null,cm.tenant), cm.tenant, null).comps.push(cm); });
+
     var arr=Object.keys(byKey).map(function(k){ return byKey[k]; });
+    function recency(c){ return [ (c.deals[0]&&(c.deals[0].updated_at||c.deals[0].created_at)), (c.intakes[0]&&c.intakes[0].created_at), (c.packages[0]&&c.packages[0].created_at) ].filter(Boolean).sort().reverse()[0]||''; }
     arr.forEach(function(c,i){
       c.key='rk'+i;   // stable, quote-safe id for onclick handlers
       c.deals.sort(function(a,b){ return String(b.updated_at||b.created_at).localeCompare(String(a.updated_at||a.created_at)); });
+      c._active=c.deals.some(function(d){ return d.stage!=='dead'; });
     });
-    // clients with deals first (most-recent activity), then the rest alphabetically
+    // active clients first, then by most-recent activity, then name
     arr.sort(function(a,b){
-      if(a.deals.length && !b.deals.length) return -1;
-      if(!a.deals.length && b.deals.length) return 1;
-      if(a.deals.length && b.deals.length) return String(b.deals[0].updated_at||b.deals[0].created_at).localeCompare(String(a.deals[0].updated_at||a.deals[0].created_at));
+      if(a._active&&!b._active) return -1;
+      if(!a._active&&b._active) return 1;
+      var r=recency(b).localeCompare(recency(a)); if(r) return r;
       return String(a.name||'').localeCompare(String(b.name||''));
     });
     return arr;
   }
 
-  async function showClients(){
-    _navTo('view=clients');
+  function _clientsSetup(){
     $('pipelineView').style.display='none'; $('dashboardView').style.display='none'; $('dealView').style.display='none';
     var mv=$('modelView'); if(mv) mv.style.display='none'; var ev=$('emailsView'); if(ev) ev.style.display='none';
     $('clientsView').style.display='block';
-    $('crumb').innerHTML='Deal flow <b>›</b> Clients';
     setSubnav('clients');
     if(window.Van) Van.setContext({dealId:null, label:'your clients'});
+  }
+
+  // Roster (subnav "Clients" / back button)
+  async function showClients(){
+    _navTo('view=clients');
+    _clientsSetup();
+    $('crumb').innerHTML='Deal flow <b>›</b> Clients';
     $('clientsView').innerHTML='<div class="loading">Loading clients…</div>';
+    try{ _roster=await buildRoster(); renderClientsShell(); }
+    catch(e){ $('clientsView').innerHTML='<div class="loading">Could not load clients: '+esc(e.message||e)+'</div>'; }
+  }
+
+  // Deep-link / browser back-forward into a specific client (URL ?view=clients&c=<uid>)
+  async function openClientByUid(uid){
+    _clientsSetup();
+    $('clientsView').innerHTML='<div class="loading">Loading client…</div>';
     try{
-      _roster=await buildRoster();
-      renderClientsShell();
-    }catch(e){ $('clientsView').innerHTML='<div class="loading">Could not load clients: '+esc(e.message||e)+'</div>'; }
+      if(!_roster || !_roster.length) _roster=await buildRoster();
+      var c=_roster.filter(function(x){return x.uid===uid;})[0];
+      if(c) renderClientDetail(c);
+      else { $('crumb').innerHTML='Deal flow <b>›</b> Clients'; renderClientsShell(); }
+    }catch(e){ $('clientsView').innerHTML='<div class="loading">Could not load client: '+esc(e.message||e)+'</div>'; }
   }
 
   function renderClientsShell(){
     $('clientsView').innerHTML=
-      '<div class="vhead"><div><h1>Clients</h1><div class="sub" id="rostCount"></div></div>'
+      '<div class="vhead"><div><h1>Clients</h1><div class="sub" id="rostCount">Everyone you’ve worked with — click in for their full history.</div></div>'
       + '<div style="display:flex;gap:12px;align-items:center">'
       +   '<input id="rostSearch" class="rost-search" placeholder="Search clients…" oninput="DF.rosterSearch(this.value)">'
       +   '<button class="share-btn" onclick="DF.newDeal()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> New deal</button>'
@@ -943,31 +985,105 @@ window.DF = (function(){
     var list=_roster.filter(function(c){
       return !q0 || (c.name||'').toLowerCase().indexOf(q0)>=0 || (c.industry||'').toLowerCase().indexOf(q0)>=0 || (c.city||'').toLowerCase().indexOf(q0)>=0;
     });
-    var g=$('rostGrid'); if(g) g.innerHTML=list.map(rosterCard).join('') || '<div class="loading" style="grid-column:1/-1">No clients match “'+esc(_rosterQ)+'”.</div>';
-    var cnt=$('rostCount'); if(cnt) cnt.textContent=list.length+' client'+(list.length===1?'':'s')+(_companies&&!_companies.length?' · connect HubSpot to see all companies':'');
+    var g=$('rostGrid'); if(g) g.innerHTML=list.map(rosterCard).join('') || '<div class="loading" style="grid-column:1/-1">No clients yet. Start a deal or send a questionnaire and they’ll appear here.</div>';
+    var cnt=$('rostCount'); if(cnt) cnt.textContent=list.length+' client'+(list.length===1?'':'s')+' — click in for their full history.';
   }
   function rosterSearch(v){ _rosterQ=v; renderRosterGrid(); }
 
   function rosterCard(c){
     var meta=[c.industry, c.city].filter(Boolean).join(' · ');
-    var body;
-    if(c.deals.length){
-      body='<div class="rost-deals">'+c.deals.slice(0,4).map(function(d){
-        var comm=d.commission_amount!=null?money(d.commission_amount):(num(d.commission_pct)!=null?d.commission_pct+'%':'');
-        return '<div class="rost-deal" onclick="DF.openDeal(\''+d.id+'\')">'
-          + '<span class="rost-stage">'+esc(STAGE_LABEL[d.stage]||d.stage)+'</span>'
-          + '<span class="rost-deal-meta">'+(comm?esc(comm)+' · ':'')+ago(d.updated_at||d.created_at)+'</span>'
-          + '<span class="rost-go">Open →</span></div>';
-      }).join('')
-      + (c.deals.length>4?'<div class="rost-more">+'+(c.deals.length-4)+' more</div>':'')
-      + '</div>';
-    } else {
-      body='<div class="rost-nodeal">No active deal <button class="rost-start" onclick="DF.rosterStartDeal(\''+c.key+'\')">+ Start a deal</button></div>';
-    }
-    return '<div class="rost-card">'
+    var active=c.deals.filter(function(d){ return d.stage!=='dead'; }).length;
+    var bits=[];
+    if(active) bits.push('<span class="cd-tag on">'+active+' active deal'+(active===1?'':'s')+'</span>');
+    else if(c.deals.length) bits.push('<span class="cd-tag">Past client</span>');
+    var counts=[];
+    if(c.deals.length) counts.push(c.deals.length+' deal'+(c.deals.length===1?'':'s'));
+    if(c.intakes.length) counts.push(c.intakes.length+' questionnaire'+(c.intakes.length===1?'':'s'));
+    if(c.packages.length) counts.push(c.packages.length+' package'+(c.packages.length===1?'':'s'));
+    if(c.comps.length) counts.push(c.comps.length+' comp'+(c.comps.length===1?'':'s'));
+    var last=c.deals[0]?ago(c.deals[0].updated_at||c.deals[0].created_at):'';
+    return '<div class="rost-card" style="cursor:pointer" onclick="DF.openClientDetail(\''+c.key+'\')">'
       + '<div class="rost-nm">'+esc(c.name)+(c.inHubspot?' <span class="rost-hs">HubSpot</span>':'')+'</div>'
       + (meta?'<div class="rost-sub">'+esc(meta)+'</div>':'')
-      + body + '</div>';
+      + '<div class="cd-cardline">'+(bits.join('')||'')+'</div>'
+      + '<div class="cd-counts">'+esc(counts.join(' · ')||'Client')+(last?' · '+last:'')+'</div>'
+      + '<div class="rost-go" style="margin-top:9px">View client →</div></div>';
+  }
+
+  function openClientDetail(key){
+    var c=_roster.filter(function(x){return x.key===key;})[0]; if(!c) return;
+    _navTo('view=clients&c='+encodeURIComponent(c.uid));
+    renderClientDetail(c);
+  }
+
+  // The client reference page: everything you've made for them, across all their deals.
+  async function renderClientDetail(c){
+    _clientsSetup();
+    $('crumb').innerHTML='Deal flow <b>›</b> Clients <b>›</b> '+esc(c.name);
+    var v=$('clientsView'); v.innerHTML='<div class="loading">Loading '+esc(c.name)+'…</div>';
+    var dealIds=c.deals.map(function(d){return d.id;});
+    var proposals=[], leases=[];
+    if(dealIds.length){
+      try{ proposals=await q(sb.from('proposals').select('id,deal_id,title,status').in('deal_id',dealIds).order('created_at',{ascending:false})); }catch(e){}
+      try{ leases=await q(sb.from('lease_abstracts').select('deal_id,tenant_name,premises,size_sf,expiration_date').in('deal_id',dealIds).order('created_at',{ascending:false})); }catch(e){}
+    }
+    if(!$('clientsView') || $('clientsView').style.display==='none') return; // navigated away while loading
+    var esc2=esc;
+    function sec(title, n, inner){ return '<div class="sec"><div class="sec-h"><h2>'+title+(n?' <span style="color:var(--ink-faint);font-weight:400">('+n+')</span>':'')+'</h2></div>'+inner+'</div>'; }
+    function fdate(x){ return x?String(x).slice(0,10):''; }
+
+    var active=c.deals.filter(function(d){return d.stage!=='dead';}).length;
+    var dealsHtml=c.deals.length ? c.deals.map(function(d){
+      var dead=d.stage==='dead';
+      var hasModel=false; try{ hasModel=!!localStorage.getItem('vantage_model_'+d.id); }catch(e){}
+      var comm=d.commission_amount!=null?money(d.commission_amount):'';
+      return '<div class="cd-row" onclick="DF.openDeal(\''+d.id+'\')">'
+        + '<span class="rost-stage'+(dead?' dead':'')+'">'+esc2(dead?'Closed':(STAGE_LABEL[d.stage]||d.stage))+'</span>'
+        + '<span class="cd-row-meta">'+(comm?esc2(comm)+' · ':'')+ago(d.updated_at||d.created_at)+'</span>'
+        + (hasModel?'<span class="cd-chip" onclick="event.stopPropagation();DF.openModel(\''+d.id+'\')" title="Open the financial model">📊 Model</span>':'')
+        + '<span class="rost-go">Open →</span></div>';
+    }).join('') : '<div class="cl-empty">No deals.</div>';
+
+    var propHtml=proposals.length ? proposals.map(function(p){
+      return '<div class="cd-row" onclick="DF.openDeal(\''+p.deal_id+'\')"><span class="cd-row-nm">'+esc2(p.title||'Proposal')+'</span>'
+        + '<span class="cd-row-meta">'+esc2(p.status||'')+'</span><span class="rost-go">Open →</span></div>';
+    }).join('') : '<div class="cl-empty">None yet.</div>';
+
+    var leaseHtml=leases.length ? leases.map(function(l){
+      return '<div class="cd-row" onclick="DF.openDeal(\''+l.deal_id+'\')"><span class="cd-row-nm">'+esc2(l.premises||l.tenant_name||'Lease')+(l.size_sf?' · '+Number(l.size_sf).toLocaleString()+' SF':'')+'</span>'
+        + '<span class="cd-row-meta">'+(l.expiration_date?'exp '+esc2(fdate(l.expiration_date)):'')+'</span><span class="rost-go">Open →</span></div>';
+    }).join('') : '<div class="cl-empty">None yet.</div>';
+
+    var qHtml=c.intakes.length ? c.intakes.map(function(it){
+      var done=it.status==='completed';
+      return '<div class="cd-row" onclick="DF.viewQuestionnaire(\''+esc2(it.slug)+'\')"><span class="cd-row-nm">'+esc2(it.company_name||c.name)+'</span>'
+        + '<span class="cd-row-meta '+(done?'ok':'')+'">'+(done?'Completed ✓':'Awaiting')+'</span><span class="rost-go">View →</span></div>';
+    }).join('') : '<div class="cl-empty">None yet.</div>';
+
+    var pkgHtml=c.packages.length ? c.packages.map(function(p){
+      return '<a class="cd-row" href="client.html?c='+encodeURIComponent(p.slug)+'&via=portal" target="_blank" rel="noopener"><span class="cd-row-nm">'+esc2(p.label||'Building shortlist')+'</span><span class="rost-go">Open ↗</span></a>';
+    }).join('') : '<div class="cl-empty">None yet.</div>';
+
+    var compHtml=c.comps.length ? c.comps.map(function(cm){
+      var ner=cm.net_effective_rent_psf!=null?('$'+Number(cm.net_effective_rent_psf).toFixed(2)+' NER'):'';
+      return '<div class="cd-row" style="cursor:default"><span class="cd-row-nm">'+esc2(cm.building_name||cm.address||'—')+(cm.rsf?' · '+Number(cm.rsf).toLocaleString()+' SF':'')+'</span><span class="cd-row-meta">'+esc2(ner)+'</span></div>';
+    }).join('') : '<div class="cl-empty">None.</div>';
+
+    var meta=[c.industry,c.city].filter(Boolean).join(' · ');
+    v.innerHTML=
+      '<button class="dsr-back" style="margin-bottom:14px" onclick="DF.showClients()">‹ All clients</button>'
+      + '<div class="dealhead"><div><h1>'+esc2(c.name)+(c.inHubspot?' <span class="rost-hs">HubSpot</span>':'')+'</h1>'
+      +   (meta?'<div class="meta">'+esc2(meta)+'</div>':'')
+      +   '<div class="meta">'+(active?active+' active deal'+(active===1?'':'s'):'No active deal')+' · '+c.deals.length+' total</div></div>'
+      +   '<div class="dhactions"><button class="act-btn" onclick="DF.rosterStartDeal(\''+c.key+'\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> New deal</button>'
+      +     '<button class="act-btn" onclick="DF.rosterSendQuestionnaire(\''+c.key+'\')">✉ Send questionnaire</button></div>'
+      + '</div>'
+      + sec('Deals', c.deals.length, dealsHtml)
+      + sec('Proposals', proposals.length, propHtml)
+      + sec('Leases', leases.length, leaseHtml)
+      + sec('Questionnaires', c.intakes.length, qHtml)
+      + sec('Option packages', c.packages.length, pkgHtml)
+      + sec('Comps', c.comps.length, compHtml);
   }
 
   async function rosterStartDeal(key){
@@ -979,6 +1095,12 @@ window.DF = (function(){
       if(c.hs_company_id){ try{ await q(sb.from('deals').update({hs_company_id:c.hs_company_id}).eq('id',row.id)); row.hs_company_id=c.hs_company_id; }catch(e){} }
       deals.unshift(row); openDeal(row.id);
     }catch(e){ alert('Could not start the deal: '+(e.message||e)); }
+  }
+  // Send a questionnaire from a client's directory page (uses the client's linked company if any).
+  async function rosterSendQuestionnaire(key){
+    var c=_roster.filter(function(x){return x.key===key;})[0]; if(!c) return;
+    try{ await createIntakeFor({client_name:c.name, hs_company_id:c.hs_company_id}); renderClientDetail(c); }
+    catch(e){ alert('Could not create the questionnaire: '+(e.message||e)); }
   }
 
   async function loadDashData(){
@@ -3633,7 +3755,7 @@ window.DF = (function(){
     showDashboard:showDashboard, showPipeline:showPipeline, setPipeView:setPipeView, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, cmpExcel:cmpExcel, toggleClosed:toggleClosed,
     openPortal:openPortal, portalCoSuggest:portalCoSuggest, portalCoPick:portalCoPick, portalInvite:portalInvite, portalRevoke:portalRevoke, portalAttach:portalAttach, portalDetach:portalDetach, portalNotify:portalNotify,
     clientLinkCompany:clientLinkCompany, clientCoSuggest:clientCoSuggest, clientCoPick:clientCoPick, sendQuestionnaire:sendQuestionnaire, viewQuestionnaire:viewQuestionnaire, copyFieldById:copyFieldById,
-    showClients:showClients, rosterSearch:rosterSearch, rosterStartDeal:rosterStartDeal,
+    showClients:showClients, rosterSearch:rosterSearch, rosterStartDeal:rosterStartDeal, openClientDetail:openClientDetail, openClientByUid:openClientByUid, rosterSendQuestionnaire:rosterSendQuestionnaire,
     deleteDealAsk:deleteDealAsk, deleteDealCancel:deleteDealCancel, deleteDealDo:deleteDealDo,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask, recGo:recGo,
