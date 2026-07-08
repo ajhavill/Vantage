@@ -162,6 +162,15 @@
   .rost-nodeal{margin-top:11px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font:500 12px Inter;color:var(--ink-faint)}
   .rost-start{font:600 11.5px Inter;color:var(--accent);background:none;border:1px dashed var(--line-2);border-radius:8px;padding:5px 10px;cursor:pointer}
   .rost-start:hover{border-color:var(--accent);border-style:solid}
+
+  /* questionnaire answers viewer */
+  .qa-wrap{border:1px solid var(--line);border-radius:11px;background:var(--paper-2);padding:6px 14px;margin:6px 0 4px;max-height:52vh;overflow:auto}
+  .qa-sec{font:700 10.5px Inter;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);margin:12px 0 5px;padding-top:8px;border-top:1px solid var(--line)}
+  .qa-sec:first-child{border-top:0;padding-top:2px}
+  .qa-row{display:flex;gap:14px;padding:5px 0;font:500 12.5px Inter}
+  .qa-l{color:var(--ink-faint);min-width:150px;flex:none}
+  .qa-v{color:var(--ink)}
+  .qa-dim{color:var(--ink-faint)}
   .vis{font:600 10.5px Inter;border:1px solid var(--line-2);background:var(--paper);color:var(--ink-faint);border-radius:999px;padding:4px 11px;cursor:pointer;white-space:nowrap}
   .vis:hover{border-color:var(--ink-faint)}
   .vis.on{background:rgba(63,143,107,.12);border-color:rgba(63,143,107,.4);color:var(--fitness)}
@@ -1302,9 +1311,9 @@ window.DF = (function(){
     // Questionnaires
     var qHtml = data.intakes.length ? data.intakes.slice(0,4).map(function(it){
       var done=it.status==='completed';
-      return '<a class="cl-row" href="index.html?intake='+encodeURIComponent(it.slug)+'" target="_blank" rel="noopener">'
+      return '<div class="cl-row" style="cursor:pointer" onclick="DF.viewQuestionnaire(\''+esc2(it.slug)+'\')" title="Click to see the questionnaire &amp; answers">'
         +'<span class="cl-row-nm">'+esc2(it.company_name||d.client_name||'Questionnaire')+'</span>'
-        +'<span class="cl-row-meta '+(done?'ok':'')+'">'+(done?'Completed ✓':'Awaiting')+'</span></a>';
+        +'<span class="cl-row-meta '+(done?'ok':'')+'">'+(done?'Completed ✓':'Awaiting')+'</span></div>';
     }).join('') : '<div class="cl-empty">None yet.</div>';
 
     // Packages shared in the portal
@@ -1368,19 +1377,70 @@ window.DF = (function(){
     }catch(e){ var er=$('clc_err'); if(er) er.textContent='Could not link: '+(e.message||e); }
   }
 
-  // Send a questionnaire to this client (create-intake), then refresh the panel.
+  /* ---------- questionnaire: create, view responses inline, resend ---------- */
+  var IQ_RATING=['Not important','Nice to have','Important','Must-have'];
+  var IQ_AMEN=[['coffee','Coffee shops'],['dining','Restaurants / dining'],['fitness','Gyms / fitness'],['grocery','Grocery'],['transit','Transit access']];
+
+  // Render a completed questionnaire's answers (mirrors the Cockpit's layout).
+  function qAnswersHtml(r){
+    r=r||{};
+    function v(x){ if(x==null||x===''||(Array.isArray(x)&&!x.length)) return '<span class="qa-dim">—</span>'; return esc(Array.isArray(x)?x.join(', '):String(x)); }
+    function row(l,val){ return '<div class="qa-row"><span class="qa-l">'+l+'</span><span class="qa-v">'+val+'</span></div>'; }
+    function sec(t){ return '<div class="qa-sec">'+t+'</div>'; }
+    var amen=IQ_AMEN.map(function(a){ var x=(r.amenities&&r.amenities[a[0]]); return a[1]+': '+(x==null?'—':(IQ_RATING[x]||x)); }).join(' · ');
+    return sec('Company')
+      + row('Company',v(r.company)) + row('Industry',v(r.industry))
+      + row('Contact',v(r.contactName)) + row('Email',v(r.contactEmail))
+      + row('Team size now',v(r.headcount)) + row('In 2–3 yrs',v(r.headcountFuture))
+      + sec('Space needs')
+      + row('Square footage',v(r.sf?r.sf+' SF':'')) + row('Parking',v(r.parking))
+      + row('Layout',v(r.layout)) + row('Move-in readiness',v(r.buildout)) + row('Must-have spaces',v(r.musthaves))
+      + sec('Budget &amp; timing')
+      + row('Target rent',v(r.budget)) + row('Move-in timeline',v(r.timeline)) + row('Lease term',v(r.term))
+      + sec('Location &amp; lifestyle')
+      + row('Preferred submarkets',v(r.areas)) + row('Amenity priorities',amen)
+      + row('Additional notes',v(r.notes));
+  }
+
+  // Click into a questionnaire — see status, the shareable link, and (if done) the answers, all here.
+  async function viewQuestionnaire(slug){
+    openSheet('<h3>Questionnaire</h3><div id="qv_body"><div class="loading" style="padding:24px">Loading…</div></div>');
+    var it=null;
+    try{ it=(await q(sb.from('intakes').select('slug,company_name,status,responses,roster_filename,created_at,completed_at').eq('slug',slug).limit(1)))[0]; }catch(e){}
+    var body=$('qv_body'); if(!body) return;
+    if(!it){ body.innerHTML='<div class="formerr">Could not load this questionnaire.</div><div class="srow"><button class="btn" onclick="DF.close()">Close</button></div>'; return; }
+    var link=location.origin+'/intake.html?i='+encodeURIComponent(it.slug);
+    var done=it.status==='completed';
+    var head='<div class="ssub">'+esc(it.company_name||'Client')+' · '+(done?('Completed'+(it.completed_at?' '+ago(it.completed_at):'')):'Awaiting response')+'</div>'
+      + '<div class="fld linkbox"><label>Shareable link</label><input id="qv_link" readonly value="'+esc(link)+'" onclick="this.select()"></div>'
+      + '<div class="srow" style="justify-content:flex-start;gap:8px;margin-bottom:6px"><button class="btn" onclick="DF.copyFieldById(\'qv_link\')">Copy link</button>'
+      + '<a class="btn" href="'+esc(link)+'" target="_blank" rel="noopener" style="text-decoration:none">Open the form ↗</a></div>';
+    var answers = done
+      ? ('<div class="qa-wrap">'+qAnswersHtml(it.responses||{})
+         + (it.roster_filename?'<div class="qa-row"><span class="qa-l">Team roster</span><span class="qa-v">'+esc(it.roster_filename)+' <span class="qa-dim">(uploaded)</span></span></div>':'')
+         + '</div>')
+      : '<div class="cl-empty" style="padding:14px 0">No responses yet — the client hasn’t completed it. Share the link above to get things going.</div>';
+    body.innerHTML=head+answers+'<div class="srow"><button class="btn" onclick="DF.close()">Close</button></div>';
+  }
+  function copyFieldById(id){ var el=$(id); if(!el) return; el.select();
+    try{ navigator.clipboard.writeText(el.value); if(typeof aiToast==='function') aiToast('Copied.'); }
+    catch(e){ try{ document.execCommand('copy'); }catch(e2){} } }
+
+  // Create + link a questionnaire for a deal's client; copies the link. Returns the URL.
+  async function createIntakeFor(d){
+    var s=await sb.auth.getSession(); var token=s&&s.data&&s.data.session?s.data.session.access_token:null;
+    var res=await fetch('/.netlify/functions/create-intake',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token:token, company:d.client_name||'Client', hsCompanyId:d.hs_company_id||undefined})});
+    var out=await res.json().catch(function(){return {};});
+    if(!res.ok||!out.url) throw new Error(out.error||('Error '+res.status));
+    try{ await navigator.clipboard.writeText(out.url); }catch(e){}
+    if(typeof aiToast==='function') aiToast('Questionnaire created — link copied.');
+    return out.url;
+  }
   async function sendQuestionnaire(dealId){
     var d=deals.filter(function(x){return x.id===dealId;})[0]; if(!d) return;
-    try{
-      var s=await sb.auth.getSession(); var token=s&&s.data&&s.data.session?s.data.session.access_token:null;
-      var res=await fetch('/.netlify/functions/create-intake',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({token:token, company:d.client_name||'Client', hsCompanyId:d.hs_company_id||undefined})});
-      var out=await res.json().catch(function(){return {};});
-      if(!res.ok||!out.url) throw new Error(out.error||('Error '+res.status));
-      if(typeof aiToast==='function') aiToast('Questionnaire created — link copied.');
-      try{ await navigator.clipboard.writeText(out.url); }catch(e){}
-      fillClientPanel(d);
-    }catch(e){ alert('Could not create the questionnaire: '+(e.message||e)); }
+    try{ await createIntakeFor(d); fillClientPanel(d); }
+    catch(e){ alert('Could not create the questionnaire: '+(e.message||e)); }
   }
 
   /* ---------- delete a deal (two-click: Delete → Yes, delete) ----------
@@ -1646,30 +1706,35 @@ window.DF = (function(){
   }
   function selOpts(arr,sel){ return arr.map(function(o){ return '<option value="'+o[0]+'"'+(o[0]===sel?' selected':'')+'>'+o[1]+'</option>'; }).join(''); }
 
-  /* ---------- create: deal ---------- */
+  /* ---------- create: deal (optionally kicking off the questionnaire) ---------- */
   function newDeal(){
     _pickedCompanyId=null;
-    openSheet('<h3>New deal</h3><div class="ssub">Start tracking a client from tour through executed lease.</div>'
+    openSheet('<h3>New deal</h3><div class="ssub">Start tracking a client from tour through executed lease. Sending the questionnaire kicks off the whole intake — answers come back on the deal.</div>'
       + fld('Client / company name','<input id="f_name" placeholder="e.g. Pico Robertson Partners" autocomplete="off" oninput="DF.companySuggest(this.value)" autofocus><div class="sugg" id="f_csugg"></div>')
-      + '<div id="f_chint" style="font-size:11.5px;color:var(--ink-faint);margin-top:6px">Pick a HubSpot company to link this deal to that client — its proposals &amp; leases then appear on the client’s hub page.</div>'
+      + '<div id="f_chint" style="font-size:11.5px;color:var(--ink-faint);margin-top:6px">Pick a HubSpot company to link this deal to that client — its questionnaires, proposals &amp; leases then all live on the deal.</div>'
       + '<div class="formerr" id="f_err"></div>'
-      + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button><button class="btn pri" id="f_save">Create deal</button></div>');
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button><button class="btn" id="f_save">Create deal</button><button class="btn pri" id="f_save_q">Create &amp; send questionnaire</button></div>');
     loadCompanies();
-    $('f_save').addEventListener('click',async function(){
+    async function create(withQ){
       var name=($('f_name').value||'').trim();
       if(!name){ $('f_err').textContent='Enter a client name.'; return; }
       // exact-name match auto-links even if the broker didn't click a suggestion
       if(!_pickedCompanyId && Array.isArray(_companies)){ var mt=_companies.filter(function(c){return (c.name||'').toLowerCase()===name.toLowerCase();})[0]; if(mt) _pickedCompanyId=mt.id; }
-      this.disabled=true; this.textContent='Creating…';
+      var b1=$('f_save'), b2=$('f_save_q'); if(b1) b1.disabled=true; if(b2) b2.disabled=true;
+      var btn=withQ?b2:b1; var old=btn.textContent; btn.textContent='Creating…';
       try{
         var row;
         try{ row=await q(sb.from('deals').insert({owner_id:me.id, client_name:name, stage:'needs'}).select().single()); }
         catch(stageErr){ row=await q(sb.from('deals').insert({owner_id:me.id, client_name:name, stage:'touring'}).select().single()); }  // pre-migration fallback if the new stage values aren't enabled in the DB yet
         // best-effort link to the HubSpot company; never blocks deal creation (e.g. column not migrated yet)
         if(_pickedCompanyId){ try{ await q(sb.from('deals').update({hs_company_id:_pickedCompanyId}).eq('id',row.id)); row.hs_company_id=_pickedCompanyId; }catch(linkErr){} }
-        deals.unshift(row); closeSheet(); openDeal(row.id);
-      }catch(e){ $('f_err').textContent=e.message; this.disabled=false; this.textContent='Create deal'; }
-    });
+        deals.unshift(row);
+        if(withQ){ try{ await createIntakeFor(row); }catch(qe){ /* deal still created; surface but don't block */ if(typeof aiToast==='function') aiToast('Deal created, but the questionnaire failed: '+(qe.message||qe)); } }
+        closeSheet(); openDeal(row.id);
+      }catch(e){ $('f_err').textContent=e.message; if(b1) b1.disabled=false; if(b2) b2.disabled=false; btn.textContent=old; }
+    }
+    $('f_save').addEventListener('click',function(){ create(false); });
+    $('f_save_q').addEventListener('click',function(){ create(true); });
   }
   /* ---------- client ↔ HubSpot company link (for the Clients hub) ---------- */
   var _companies=null, _companiesLoading=null, _csuggList=[], _pickedCompanyId=null;
@@ -3567,7 +3632,7 @@ window.DF = (function(){
     openModel:openModel, modelInput:modelInput, modelToggle:modelToggle, modelDeal:modelDeal, modelAdd:modelAdd, modelRemove:modelRemove, modelUnlink:modelUnlink, modelPrint:modelPrint, modelPdf:modelPdf, modelExcel:modelExcel, modelScenario:modelScenario, modelPull:modelPull,
     showDashboard:showDashboard, showPipeline:showPipeline, setPipeView:setPipeView, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, cmpExcel:cmpExcel, toggleClosed:toggleClosed,
     openPortal:openPortal, portalCoSuggest:portalCoSuggest, portalCoPick:portalCoPick, portalInvite:portalInvite, portalRevoke:portalRevoke, portalAttach:portalAttach, portalDetach:portalDetach, portalNotify:portalNotify,
-    clientLinkCompany:clientLinkCompany, clientCoSuggest:clientCoSuggest, clientCoPick:clientCoPick, sendQuestionnaire:sendQuestionnaire,
+    clientLinkCompany:clientLinkCompany, clientCoSuggest:clientCoSuggest, clientCoPick:clientCoPick, sendQuestionnaire:sendQuestionnaire, viewQuestionnaire:viewQuestionnaire, copyFieldById:copyFieldById,
     showClients:showClients, rosterSearch:rosterSearch, rosterStartDeal:rosterStartDeal,
     deleteDealAsk:deleteDealAsk, deleteDealCancel:deleteDealCancel, deleteDealDo:deleteDealDo,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
