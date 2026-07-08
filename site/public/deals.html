@@ -57,6 +57,19 @@
   .nm-link{cursor:pointer;transition:color .12s}
   .nm-link:hover{color:var(--accent)}
 
+  /* deal detail — tabbed buckets */
+  .dtabs{display:flex;flex-wrap:wrap;gap:2px;border-bottom:1px solid var(--line);margin:20px 0 20px}
+  .dtab{position:relative;font:600 13px Inter;color:var(--ink-soft);background:none;border:0;cursor:pointer;
+    padding:10px 15px;border-radius:9px 9px 0 0;white-space:nowrap;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .dtab:hover{color:var(--ink);background:var(--paper-2)}
+  .dtab.on{color:var(--accent);border-bottom-color:var(--accent)}
+  .dtab .dtab-n{font-weight:700;color:var(--ink-faint);margin-left:6px;font-size:11px;
+    background:var(--paper-2);border-radius:999px;padding:1px 7px}
+  .dtab.on .dtab-n{color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent)}
+  .dtab-panel{display:none}
+  .dtab-panel.on{display:block}
+  @media(max-width:760px){ .dtabs{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch} }
+
   /* building detail sheet */
   .bd-specs{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 4px}
   .bd-spec{display:flex;flex-direction:column;gap:1px;border:1px solid var(--line);border-radius:9px;padding:7px 11px;background:var(--paper-2);min-width:78px}
@@ -1249,7 +1262,7 @@ window.DF = (function(){
     if(act==='edittask'){ newTask(dealId||null, taskId); }
     else if(act==='newtask'&&dealId){ newTask(dealId); }
     else if(act==='commission'&&dealId){ editCommission(dealId); }
-    else if(act==='checklist'||act==='lease'){ var el=$(act==='checklist'?'checklistBody':'leaseSec'); if(el) el.scrollIntoView({behavior:'smooth', block:'start'}); }
+    else if(act==='checklist'||act==='lease'){ dealTab(act==='checklist'?'checklist':'lease'); var el=$(act==='checklist'?'checklistBody':'leaseSec'); if(el) el.scrollIntoView({behavior:'smooth', block:'start'}); }
   }
   function buildRecs(active, steps, tasks, absts, dealById){
     var recs=[];
@@ -1330,6 +1343,17 @@ window.DF = (function(){
   }
 
   /* ---------- deal detail view ---------- */
+  // Tabbed buckets on the deal page. _activeTab persists across re-renders of the
+  // SAME deal (so a stage change or an "add to tour" keeps you on your tab); it
+  // resets to Overview when you open a different deal.
+  var _activeTab = 'overview', _activeTabDeal = null;
+  function dealTab(key){
+    _activeTab = key;
+    var wrap = $('dealView'); if(!wrap) return;
+    Array.prototype.forEach.call(wrap.querySelectorAll('.dtab-panel'), function(p){ p.classList.toggle('on', p.getAttribute('data-tab')===key); });
+    Array.prototype.forEach.call(wrap.querySelectorAll('.dtab'), function(b){ b.classList.toggle('on', b.getAttribute('data-tab')===key); });
+  }
+
   async function openDeal(id){
     var d=deals.filter(function(x){return x.id===id;})[0]; if(!d) return;
     _navTo('deal='+encodeURIComponent(id));
@@ -1454,24 +1478,55 @@ window.DF = (function(){
       +   '</div>'
       + '</div>'
       + nextActionBanner(d, steps, proposals, tours, abstract)
-      + '<div id="snapWrap">'+snapshotSection(d,steps)+'</div>'
-      + '<div class="sec" id="qnrSection"><div class="sec-h"><h2>Questionnaire</h2><span class="hint">Kick off the intake — send it, and answers come back here</span></div><div id="qnrBody"><div class="sub" style="color:var(--ink-faint);font-size:12.5px">Loading…</div></div></div>'
-      + '<div class="sec" id="clientPanel"><div class="sec-h"><h2>Client</h2><span class="hint">Shared packages, portal access &amp; comps for this client</span></div><div id="clientPanelBody"><div class="sub" style="color:var(--ink-faint);font-size:12.5px">Loading client details…</div></div></div>'
-      + '<div class="sec"><div class="sec-h"><h2>Tasks &amp; next steps</h2><span class="hint">Your to-dos for this client</span></div><div id="tasksBody">'+tasksSection(d,tasks)+'</div></div>'
-      + '<div class="sec"><div class="sec-h"><h2>Occupancy model</h2><span class="hint">Compare options side-by-side — net effective, all-in &amp; NPV</span></div>'
-      +   '<div class="modelcta"><div><div class="modelcta-t">Build the financial case</div><div class="modelcta-s">Model stay-vs-go and every option with full opex, parking, concessions, one-time costs, and headcount-growth bands — the numbers that justify your fee.</div></div>'
-      +   '<button class="share-btn" onclick="DF.openModel(\''+d.id+'\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg> Open occupancy model</button></div>'
-      + '</div>'
-      + '<div class="sec"><div class="sec-h"><h2>Buildings</h2><span class="hint">Candidate properties — the pool to build a report from</span></div>'+propsHtml2+'</div>'
-      + '<div class="sec"><div class="sec-h"><h2>Market report</h2><span class="hint">The buildings you\'ve curated for this client — generate a report, then send the winners on tour</span></div>'+reportSection+'</div>'
-      + '<div class="sec"><div class="sec-h"><h2>Tour schedule</h2><span class="hint">Building visits for this client</span></div>'+toursSection+'</div>'
-      + '<div class="sec"><div class="sec-h"><h2>Proposals &amp; rounds</h2>'+addProposalBtn+'</div>'+propsHtmlList+'</div>'
-      + '<div class="sec"><div class="sec-h"><h2>Transaction checklist</h2><span class="hint">Every step from engagement to move-in</span></div><div id="checklistBody">'+checklistSection(d,steps)+'</div></div>'
-      + '<div class="sec" id="leaseSec"><div class="sec-h"><h2>Lease abstract</h2><span class="hint">The executed lease\'s key terms — your client\'s permanent record</span></div>'
-      +   (abstract ? abstractCard(abstract, d.id)
-                    : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No lease abstract yet.</div><button class="miniadd" onclick="DF.editAbstract(\''+d.id+'\')">+ Create lease abstract</button>')
-      +   leaseDocsBlock(d.id, abstract?abstract.id:null, leaseDocs)
-      + '</div>';
+      + (function(){
+          if(_activeTabDeal !== d.id){ _activeTab = 'overview'; _activeTabDeal = d.id; }
+          var active = _activeTab || 'overview';
+          var P = {
+            overview:
+                '<div id="snapWrap">'+snapshotSection(d,steps)+'</div>'
+              + '<div class="sec"><div class="sec-h"><h2>Tasks &amp; next steps</h2><span class="hint">Your to-dos for this client</span></div><div id="tasksBody">'+tasksSection(d,tasks)+'</div></div>'
+              + '<div class="sec" id="clientPanel"><div class="sec-h"><h2>Client</h2><span class="hint">Shared packages, portal access &amp; comps for this client</span></div><div id="clientPanelBody"><div class="sub" style="color:var(--ink-faint);font-size:12.5px">Loading client details…</div></div></div>',
+            questionnaire:
+                '<div class="sec" id="qnrSection"><div class="sec-h"><h2>Questionnaire</h2><span class="hint">Kick off the intake — send it, and answers come back here</span></div><div id="qnrBody"><div class="sub" style="color:var(--ink-faint);font-size:12.5px">Loading…</div></div></div>',
+            buildings:
+                '<div class="sec"><div class="sec-h"><h2>Buildings</h2><span class="hint">Candidate properties — the pool to build a report from</span></div>'+propsHtml2+'</div>',
+            report:
+                '<div class="sec"><div class="sec-h"><h2>Market report</h2><span class="hint">The buildings you\'ve curated for this client — generate a report, then send the winners on tour</span></div>'+reportSection+'</div>',
+            touring:
+                '<div class="sec"><div class="sec-h"><h2>Tour schedule</h2><span class="hint">Building visits for this client</span></div>'+toursSection+'</div>',
+            proposals:
+                '<div class="sec"><div class="sec-h"><h2>Occupancy model</h2><span class="hint">Compare options side-by-side — net effective, all-in &amp; NPV</span></div>'
+              +   '<div class="modelcta"><div><div class="modelcta-t">Build the financial case</div><div class="modelcta-s">Model stay-vs-go and every option with full opex, parking, concessions, one-time costs, and headcount-growth bands — the numbers that justify your fee.</div></div>'
+              +   '<button class="share-btn" onclick="DF.openModel(\''+d.id+'\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg> Open occupancy model</button></div>'
+              + '</div>'
+              + '<div class="sec"><div class="sec-h"><h2>Proposals &amp; rounds</h2>'+addProposalBtn+'</div>'+propsHtmlList+'</div>',
+            checklist:
+                '<div class="sec"><div class="sec-h"><h2>Transaction checklist</h2><span class="hint">Every step from engagement to move-in</span></div><div id="checklistBody">'+checklistSection(d,steps)+'</div></div>',
+            lease:
+                '<div class="sec" id="leaseSec"><div class="sec-h"><h2>Lease abstract</h2><span class="hint">The executed lease\'s key terms — your client\'s permanent record</span></div>'
+              +   (abstract ? abstractCard(abstract, d.id)
+                            : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No lease abstract yet.</div><button class="miniadd" onclick="DF.editAbstract(\''+d.id+'\')">+ Create lease abstract</button>')
+              +   leaseDocsBlock(d.id, abstract?abstract.id:null, leaseDocs)
+              + '</div>'
+          };
+          var TABS = [
+            ['overview','Overview',null],
+            ['questionnaire','Questionnaire',null],
+            ['buildings','Buildings',(candidateProps&&candidateProps.length)||null],
+            ['report','Market report',(reportProps&&reportProps.length)||null],
+            ['touring','Touring',(tours&&tours.length)||null],
+            ['proposals','Proposals',(proposals&&proposals.length)||null],
+            ['checklist','Checklist',null],
+            ['lease','Lease',abstract?1:null]
+          ];
+          var bar = '<div class="dtabs" role="tablist">'+TABS.map(function(t){
+            return '<button class="dtab'+(t[0]===active?' on':'')+'" data-tab="'+t[0]+'" onclick="DF.dealTab(\''+t[0]+'\')">'+t[1]+(t[2]?'<span class="dtab-n">'+t[2]+'</span>':'')+'</button>';
+          }).join('')+'</div>';
+          var panels = '<div class="dtabwrap">'+TABS.map(function(t){
+            return '<div class="dtab-panel'+(t[0]===active?' on':'')+'" data-tab="'+t[0]+'">'+(P[t[0]]||'')+'</div>';
+          }).join('')+'</div>';
+          return bar + panels;
+        })();
     fillClientPanel(d);
     fillQuestionnaireSection(d);
   }
@@ -4006,7 +4061,7 @@ window.DF = (function(){
     deleteDealAsk:deleteDealAsk, deleteDealCancel:deleteDealCancel, deleteDealDo:deleteDealDo,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask, recGo:recGo,
-    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, viewBuilding:viewBuilding, generateMarketReport:generateMarketReport, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, newRound:newRound,
+    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, viewBuilding:viewBuilding, generateMarketReport:generateMarketReport, dealTab:dealTab, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, newRound:newRound,
     generateRfp:generateRfp, copyRfp:copyRfp, downloadRfp:downloadRfp, sendRfpTo:sendRfpTo,
     setStage:setStage, basisChange:basisChange, marketCheck:marketCheck, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
     proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead,
