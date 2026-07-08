@@ -155,6 +155,15 @@
     background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238a93a0' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");background-repeat:no-repeat;background-position:right 8px center;background-size:12px}
   .pstat:focus{outline:none;border-color:var(--accent)}
   .ptag-in{font:600 11px Inter;color:#2e7d4f}
+  /* bulk-select buildings → next funnel section */
+  .bulkbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 12px;padding:8px 13px;background:var(--paper-2);border:1px solid var(--line);border-radius:10px}
+  .bulkbar .bulkall{display:flex;align-items:center;gap:7px;font:600 12px Inter;color:var(--ink-soft);cursor:pointer}
+  .bulkbar .bulkcount{font:600 11.5px Inter;color:var(--ink-faint)}
+  .bulkbar .bulkgo{margin-left:auto;font:700 12px Inter;color:var(--accent);background:none;border:0;cursor:pointer;padding:6px 2px}
+  .bulkbar .bulkgo:disabled{opacity:.4;cursor:default}
+  .bsel,.rsel,.tsel,.bulkall input{width:16px;height:16px;accent-color:var(--accent);cursor:pointer;flex:none;margin:0}
+  .pcard .top > .bselwrap{display:flex;align-items:center;padding-top:2px}
+  .tcard .tselwrap{float:right;margin-left:10px}
   .te-ta{width:100%;min-height:230px;font:400 13px Inter;line-height:1.5;padding:12px;border:1px solid var(--line-2);border-radius:9px;background:var(--paper);color:var(--ink);resize:vertical;margin-bottom:12px}
 
   .miniadd{font:600 11.5px Inter;color:var(--accent);background:none;border:0;cursor:pointer;padding:6px 0;display:inline-flex;align-items:center;gap:5px}
@@ -1428,7 +1437,7 @@ window.DF = (function(){
     var toursHtml = (tours&&tours.length) ? tours.map(function(s){ return tourCard(s, propById, d.id); }).join('')
       : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No tour stops scheduled yet.</div>';
     var tourCount=(tours&&tours.length)||0;
-    var toursSection = toursHtml + '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">'
+    var toursSection = (tourCount?bulkBar('touring',d.id,'→ Start proposals for selected'):'') + toursHtml + '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">'
       + '<button class="miniadd" onclick="DF.newTourStop(\''+d.id+'\')">+ Add tour stop</button>'
       + '<button class="miniadd" onclick="DF.buildTourFromTouring(\''+d.id+'\')">↻ Build from “touring” buildings</button>'
       + (tourCount>=2?'<button class="miniadd" onclick="DF.optimizeTour(\''+d.id+'\')" title="Van orders the buildings for the shortest drive and lays out arrival times">🗺️ Optimize route &amp; times</button>':'')
@@ -1441,11 +1450,11 @@ window.DF = (function(){
     var reportProps = props.filter(function(p){ return p.status==='shortlisted'; });
     var propsHtml = candidateProps.length ? candidateProps.map(function(p){ return propCard(p, d.id, tourPropIds[p.id]); }).join('') : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No candidate buildings — add best-fit buildings from the questionnaire, or add one manually.</div>';
 
-    var propsHtml2 = propsHtml + '<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><button class="miniadd" onclick="DF.newProperty(\''+d.id+'\')">+ Add building</button>'
+    var propsHtml2 = (candidateProps.length?bulkBar('buildings',d.id,'→ Add selected to market report'):'') + propsHtml + '<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><button class="miniadd" onclick="DF.newProperty(\''+d.id+'\')">+ Add building</button>'
       + (candidateProps.length?'<button class="miniadd ai" onclick="DF.generateRfp(\''+d.id+'\')" title="Draft a Request for Proposal and send it to the listing brokers">📋 Generate RFP</button>':'')+'</div>';
 
     var reportHtml = reportProps.length ? reportProps.map(function(p){ return reportCard(p, d.id); }).join('') : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No buildings in the market report yet. On a candidate building above, click “→ Add to market report”.</div>';
-    var reportSection = reportHtml + '<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:4px">'
+    var reportSection = (reportProps.length?bulkBar('report',d.id,'+ Add selected to tour'):'') + reportHtml + '<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:4px">'
       + (reportProps.length?'<button class="share-btn" onclick="DF.generateMarketReport(\''+d.id+'\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/></svg> Generate market report</button>':'')+'</div>';
 
     // group rounds + documents by proposal
@@ -2022,7 +2031,9 @@ window.DF = (function(){
     var name = (s.property_id && propById[s.property_id]) ? propById[s.property_id].name : (s.label||'Tour stop');
     var stLabel = (TOUR_STATUS.filter(function(x){return x[0]===s.status;})[0]||['','—'])[1];
     var visBtn='<button class="vis '+(s.client_visible?'on':'')+'" onclick="DF.toggleTourVisible(\''+s.id+'\','+(s.client_visible?'false':'true')+',\''+dealId+'\')" title="Toggle whether the client sees this stop">'+(s.client_visible?'● Client':'○ Hidden')+'</button>';
-    return '<div class="tcard"><div class="tw">'+esc(when)+'</div>'
+    return '<div class="tcard">'
+      + '<span class="tselwrap"><input type="checkbox" class="tsel" data-pid="'+(s.property_id||'')+'" data-name="'+esc(name)+'" onchange="DF.bulkSync(\'touring\')" title="Select to start a proposal"></span>'
+      + '<div class="tw">'+esc(when)+'</div>'
       + '<div class="tn">'+esc(name)+'</div>'
       + (s.notes?'<div class="tnotes">'+esc(s.notes)+'</div>':'')
       + '<div class="trow"><span class="tag'+(s.status==='toured'?' b':'')+'">'+esc(stLabel)+'</span>'+visBtn
@@ -2176,7 +2187,9 @@ window.DF = (function(){
     var acts='<button class="miniadd" onclick="DF.setPropStatus(\''+p.id+'\',\'shortlisted\',\''+dealId+'\')" title="Curate into the market report">→ Add to market report</button>'
       + (inTour?'<span class="ptag-in">✓ in tour</span>':'<button class="miniadd" onclick="DF.addToTour(\''+p.id+'\',\''+dealId+'\')">+ Add to tour</button>');
     var nm=canView?'<div class="nm nm-link" onclick="DF.viewBuilding(\''+esc(p.building_id)+'\',\''+dealId+'\')" title="See building details">'+esc(p.name||'Untitled building')+' ↗</div>':'<div class="nm">'+esc(p.name||'Untitled building')+'</div>';
-    return '<div class="pcard"><div class="top"><div>'+nm
+    return '<div class="pcard"><div class="top">'
+      + '<span class="bselwrap"><input type="checkbox" class="bsel" data-id="'+p.id+'" onchange="DF.bulkSync(\'buildings\')" title="Select to add to market report"></span>'
+      + '<div style="flex:1;min-width:0">'+nm
       + (p.address?'<div class="ad">'+esc(p.address)+'</div>':'')
       + (contact?'<div class="ad" style="color:var(--ink-faint)">Listing: '+esc(contact.name||'')+(contact.company?', '+esc(contact.company):'')+(contact.email?' · '+esc(contact.email):'')+'</div>':'')
       + '</div>'+statusSel+'</div>'
@@ -2200,6 +2213,44 @@ window.DF = (function(){
   }
   async function addToTour(propId, dealId){ await ensureTourStop(propId, dealId); openDeal(dealId); }
 
+  /* ---------- bulk-select: move several buildings to the next funnel section ---------- */
+  function bulkBar(scope, dealId, label){
+    return '<div class="bulkbar">'
+      + '<label class="bulkall"><input type="checkbox" onchange="DF.bulkAll(\''+scope+'\',this.checked)"> Select all</label>'
+      + '<span class="bulkcount" id="bulkcount_'+scope+'">0 selected</span>'
+      + '<button class="bulkgo" id="bulkgo_'+scope+'" disabled onclick="DF.bulkMove(\''+scope+'\',\''+dealId+'\')">'+label+'</button>'
+      + '</div>';
+  }
+  function bulkSel(scope){ return scope==='buildings'?'.bsel':(scope==='report'?'.rsel':'.tsel'); }
+  function bulkSync(scope){
+    var n=0; Array.prototype.forEach.call(document.querySelectorAll(bulkSel(scope)), function(b){ if(b.checked) n++; });
+    var c=$('bulkcount_'+scope); if(c) c.textContent=n+' selected';
+    var g=$('bulkgo_'+scope); if(g) g.disabled=(n===0);
+  }
+  function bulkAll(scope, checked){
+    Array.prototype.forEach.call(document.querySelectorAll(bulkSel(scope)), function(b){ b.checked=checked; });
+    bulkSync(scope);
+  }
+  async function bulkMove(scope, dealId){
+    var boxes=Array.prototype.slice.call(document.querySelectorAll(bulkSel(scope)+':checked'));
+    if(!boxes.length) return;
+    var g=$('bulkgo_'+scope); if(g){ g.disabled=true; g.textContent='Working…'; }
+    try{
+      if(scope==='buildings'){
+        var ids=boxes.map(function(b){ return b.getAttribute('data-id'); });
+        await q(sb.from('deal_properties').update({status:'shortlisted'}).in('id',ids));
+      } else if(scope==='report'){
+        var rids=boxes.map(function(b){ return b.getAttribute('data-id'); });
+        for(var i=0;i<rids.length;i++){ await ensureTourStop(rids[i], dealId); }
+      } else {   // touring → start a proposal per selected stop
+        var rows=boxes.map(function(b){ var pid=b.getAttribute('data-pid'); return {deal_id:dealId, title:(b.getAttribute('data-name')||'Proposal'), property_id:(pid||null), status:'active'}; });
+        await q(sb.from('proposals').insert(rows));
+      }
+      openDeal(dealId);
+    }catch(e){ alert('Could not move the selected buildings: '+(e.message||e)); if(g){ g.disabled=false; g.textContent=label_(scope); } }
+  }
+  function label_(scope){ return scope==='buildings'?'→ Add selected to market report':(scope==='report'?'+ Add selected to tour':'→ Start proposals for selected'); }
+
   /* ---------- building detail (click any building to see the full dossier) ---------- */
   // Open the FULL building dossier (photos, floor plans, amenity map, Street View,
   // leasing, features) on the dedicated building page. Passing the deal id lets the
@@ -2214,7 +2265,9 @@ window.DF = (function(){
      'shortlisted') → a printable report of every building's full info ---------- */
   function reportCard(p, dealId){
     var canView=!!p.building_id;
-    return '<div class="pcard"><div class="top"><div>'
+    return '<div class="pcard"><div class="top">'
+      + '<span class="bselwrap"><input type="checkbox" class="rsel" data-id="'+p.id+'" onchange="DF.bulkSync(\'report\')" title="Select to add to the tour"></span>'
+      + '<div style="flex:1;min-width:0">'
       + (canView?'<div class="nm nm-link" onclick="DF.viewBuilding(\''+esc(p.building_id)+'\',\''+dealId+'\')" title="See building details">'+esc(p.name||'Building')+' ↗</div>':'<div class="nm">'+esc(p.name||'Building')+'</div>')
       + (p.address?'<div class="ad">'+esc(p.address)+'</div>':'')+'</div></div>'
       + '<div class="pactions">'
@@ -4176,7 +4229,7 @@ window.DF = (function(){
     deleteDealAsk:deleteDealAsk, deleteDealCancel:deleteDealCancel, deleteDealDo:deleteDealDo,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask, recGo:recGo,
-    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, viewBuilding:viewBuilding, generateMarketReport:generateMarketReport, dealTab:dealTab, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, npMode:npMode, newRound:newRound,
+    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, bulkSync:bulkSync, bulkAll:bulkAll, bulkMove:bulkMove, viewBuilding:viewBuilding, generateMarketReport:generateMarketReport, dealTab:dealTab, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, npMode:npMode, newRound:newRound,
     generateRfp:generateRfp, copyRfp:copyRfp, downloadRfp:downloadRfp, sendRfpTo:sendRfpTo,
     setStage:setStage, basisChange:basisChange, marketCheck:marketCheck, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
     proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead,
