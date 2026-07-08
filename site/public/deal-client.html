@@ -117,7 +117,7 @@
 <div id="gate">
   <div class="gate-card">
     <div class="gate-logo">Vantage<span class="dot">.</span></div>
-    <div class="gate-by">by Havill &amp; Co.</div>
+    <div class="gate-by"></div>
     <h1>Your deal</h1>
     <p id="gateMsg">Enter the passcode your broker shared with you.</p>
     <label for="gatePass">Passcode</label>
@@ -129,7 +129,7 @@
 
 <div class="cv-top" id="cvTop" style="display:none">
   <span class="cv-brand">Vantage<span class="dot">.</span></span>
-  <span class="cv-by">by Havill &amp; Co.</span>
+  <span class="cv-by"></span>
   <span class="cv-for" id="cvFor"></span>
 </div>
 
@@ -209,7 +209,7 @@
           return (e&&sf)?Math.round(e.costPerSF*sf):null;
         })),
         [],
-        ['Net effective rent normalizes each proposal to one $/SF/yr (gross-equivalent), accounting for rent structure, escalations, free rent, and TI allowance over the term. Prepared by Havill & Co.']
+        ['Net effective rent normalizes each proposal to one $/SF/yr (gross-equivalent), accounting for rent structure, escalations, free rent, and TI allowance over the term. Prepared for you']
       ];
       var ws=XLSX.utils.aoa_to_sheet(aoa);
       ws['!cols']=[{wch:28}].concat(cols.map(function(){ return {wch:22}; }));
@@ -347,7 +347,7 @@
       html+='<div class="cv-empty">Your broker hasn’t shared any buildings or proposals yet. Check back soon.</div>';
     }
 
-    html+='<div class="cv-disc">Net effective rent normalizes each proposal to one $/SF/yr (gross-equivalent), accounting for the rent structure, escalations, free rent, and tenant-improvement allowance, spread over the lease term — so different deal structures can be compared fairly. Figures are estimates for comparison and are subject to the final executed lease. Prepared by Havill &amp; Co.</div>';
+    html+='<div class="cv-disc">Net effective rent normalizes each proposal to one $/SF/yr (gross-equivalent), accounting for the rent structure, escalations, free rent, and tenant-improvement allowance, spread over the lease term — so different deal structures can be compared fairly. Figures are estimates for comparison and are subject to the final executed lease. Prepared for you</div>';
     $('cvView').innerHTML=html;
   }
 

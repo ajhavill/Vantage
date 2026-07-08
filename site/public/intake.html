@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tell us about your space — Havill &amp; Co.</title>
+<title>Tell us about your space</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -67,7 +67,7 @@
 
 <div class="iq-top">
   <span class="logo">Vantage<span class="dot">.</span></span>
-  <span class="by">by Havill &amp; Co.</span>
+  <span class="by"></span>
 </div>
 
 <!-- FORM -->
@@ -207,7 +207,7 @@
 
   <div class="iq-submit">
     <button id="iqSubmit">Submit &amp; get matched</button>
-    <span class="note">🔒 Your answers go only to your broker at Havill &amp; Co.</span>
+    <span class="note">🔒 Your answers go only to your broker</span>
   </div>
   <div class="iq-err" id="iqErr"></div>
 </div>
@@ -216,7 +216,7 @@
 <div class="iq-thanks" id="iqThanks" style="display:none">
   <div class="ic"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#2D6E7E" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
   <h1>Thank you!</h1>
-  <p id="iqThanksMsg">Your answers are on their way to your broker at Havill &amp; Co. They'll put together a tailored shortlist of buildings that fit your team and follow up shortly.</p>
+  <p id="iqThanksMsg">Your answers are on their way to your broker They'll put together a tailored shortlist of buildings that fit your team and follow up shortly.</p>
 </div>
 
 <script>
@@ -239,7 +239,7 @@
           var c=document.getElementById('q_company'); if(c && !c.value) c.value=d.company;
         }
         if(d.status==='completed'){
-          document.getElementById('iqThanksMsg').textContent='This questionnaire has already been submitted. If you need to make changes, just reply to your broker at Havill & Co.';
+          document.getElementById('iqThanksMsg').textContent='This questionnaire has already been submitted. If you need to make changes, just reply to your broker';
           document.getElementById('iqForm').style.display='none';
           document.getElementById('iqThanks').style.display='block';
         }
@@ -247,7 +247,7 @@
       .catch(function(e){
         // invalid / unknown link -> friendly message instead of a dead form
         document.getElementById('iqForm').innerHTML='<div class="iq-hero"><h1>This link isn’t active</h1>'+
-          '<p>'+esc(/failed to fetch|networkerror|load failed/i.test(e.message)?'We couldn’t reach the server. Please check your connection and reopen the link.':'This questionnaire link isn’t valid or has expired. Please ask your broker at Havill & Co. for a fresh link.')+'</p></div>';
+          '<p>'+esc(/failed to fetch|networkerror|load failed/i.test(e.message)?'We couldn’t reach the server. Please check your connection and reopen the link.':'This questionnaire link isn’t valid or has expired. Please ask your broker for a fresh link.')+'</p></div>';
       });
   })();
 

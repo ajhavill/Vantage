@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Vantage — prepared by Havill &amp; Co.</title>
+<title>Vantage</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -177,7 +177,7 @@
 <div class="cv-gate" id="gate">
   <div class="cv-gate-card">
     <div class="logo">Vantage<span class="dot">.</span></div>
-    <div class="by">Office search, prepared by Havill &amp; Co.</div>
+    <div class="by">Office search</div>
     <h1 id="gateTitle">This shortlist is passcode-protected</h1>
     <p id="gateSub">Enter the passcode your broker shared with you to view the selected buildings.</p>
     <label for="gatePass">Passcode</label>
@@ -192,7 +192,7 @@
   <div class="cv-topbar">
     <div class="cv-lockup">
       <span class="logo">Vantage<span class="dot">.</span></span>
-      <span class="by">by Havill &amp; Co.</span>
+      <span class="by"></span>
     </div>
     <div class="cv-nav" id="cvNav">
       <button data-v="buildings" class="on">Buildings</button>
@@ -481,7 +481,7 @@
     var cats=VV.weightedCats();
     var dateStr=''; try{ dateStr=new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}); }catch(e){}
     var cover='<div class="pd-cover"><div><div class="logo">Vantage<span class="dot">.</span></div>'+
-      '<div class="by">Office shortlist · prepared by Havill &amp; Co.'+(dateStr?' · '+dateStr:'')+'</div></div>'+
+      '<div class="by">Office shortlist'+(dateStr?' · '+dateStr:'')+'</div></div>'+
       '<div class="for">'+(c.logoUrl?'<img class="clogo" src="'+esc(c.logoUrl)+'" onerror="this.remove()">':'')+
         '<div class="lbl">Prepared for</div>'+esc(c.name||'you')+'</div></div>';
     var blocks=bs.map(function(b){
@@ -496,7 +496,7 @@
         (scores?'<div class="pd-scores">'+scores+'</div>':'')+
         (b.read?'<p class="pd-read">'+esc(b.read)+'</p>':'')+'</div>';
     }).join('');
-    var foot='<div class="pd-foot">Amenity scores reflect live Google Places data near each building. Available suites and asking rents are illustrative — Havill &amp; Co. will confirm current terms.</div>';
+    var foot='<div class="pd-foot">Amenity scores reflect live Google Places data near each building. Available suites and asking rents are illustrative — We will confirm current terms.</div>';
     document.getElementById('printDoc').innerHTML=cover+blocks+foot;
   }
   function wireNav(){

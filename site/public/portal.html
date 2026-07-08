@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Your portal — Vantage by Havill &amp; Co.</title>
+<title>Your portal — Vantage</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -90,7 +90,7 @@
 <div id="gate">
   <div class="gate-card">
     <div class="gate-logo">Vantage<span class="dot">.</span></div>
-    <div class="gate-by">by Havill &amp; Co.</div>
+    <div class="gate-by"></div>
     <div id="gateBody"></div>
   </div>
 </div>
@@ -98,7 +98,7 @@
 <div id="previewBar" class="pt-preview" style="display:none">Broker preview — you're seeing this portal exactly as the client does. Nothing is tracked.</div>
 <div class="pt-top" id="ptTop" style="display:none">
   <span class="pt-brand">Vantage<span class="dot">.</span></span>
-  <span class="pt-by">by Havill &amp; Co.</span>
+  <span class="pt-by"></span>
   <span class="pt-user" id="ptUser"></span>
 </div>
 
@@ -169,7 +169,7 @@
   function gateSignIn(msg){
     $('gate').style.display='flex';
     $('gateBody').innerHTML='<h1>Sign in to your portal</h1>'
-      +'<p>'+(msg||'Your leasing updates, proposals, tour schedule, and documents — shared with you by Havill &amp; Co.')+'</p>'
+      +'<p>'+(msg||'Your leasing updates, proposals, tour schedule, and documents — shared with you')+'</p>'
       +'<label for="gEmail">Email</label><input id="gEmail" type="email" autocomplete="email" placeholder="you@company.com">'
       +'<label for="gPass">Password</label><input id="gPass" type="password" autocomplete="current-password" placeholder="••••••••">'
       +'<button class="pri" id="gBtn">Sign in</button>'
@@ -278,7 +278,7 @@
     var companies=data.companies||[];
     if(!companies.length){
       $('ptView').innerHTML='<div class="pt-h">Welcome</div>'
-        +'<div class="pt-empty">Your account isn’t linked to a client company yet. Your broker at Havill &amp; Co. can fix that in a minute — just let them know.</div>';
+        +'<div class="pt-empty">Your account isn’t linked to a client company yet. Your broker can fix that in a minute — just let them know.</div>';
       return;
     }
 
@@ -286,7 +286,7 @@
     companies.forEach(function(co){
       var name=co.client_name||'Your company';
       html+='<div class="pt-h">'+esc(name)+' — your portal</div>'
-        +'<div class="pt-sub">Everything Havill &amp; Co. is working on for you: options, tours, proposals, analysis, and your lease documents. It updates as your deal progresses.</div>';
+        +'<div class="pt-sub">Everything we’re working on for you: options, tours, proposals, analysis, and your lease documents. It updates as your deal progresses.</div>';
 
       // your advisor — who represents you + how to reach them
       var adv=co.advisor;
@@ -367,7 +367,7 @@
       }
     });
 
-    html+='<div class="pt-disc">This portal is private to you and your team. Figures shown are estimates for comparison and are subject to final executed documents. Prepared by Havill &amp; Co.</div>';
+    html+='<div class="pt-disc">This portal is private to you and your team. Figures shown are estimates for comparison and are subject to final executed documents. Prepared for you</div>';
     $('ptView').innerHTML=html;
   }
 
