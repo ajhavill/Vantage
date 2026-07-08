@@ -463,12 +463,12 @@
 <nav class="vnav">
   <div class="vnav-logo" onclick="location.href='index.html'">
     <span class="logo">Vantage<span class="dot">.</span></span>
-    <span class="by">by Havill &amp; Co.</span>
+    <span class="by"></span>
   </div>
   <a class="vnav-item" href="index.html?m=home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v10h14V10"/></svg><span>Home</span></a>
   <a class="vnav-item" href="index.html?m=market"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M9 8h2M13 8h2M9 12h2M13 12h2M9 16h2M13 16h2"/></svg><span>Market</span></a>
-  <a class="vnav-item" href="index.html?m=clients"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 6.6a3 3 0 0 1 0 5.8M20.5 20a5 5 0 0 0-4-4.9"/></svg><span>Clients</span></a>
-  <a class="vnav-item on" href="deals.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg><span>Deals</span></a>
+  <a class="vnav-item" data-nav="pipeline" onclick="DF.showPipeline();return false" href="deals.html?view=pipeline" title="Active Deals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg><span>Active Deals</span></a>
+  <a class="vnav-item" data-nav="clients" onclick="DF.showClients();return false" href="deals.html?view=clients" title="Clients"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 6.6a3 3 0 0 1 0 5.8M20.5 20a5 5 0 0 0-4-4.9"/></svg><span>Clients</span></a>
   <a class="vnav-item" href="index.html?m=settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 0 1-4 0v-.2A1.7 1.7 0 0 0 7 19.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H3a2 2 0 0 1 0-4h.1A1.7 1.7 0 0 0 4.6 7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 4.6V4a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg><span>Settings</span></a>
   <div class="vnav-spacer"></div>
 </nav>
@@ -480,7 +480,7 @@
 <div id="authGate" style="display:none">
   <div class="ag-card">
     <div class="ag-logo">Vantage<span class="dot">.</span></div>
-    <div class="ag-by">Deal flow · Havill &amp; Co.</div>
+    <div class="ag-by">Deal flow</div>
     <h1>Sign in</h1>
     <label for="agEmail">Email</label>
     <input id="agEmail" type="email" autocomplete="username" placeholder="you@havillco.com">
@@ -502,11 +502,6 @@
 </div>
 
 <main>
-  <div class="subnav" id="subnav">
-    <button data-view="dashboard" onclick="DF.showDashboard()">Dashboard</button>
-    <button data-view="pipeline" onclick="DF.showPipeline()">Active Deals</button>
-    <button data-view="clients" onclick="DF.showClients()">Clients</button>
-  </div>
 
   <!-- DASHBOARD -->
   <section id="dashboardView" class="wrap" style="display:none"></section>
@@ -707,8 +702,8 @@ window.DF = (function(){
       if(dl && deals.some(function(d){return d.id===dl;})){ openDeal(dl); if(qp.get('model')==='1') setTimeout(function(){ openModel(dl); },60); }
       else if(qp.get('view')==='clients'){ var cu=qp.get('c'); if(cu) openClientByUid(cu); else showClients(); }
       else if(qp.get('view')==='emails') showEmails();
-      else if(qp.get('view')==='pipeline') showPipeline();
-      else showDashboard();
+      else if(qp.get('view')==='dashboard') showDashboard();
+      else showPipeline();   // default landing = Active Deals
     } finally { _fromPop=false; }
   });
 
@@ -750,9 +745,9 @@ window.DF = (function(){
       else {
         var view=qp.get('view');
         if(view==='clients'){ var cu=qp.get('c'); if(cu) openClientByUid(cu); else showClients(); }
-        else if(view==='pipeline') showPipeline();
+        else if(view==='dashboard') showDashboard();
         else if(view==='emails') showEmails();
-        else showDashboard();
+        else showPipeline();   // default landing = Active Deals
         if(doAct) recGo(doAct, null, doTask);
       }
     }catch(e){ $('pipe').innerHTML='<div class="loading">Could not load deals: '+esc(e.message)+'</div>'; }
@@ -872,7 +867,13 @@ window.DF = (function(){
   }
 
   /* ---------- dashboard / broker home ---------- */
-  function setSubnav(v){ var n=$('subnav'); if(n){ [].forEach.call(n.children,function(b){ b.className=(b.getAttribute('data-view')===v)?'on':''; }); } }
+  // Highlight the far-left sidebar item for the current view (deals/dashboard/pipeline
+  // all live under "Active Deals"; clients under "Clients"). The old inner subnav is gone.
+  function setSubnav(v){
+    var group=(v==='clients')?'clients':'pipeline';
+    var n=document.querySelector('.vnav'); if(!n) return;
+    [].forEach.call(n.querySelectorAll('.vnav-item[data-nav]'),function(b){ b.classList.toggle('on', b.getAttribute('data-nav')===group); });
+  }
   function daysUntil(ds){ if(!ds) return null; var t=new Date(ds+'T00:00:00'), now=new Date(); now.setHours(0,0,0,0); return Math.round((t-now)/86400000); }
 
   async function showDashboard(){
@@ -1410,7 +1411,8 @@ window.DF = (function(){
       + '</div>'
       + nextActionBanner(d, steps, proposals, tours, abstract)
       + '<div id="snapWrap">'+snapshotSection(d,steps)+'</div>'
-      + '<div class="sec" id="clientPanel"><div class="sec-h"><h2>Client</h2><span class="hint">Everything for this client — questionnaires, packages, portal &amp; comps</span></div><div id="clientPanelBody"><div class="sub" style="color:var(--ink-faint);font-size:12.5px">Loading client details…</div></div></div>'
+      + '<div class="sec" id="qnrSection"><div class="sec-h"><h2>Questionnaire</h2><span class="hint">Kick off the intake — send it, and answers come back here</span></div><div id="qnrBody"><div class="sub" style="color:var(--ink-faint);font-size:12.5px">Loading…</div></div></div>'
+      + '<div class="sec" id="clientPanel"><div class="sec-h"><h2>Client</h2><span class="hint">Shared packages, portal access &amp; comps for this client</span></div><div id="clientPanelBody"><div class="sub" style="color:var(--ink-faint);font-size:12.5px">Loading client details…</div></div></div>'
       + '<div class="sec"><div class="sec-h"><h2>Tasks &amp; next steps</h2><span class="hint">Your to-dos for this client</span></div><div id="tasksBody">'+tasksSection(d,tasks)+'</div></div>'
       + '<div class="sec"><div class="sec-h"><h2>Occupancy model</h2><span class="hint">Compare options side-by-side — net effective, all-in &amp; NPV</span></div>'
       +   '<div class="modelcta"><div><div class="modelcta-t">Build the financial case</div><div class="modelcta-s">Model stay-vs-go and every option with full opex, parking, concessions, one-time costs, and headcount-growth bands — the numbers that justify your fee.</div></div>'
@@ -1426,6 +1428,7 @@ window.DF = (function(){
       +   leaseDocsBlock(d.id, abstract?abstract.id:null, leaseDocs)
       + '</div>';
     fillClientPanel(d);
+    fillQuestionnaireSection(d);
   }
 
   /* ==================================================================
@@ -1438,30 +1441,21 @@ window.DF = (function(){
   async function fillClientPanel(d){
     var box=$('clientPanelBody'); if(!box) return;
     if(!d.hs_company_id){
-      box.innerHTML='<div class="cl-link"><div class="sub" style="font-size:12.5px;color:var(--ink-soft)">This deal isn’t linked to a client company yet. Link it to pull in the client’s questionnaires, shared packages, and portal access.</div>'
+      box.innerHTML='<div class="cl-link"><div class="sub" style="font-size:12.5px;color:var(--ink-soft)">This deal isn’t linked to a client company yet. Link it to pull in shared packages and portal access. (You can still send the questionnaire above.)</div>'
         + '<button class="miniadd" onclick="DF.clientLinkCompany(\''+d.id+'\')">🔗 Link to a client company</button></div>';
       return;
     }
     var hsId=d.hs_company_id, name=d.client_name||'this client';
-    var intakes=[], pkgs=[], portal=[], comps=[];
-    try{ intakes=await q(sb.from('intakes').select('slug,company_name,status,created_at,completed_at').eq('hs_company_id',hsId).order('created_at',{ascending:false})); }catch(e){}
+    var pkgs=[], portal=[], comps=[];
     try{ pkgs=await q(sb.from('portal_package_links').select('slug,label,created_at').eq('hs_company_id',hsId).order('created_at',{ascending:false})); }catch(e){}
     try{ portal=await q(sb.from('client_access').select('id,active').eq('hs_company_id',hsId)); }catch(e){}
     if(d.client_name){ try{ comps=await q(sb.from('comps').select('building_name,address,rsf,execution_date,net_effective_rent_psf').ilike('tenant',d.client_name).order('execution_date',{ascending:false}).limit(8)); }catch(e){} }
-    renderClientPanel(d, {intakes:intakes||[], pkgs:pkgs||[], portal:portal||[], comps:comps||[]});
+    renderClientPanel(d, {pkgs:pkgs||[], portal:portal||[], comps:comps||[]});
   }
 
   function renderClientPanel(d, data){
     var box=$('clientPanelBody'); if(!box) return;
     var esc2=esc;
-    // Questionnaires
-    var qHtml = data.intakes.length ? data.intakes.slice(0,4).map(function(it){
-      var done=it.status==='completed';
-      return '<div class="cl-row" style="cursor:pointer" onclick="DF.viewQuestionnaire(\''+esc2(it.slug)+'\')" title="Click to see the questionnaire &amp; answers">'
-        +'<span class="cl-row-nm">'+esc2(it.company_name||d.client_name||'Questionnaire')+'</span>'
-        +'<span class="cl-row-meta '+(done?'ok':'')+'">'+(done?'Completed ✓':'Awaiting')+'</span></div>';
-    }).join('') : '<div class="cl-empty">None yet.</div>';
-
     // Packages shared in the portal
     var pHtml = data.pkgs.length ? data.pkgs.slice(0,4).map(function(p){
       return '<a class="cl-row" href="client.html?c='+encodeURIComponent(p.slug)+'&via=portal" target="_blank" rel="noopener">'
@@ -1487,11 +1481,41 @@ window.DF = (function(){
       '<div class="cl-linkline">Linked to <b>'+esc2(d.client_name||'client')+'</b>'
       + ' <button class="cl-relink" onclick="DF.clientLinkCompany(\''+d.id+'\')" title="Change the linked HubSpot company">change</button></div>'
       + '<div class="cl-grid">'
-      +   '<div class="cl-card"><div class="cl-card-h"><span>Questionnaires</span><button class="cl-mini" onclick="DF.sendQuestionnaire(\''+d.id+'\')">+ Send</button></div>'+qHtml+'</div>'
       +   '<div class="cl-card"><div class="cl-card-h"><span>Option packages</span></div>'+pHtml+'</div>'
       +   '<div class="cl-card"><div class="cl-card-h"><span>Portal</span></div>'+portalHtml+'</div>'
       +   '<div class="cl-card"><div class="cl-card-h"><span>Comps <span style="font-weight:400;color:var(--ink-faint)">(by tenant name)</span></span></div>'+compHtml+'</div>'
       + '</div>';
+  }
+
+  /* ---------- Questionnaire section (its own clear section on the deal) ----------
+     Always shows a Send button; lists sent questionnaires (click into responses).
+     Loads by the linked HubSpot company OR by the deal's client name, so it works
+     even before a company is linked. */
+  async function fillQuestionnaireSection(d){
+    var box=$('qnrBody'); if(!box) return;
+    var intakes=[];
+    try{
+      if(d.hs_company_id) intakes=await q(sb.from('intakes').select('slug,company_name,status,created_at,completed_at').eq('hs_company_id',d.hs_company_id).order('created_at',{ascending:false}));
+      else if(d.client_name) intakes=await q(sb.from('intakes').select('slug,company_name,status,created_at,completed_at').eq('company_name',d.client_name).order('created_at',{ascending:false}));
+    }catch(e){}
+    renderQuestionnaireSection(d, intakes||[]);
+  }
+  function renderQuestionnaireSection(d, intakes){
+    var box=$('qnrBody'); if(!box) return;
+    var sendBtn='<button class="share-btn" onclick="DF.sendQuestionnaire(\''+d.id+'\')">'
+      + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg> Send questionnaire</button>';
+    var list = intakes.length ? intakes.map(function(it){
+      var done=it.status==='completed';
+      return '<div class="cd-row" style="cursor:pointer" onclick="DF.viewQuestionnaire(\''+esc(it.slug)+'\')">'
+        + '<span class="cd-row-nm">'+esc(it.company_name||d.client_name||'Questionnaire')+'</span>'
+        + '<span class="cd-row-meta '+(done?'ok':'')+'">'+(done?'Completed ✓':'Awaiting response')+'</span>'
+        + '<span class="rost-go">'+(done?'View answers →':'View →')+'</span></div>';
+    }).join('') : '<div class="cl-empty" style="padding:6px 0 10px">No questionnaire sent yet — send one to kick off the client’s intake.</div>';
+    box.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">'
+      + '<div class="sub" style="font-size:12.5px;color:var(--ink-soft);max-width:560px">Send the space-needs questionnaire to your client. Their answers come straight back here, and feed the building match.</div>'
+      + sendBtn + '</div>'
+      + list;
   }
 
   // Link / relink the deal to a HubSpot company (so the client panel populates).
@@ -1585,7 +1609,7 @@ window.DF = (function(){
   }
   async function sendQuestionnaire(dealId){
     var d=deals.filter(function(x){return x.id===dealId;})[0]; if(!d) return;
-    try{ await createIntakeFor(d); fillClientPanel(d); }
+    try{ await createIntakeFor(d); fillQuestionnaireSection(d); fillClientPanel(d); }
     catch(e){ alert('Could not create the questionnaire: '+(e.message||e)); }
   }
 
@@ -3308,7 +3332,7 @@ window.DF = (function(){
       +'<table class="cmp"><thead><tr>'+head+'</tr></thead><tbody>'+rows+'</tbody></table>'
       +'<h2>Assumptions</h2><table class="asm"><thead><tr><th class="l">Assumption</th>'+_model.options.map(function(o){return '<th>'+esc(o.name)+'</th>';}).join('')+'</tr></thead><tbody>'+arows+'</tbody></table>'
       +'<h2>Year-by-year schedules</h2>'+scheds
-      +'<div class="ft">Prepared by Havill &amp; Co. · Confidential &amp; proprietary · Net effective is gross-equivalent rent net of concessions; NPV discounts all-in cost at '+dr+'% (rent-in-advance).</div>'
+      +'<div class="ft">Prepared  · Confidential &amp; proprietary · Net effective is gross-equivalent rent net of concessions; NPV discounts all-in cost at '+dr+'% (rent-in-advance).</div>'
       +'</body></html>';
     var w=window.open('','_blank'); if(!w){ alert('Please allow pop-ups to generate the PDF.'); return; }
     w.document.write(html); w.document.close(); w.focus(); setTimeout(function(){ try{ w.print(); }catch(e){} }, 350);

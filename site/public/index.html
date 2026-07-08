@@ -41,7 +41,7 @@
 <div id="authGate" style="display:none">
   <div class="ag-card">
     <div class="ag-logo">Vantage<span class="dot">.</span></div>
-    <div class="ag-by">Broker portal · Havill &amp; Co.</div>
+    <div class="ag-by">Broker portal</div>
     <h1>Sign in</h1>
     <label for="agEmail">Email</label>
     <input id="agEmail" type="email" autocomplete="username" placeholder="you@havillco.com">
@@ -58,7 +58,7 @@
   <button class="vnav-toggle" id="vnavToggle" onclick="toggleNav()" aria-label="Collapse or expand the menu" title="Collapse menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
   <div class="vnav-logo" onclick="showModule('home')" title="Vantage — Home">
     <span class="logo">Vantage<span class="dot">.</span></span>
-    <span class="by">by Havill &amp; Co.</span>
+    <span class="by"></span>
   </div>
   <button class="vnav-item on" data-m="home" onclick="showModule('home')" title="Home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v10h14V10"/></svg><span>Home</span></button>
   <button class="vnav-item has-sub" data-m="market" id="mktNavBtn" onclick="marketClick()" title="Market"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M9 8h2M13 8h2M9 12h2M13 12h2M9 16h2M13 16h2"/></svg><span>Market</span><svg class="vnav-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>
@@ -68,8 +68,8 @@
     <button class="vnav-subitem" data-sv="commute" onclick="marketSub('commute')">Commute</button>
     <button class="vnav-subitem" data-sv="comps" onclick="marketSub('comps')">Comps</button>
   </div>
+  <a class="vnav-item" data-m="deals" href="deals.html?view=pipeline" title="Active Deals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg><span>Active Deals</span></a>
   <a class="vnav-item" data-m="clients" href="deals.html?view=clients" title="Clients"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 6.6a3 3 0 0 1 0 5.8M20.5 20a5 5 0 0 0-4-4.9"/></svg><span>Clients</span></a>
-  <a class="vnav-item" data-m="deals" href="deals.html" title="Deals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg><span>Deals</span></a>
   <button class="vnav-item" data-m="settings" onclick="showModule('settings')" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 0 1-4 0v-.2A1.7 1.7 0 0 0 7 19.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H3a2 2 0 0 1 0-4h.1A1.7 1.7 0 0 0 4.6 7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 4.6V4a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg><span>Settings</span></button>
   <div class="vnav-spacer"></div>
   <span class="userchip" id="userChip" style="display:none">
@@ -2125,7 +2125,7 @@
         .sort(function(a,c){ if(a.min==null)return 1; if(c.min==null)return -1; return a.min-c.min; })
         .forEach(function(r){ html+='<div class="qa-row"><span class="qa-l">'+cmEsc(r.name||'—')+'</span><span class="qa-v">'+(r.min!=null?r.min+' min':'—')+'</span></div>'; });
     }
-    html+='<div class="pdq-foot">Drive times via Google with live traffic for the departure shown. Estimates; actual times vary. Prepared by Havill &amp; Co.</div>';
+    html+='<div class="pdq-foot">Drive times via Google with live traffic for the departure shown. Estimates; actual times vary. Prepared </div>';
     document.getElementById('qPrintDoc').innerHTML=html;
     window.print();
   }
@@ -2281,7 +2281,7 @@
     var pkgs=(typeof shLoadPackages==='function')?shLoadPackages():[];
     el.innerHTML='<div class="home-wrap">'+
       '<h1 class="home-h">Welcome back'+(name?', '+cmEsc(name):'')+'</h1>'+
-      '<div class="home-sub">'+cmEsc(email||'Havill & Co.')+'</div>'+
+      '<div class="home-sub">'+cmEsc(email||'')+'</div>'+
       '<div class="home-qa">'+
         '<button class="primary" onclick="openQuestionnaire()">+ New questionnaire</button>'+
         '<button onclick="openShare()">+ Client package</button>'+
@@ -2865,7 +2865,7 @@
       qFullAnswers(r)+
       '<h2>Best-fit buildings</h2>'+
       matches.map(function(m,i){ return '<div class="pdq-m"><b>'+(i+1)+'. '+cmEsc(m.b.name)+'</b> — '+cmEsc(m.b.submarket)+' · fit '+m.score+(m.reasons.length?' · '+m.reasons.map(cmEsc).join(', '):'')+'</div>'; }).join('')+
-      '<div class="pdq-foot">Amenity scores reflect live Google Places data. Building stats &amp; rents are illustrative — Havill &amp; Co. will confirm current terms.</div>';
+      '<div class="pdq-foot">Amenity scores reflect live Google Places data. Building stats &amp; rents are illustrative — we will confirm current terms.</div>';
     window.print();
   }
   function qShowDetail(it){
