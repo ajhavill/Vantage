@@ -147,6 +147,9 @@
   /* clients roster */
   .rost-search{font:500 13px Inter;padding:9px 13px;border:1px solid var(--line-2);border-radius:9px;background:var(--paper);min-width:200px}
   .rost-search:focus{outline:none;border-color:var(--accent)}
+  .rost-sortwrap{display:inline-flex;align-items:center;gap:6px;font:600 11px Inter;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint)}
+  .rost-sort{font:500 13px Inter;padding:8px 10px;border:1px solid var(--line-2);border-radius:9px;background:var(--paper);color:var(--ink);cursor:pointer}
+  .rost-sort:focus{outline:none;border-color:var(--accent)}
   .rost-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-top:18px}
   .rost-card{border:1px solid var(--line);border-radius:13px;background:var(--paper-2);padding:15px 16px}
   .rost-nm{font:700 15.5px 'Bricolage Grotesque',sans-serif;color:var(--ink);display:flex;align-items:center;gap:8px}
@@ -501,9 +504,8 @@
 <main>
   <div class="subnav" id="subnav">
     <button data-view="dashboard" onclick="DF.showDashboard()">Dashboard</button>
-    <button data-view="clients" onclick="DF.showClients()">Clients</button>
     <button data-view="pipeline" onclick="DF.showPipeline()">Active Deals</button>
-    <button data-view="emails" onclick="DF.showEmails()">Emails</button>
+    <button data-view="clients" onclick="DF.showClients()">Clients</button>
   </div>
 
   <!-- DASHBOARD -->
@@ -893,7 +895,7 @@ window.DF = (function(){
      anyone with a deal), grouped, each showing their deal(s). Click a
      deal to open the unified client+deal page; start one if there's none.
      ================================================================== */
-  var _roster=[], _rosterQ='', _companiesConfigured=null;
+  var _roster=[], _rosterQ='', _rosterSort='recent', _companiesConfigured=null;
 
   function _keyFor(hsId, name){ return hsId ? ('hs:'+hsId) : ('nm:'+String(name||'').trim().toLowerCase()); }
 
@@ -968,11 +970,14 @@ window.DF = (function(){
     }catch(e){ $('clientsView').innerHTML='<div class="loading">Could not load client: '+esc(e.message||e)+'</div>'; }
   }
 
+  var ROSTER_SORTS=[['recent','Recent activity'],['active','Active first'],['name','Name (A–Z)'],['namez','Name (Z–A)'],['closed','Recently closed']];
   function renderClientsShell(){
+    var sortOpts=ROSTER_SORTS.map(function(s){ return '<option value="'+s[0]+'"'+(s[0]===_rosterSort?' selected':'')+'>'+s[1]+'</option>'; }).join('');
     $('clientsView').innerHTML=
       '<div class="vhead"><div><h1>Clients</h1><div class="sub" id="rostCount">Everyone you’ve worked with — click in for their full history.</div></div>'
-      + '<div style="display:flex;gap:12px;align-items:center">'
+      + '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
       +   '<input id="rostSearch" class="rost-search" placeholder="Search clients…" oninput="DF.rosterSearch(this.value)">'
+      +   '<label class="rost-sortwrap">Sort <select id="rostSort" class="rost-sort" onchange="DF.rosterSort(this.value)">'+sortOpts+'</select></label>'
       +   '<button class="share-btn" onclick="DF.newDeal()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> New deal</button>'
       + '</div></div>'
       + '<div class="rost-grid" id="rostGrid"></div>';
@@ -980,15 +985,34 @@ window.DF = (function(){
     renderRosterGrid();
   }
 
+  // last-activity / closed-date helpers for sorting
+  function _lastActivity(c){ var d=c.deals[0]; return d?String(d.updated_at||d.created_at):''; }
+  function _closedDate(c){
+    var closed=c.deals.filter(function(d){ return d.stage==='executed'||d.stage==='dead'; });
+    if(!closed.length) return '';
+    return closed.map(function(d){ return String(d.updated_at||d.created_at); }).sort().reverse()[0];
+  }
+  function sortRoster(list){
+    var s=_rosterSort||'recent', arr=list.slice();
+    if(s==='name') arr.sort(function(a,b){ return String(a.name||'').localeCompare(String(b.name||'')); });
+    else if(s==='namez') arr.sort(function(a,b){ return String(b.name||'').localeCompare(String(a.name||'')); });
+    else if(s==='active') arr.sort(function(a,b){ if(a._active&&!b._active)return -1; if(!a._active&&b._active)return 1; return _lastActivity(b).localeCompare(_lastActivity(a)); });
+    else if(s==='closed') arr.sort(function(a,b){ var ca=_closedDate(a),cb=_closedDate(b); if(ca&&!cb)return -1; if(!ca&&cb)return 1; return cb.localeCompare(ca)|| String(a.name||'').localeCompare(String(b.name||'')); });
+    else arr.sort(function(a,b){ return _lastActivity(b).localeCompare(_lastActivity(a)); }); // recent
+    return arr;
+  }
+
   function renderRosterGrid(){
     var q0=(_rosterQ||'').trim().toLowerCase();
     var list=_roster.filter(function(c){
       return !q0 || (c.name||'').toLowerCase().indexOf(q0)>=0 || (c.industry||'').toLowerCase().indexOf(q0)>=0 || (c.city||'').toLowerCase().indexOf(q0)>=0;
     });
+    list=sortRoster(list);
     var g=$('rostGrid'); if(g) g.innerHTML=list.map(rosterCard).join('') || '<div class="loading" style="grid-column:1/-1">No clients yet. Start a deal or send a questionnaire and they’ll appear here.</div>';
     var cnt=$('rostCount'); if(cnt) cnt.textContent=list.length+' client'+(list.length===1?'':'s')+' — click in for their full history.';
   }
   function rosterSearch(v){ _rosterQ=v; renderRosterGrid(); }
+  function rosterSort(v){ _rosterSort=v; renderRosterGrid(); }
 
   function rosterCard(c){
     var meta=[c.industry, c.city].filter(Boolean).join(' · ');
@@ -3755,7 +3779,7 @@ window.DF = (function(){
     showDashboard:showDashboard, showPipeline:showPipeline, setPipeView:setPipeView, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, cmpExcel:cmpExcel, toggleClosed:toggleClosed,
     openPortal:openPortal, portalCoSuggest:portalCoSuggest, portalCoPick:portalCoPick, portalInvite:portalInvite, portalRevoke:portalRevoke, portalAttach:portalAttach, portalDetach:portalDetach, portalNotify:portalNotify,
     clientLinkCompany:clientLinkCompany, clientCoSuggest:clientCoSuggest, clientCoPick:clientCoPick, sendQuestionnaire:sendQuestionnaire, viewQuestionnaire:viewQuestionnaire, copyFieldById:copyFieldById,
-    showClients:showClients, rosterSearch:rosterSearch, rosterStartDeal:rosterStartDeal, openClientDetail:openClientDetail, openClientByUid:openClientByUid, rosterSendQuestionnaire:rosterSendQuestionnaire,
+    showClients:showClients, rosterSearch:rosterSearch, rosterSort:rosterSort, rosterStartDeal:rosterStartDeal, openClientDetail:openClientDetail, openClientByUid:openClientByUid, rosterSendQuestionnaire:rosterSendQuestionnaire,
     deleteDealAsk:deleteDealAsk, deleteDealCancel:deleteDealCancel, deleteDealDo:deleteDealDo,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask, recGo:recGo,
