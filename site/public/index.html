@@ -36,7 +36,9 @@
 <body>
 
 <!-- LOGIN GATE (broker portal) — visible by default; hidden once authenticated -->
-<div id="authGate">
+<!-- hidden by default so a logged-in user never sees a sign-in flash on page load /
+     cross-page navigation; JS reveals it only when there is genuinely no session -->
+<div id="authGate" style="display:none">
   <div class="ag-card">
     <div class="ag-logo">Vantage<span class="dot">.</span></div>
     <div class="ag-by">Broker portal · Havill &amp; Co.</div>
@@ -3041,6 +3043,7 @@
     var chip=document.getElementById('userChip'); if(chip) chip.style.display='none';
   }
   if(!window.supabase){ // library failed to load — don't lock the user out with a broken gate
+    var g0=document.getElementById('authGate'); if(g0) g0.style.display='flex';
     var err=document.getElementById('agErr'); if(err) err.textContent='Could not reach the login service. Check your connection and refresh.';
     return;
   }
