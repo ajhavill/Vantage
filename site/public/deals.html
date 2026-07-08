@@ -980,7 +980,13 @@ window.DF = (function(){
 
     var toursHtml = (tours&&tours.length) ? tours.map(function(s){ return tourCard(s, propById, d.id); }).join('')
       : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No tour stops scheduled yet.</div>';
-    var toursSection = toursHtml + '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap"><button class="miniadd" onclick="DF.newTourStop(\''+d.id+'\')">+ Add tour stop</button><button class="miniadd" onclick="DF.buildTourFromTouring(\''+d.id+'\')">↻ Build from “touring” buildings</button></div>';
+    var tourCount=(tours&&tours.length)||0;
+    var toursSection = toursHtml + '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">'
+      + '<button class="miniadd" onclick="DF.newTourStop(\''+d.id+'\')">+ Add tour stop</button>'
+      + '<button class="miniadd" onclick="DF.buildTourFromTouring(\''+d.id+'\')">↻ Build from “touring” buildings</button>'
+      + (tourCount>=2?'<button class="miniadd" onclick="DF.optimizeTour(\''+d.id+'\')" title="Van orders the buildings for the shortest drive and lays out arrival times">🗺️ Optimize route &amp; times</button>':'')
+      + (tourCount>=1?'<button class="miniadd" onclick="DF.draftAllTourEmails(\''+d.id+'\')" title="Van drafts one email per listing broker with each building’s time slot">✉️ Draft broker emails</button>':'')
+      + '</div>';
 
     var tourPropIds={}; (tours||[]).forEach(function(t){ if(t.property_id) tourPropIds[t.property_id]=true; });
     var propsHtml = props.length ? props.map(function(p){ return propCard(p, d.id, tourPropIds[p.id]); }).join('') : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No buildings yet.</div>';
@@ -2917,7 +2923,312 @@ window.DF = (function(){
     }catch(e){ if(typeof aiToast==='function') aiToast('Network error.'); }
   }
 
+  /* ==================================================================
+     TOUR ROUTE OPTIMIZER + COORDINATED BROKER EMAILS
+     Front-end only. Uses the existing commute.js "matrix" action for
+     traffic-aware drive times, an exact/heuristic open-path solver to
+     order the buildings, then assigns arrival→departure times from a
+     start time + dwell + buffer, and (optionally) has Van draft one
+     confirmation email per listing broker with that building's slot.
+     ================================================================== */
+  var _route=null;        // {dealId, stops:[...], plan:[...], startAddr, startPt}
+  var _tourMail=null;     // {dealId, items:[{to,name,building,subject,text,sent}]}
+
+  // resolve a tour stop to a catalog building (lat/lng + leasingContact).
+  // A stop links either directly (building_id) or via its deal_property.
+  function _stopBuilding(stop, propById){
+    var bid = stop.building_id || (stop.property_id && propById[stop.property_id] && propById[stop.property_id].building_id) || null;
+    if(!bid || !_portalBuildings) return null;
+    var b=_portalBuildings.filter(function(x){return x.id===bid;})[0];
+    return (b && typeof b.lat==='number' && typeof b.lng==='number') ? b : null;
+  }
+  function _stopName(stop, propById){
+    if(stop.property_id && propById[stop.property_id]) return propById[stop.property_id].name;
+    return stop.label || 'Tour stop';
+  }
+  // haversine metres — fallback when Google returns null for a leg
+  function _hav(a,b){
+    var R=6371000, toR=Math.PI/180;
+    var dLat=(b.lat-a.lat)*toR, dLng=(b.lng-a.lng)*toR;
+    var s=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(a.lat*toR)*Math.cos(b.lat*toR)*Math.sin(dLng/2)*Math.sin(dLng/2);
+    return 2*R*Math.asin(Math.sqrt(s));
+  }
+  // seconds for leg i→j, falling back to a ~30 km/h city estimate if null
+  function _leg(dur, pts, i, j){
+    var v=dur&&dur[i]&&dur[i][j]; if(v!=null && isFinite(v)) return v;
+    return (_hav(pts[i],pts[j])/1000)/30*3600;
+  }
+  function fmtClock(d){ return d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}); }
+
+  // Open-path order over building matrix-indices `idxs`, optional fixed start
+  // node `startNode` (>=0). Exact (permutations) for small sets, nearest-
+  // neighbour + 2-opt above the exact threshold. Directed/asymmetric-safe.
+  function _solveRoute(dur, pts, idxs, startNode){
+    var B=idxs.length;
+    function cost(order){
+      var c=0;
+      if(startNode>=0) c+=_leg(dur,pts,startNode,order[0]);
+      for(var k=0;k<order.length-1;k++) c+=_leg(dur,pts,order[k],order[k+1]);
+      return c;
+    }
+    if(B<=1) return idxs.slice();
+    if(B<=8){ // exact — permute (Heap's algorithm)
+      var best=null, bestC=Infinity, a=idxs.slice();
+      var c=new Array(B).fill(0), i=0;
+      var trial=a.slice(); var tc=cost(trial); if(tc<bestC){bestC=tc;best=trial.slice();}
+      while(i<B){
+        if(c[i]<i){
+          var s=(i%2===0)?0:c[i]; var tmp=a[s]; a[s]=a[i]; a[i]=tmp;
+          var cc=cost(a); if(cc<bestC){bestC=cc;best=a.slice();}
+          c[i]++; i=0;
+        } else { c[i]=0; i++; }
+      }
+      return best;
+    }
+    // heuristic: nearest-neighbour (from fixed start, or best of all starts) + 2-opt
+    function nn(startFrom){
+      var un=idxs.slice(), order=[], cur=startFrom;
+      if(startFrom<0){ // pick an arbitrary first = idxs[0]
+        cur=un.shift(); order.push(cur);
+      }
+      while(un.length){
+        var bi=0, bd=Infinity;
+        for(var k=0;k<un.length;k++){ var dd=_leg(dur,pts,cur,un[k]); if(dd<bd){bd=dd;bi=k;} }
+        cur=un.splice(bi,1)[0]; order.push(cur);
+      }
+      return order;
+    }
+    var start = startNode>=0 ? nn(startNode) : (function(){
+      var bo=null, bc=Infinity;
+      for(var s=0;s<idxs.length;s++){ var o=[idxs[s]].concat(nn(-1).filter(function(x){return x!==idxs[s];})); var cc=cost(o); if(cc<bc){bc=cc;bo=o;} }
+      return bo||idxs.slice();
+    })();
+    // 2-opt
+    var improved=true, order=start.slice();
+    while(improved){
+      improved=false;
+      for(var i2=0;i2<order.length-1;i2++){
+        for(var j2=i2+1;j2<order.length;j2++){
+          var cand=order.slice(0,i2).concat(order.slice(i2,j2+1).reverse(), order.slice(j2+1));
+          if(cost(cand)<cost(order)-0.5){ order=cand; improved=true; }
+        }
+      }
+    }
+    return order;
+  }
+
+  // ---- entry: gather stops, ask for the parameters ----
+  async function optimizeTour(dealId){
+    var d=deals.filter(function(x){return x.id===dealId;})[0]; if(!d) return;
+    await loadPortalBuildings();
+    var tours=[], props=[];
+    try{
+      tours=await q(sb.from('tour_stops').select('*').eq('deal_id',dealId).order('scheduled_at',{ascending:true,nullsFirst:false}));
+      props=await q(sb.from('deal_properties').select('id,name,building_id').eq('deal_id',dealId));
+    }catch(e){ alert('Could not load the tour: '+(e.message||e)); return; }
+    var propById={}; props.forEach(function(p){ propById[p.id]=p; });
+
+    var geo=[], nogeo=[];
+    (tours||[]).forEach(function(s){
+      if(s.status==='cancelled') return;
+      var b=_stopBuilding(s, propById);
+      if(b) geo.push({stopId:s.id, name:_stopName(s,propById), lat:b.lat, lng:b.lng, contact:b.leasingContact||null, addr:b.addr||''});
+      else nogeo.push(_stopName(s,propById));
+    });
+    if(geo.length<2){
+      openSheet('<h3>Optimize tour route</h3><div class="ssub">You need at least two tour stops that are linked to buildings in the catalog (so we have their locations). '
+        +(nogeo.length?'These stops have no mapped building yet: '+esc(nogeo.join(', '))+'.':'Add buildings to the tour first.')+'</div>'
+        +'<div class="srow"><button class="btn" onclick="DF.close()">Close</button></div>');
+      return;
+    }
+    var startDefault = toLocalInput((tours.filter(function(t){return t.scheduled_at;})[0]||{}).scheduled_at) || '';
+    var est = (geo.length+1)*(geo.length+1); // rough element ceiling incl. optional start
+    openSheet('<h3>Optimize tour route</h3>'
+      +'<div class="ssub">Van will order '+geo.length+' buildings for the shortest drive, then lay out arrival &amp; departure times. Uses live Google traffic-aware drive times.</div>'
+      + fld('Tour date &amp; start time','<input id="rt_when" type="datetime-local" value="'+esc(startDefault)+'">')
+      + '<div style="display:flex;gap:12px">'
+      +   '<div class="fld" style="flex:1"><label>Minutes per building</label><input id="rt_dwell" type="number" min="5" max="90" value="20"></div>'
+      +   '<div class="fld" style="flex:1"><label>Buffer between (park, walk)</label><input id="rt_buf" type="number" min="0" max="60" value="10"></div>'
+      + '</div>'
+      + fld('Start from (optional)','<input id="rt_start" placeholder="your office or a start address — blank = start at the best building">')
+      +(nogeo.length?'<div style="font-size:11.5px;color:var(--ink-faint);margin-top:2px">Not routed (no mapped building): '+esc(nogeo.join(', '))+'</div>':'')
+      +'<div style="font-size:11px;color:var(--ink-faint);margin-top:8px">≈ up to '+est+' Google elements (~$'+(est*0.01).toFixed(2)+') when you optimize.</div>'
+      +'<div class="formerr" id="rt_err"></div>'
+      +'<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button><button class="btn pri" id="rt_go">Optimize route</button></div>');
+    _route={dealId:dealId, stops:geo, nogeo:nogeo};
+    $('rt_go').addEventListener('click',function(){ runOptimize(); });
+  }
+
+  async function runOptimize(){
+    var r=_route; if(!r) return;
+    var whenV=$('rt_when').value;
+    if(!whenV){ $('rt_err').textContent='Pick a tour date & start time.'; return; }
+    var dwell=Math.max(5,parseInt($('rt_dwell').value,10)||20);
+    var buffer=Math.max(0,parseInt($('rt_buf').value,10)||10);
+    var startAddr=($('rt_start').value||'').trim();
+    var btn=$('rt_go'); btn.disabled=true; btn.textContent='Optimizing…'; $('rt_err').textContent='';
+    try{
+      var s=await sb.auth.getSession(); var token=s&&s.data&&s.data.session?s.data.session.access_token:null;
+      // optional start point → geocode
+      var startPt=null;
+      if(startAddr){
+        var gr=await fetch('/.netlify/functions/commute',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token, action:'geocode', items:[startAddr]})});
+        var gd=await gr.json().catch(function(){return null;});
+        var pt=gd&&gd.points&&gd.points[0];
+        if(pt&&pt.ok) startPt={lat:pt.lat,lng:pt.lng}; else { $('rt_err').textContent='Could not find that start address — leave it blank or try a fuller address.'; btn.disabled=false; btn.textContent='Optimize route'; return; }
+      }
+      var pts=(startPt?[startPt]:[]).concat(r.stops.map(function(x){return {lat:x.lat,lng:x.lng};}));
+      var offset=startPt?1:0;
+      var idxs=r.stops.map(function(_,i){return i+offset;});
+      // departureTime only if in the future (Routes rejects past times for traffic-aware)
+      var whenIso=new Date(whenV).toISOString();
+      var dep=(new Date(whenV).getTime() > Date.now()+60000) ? whenIso : undefined;
+      var mr=await fetch('/.netlify/functions/commute',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token, action:'matrix', origins:pts, destinations:pts, departureTime:dep})});
+      var md=await mr.json().catch(function(){return null;});
+      if(!mr.ok||!md||!md.durations){ throw new Error((md&&md.error)||'Could not get drive times.'); }
+      var dur=md.durations;
+      var order=_solveRoute(dur, pts, idxs, startPt?0:-1);
+
+      // assign arrival/departure
+      var startT=new Date(whenV).getTime();
+      var plan=[], t=startT;
+      for(var k=0;k<order.length;k++){
+        var si=order[k]-offset, stop=r.stops[si];
+        var arrive=t;
+        var depart=arrive+dwell*60000;
+        var driveNext=null;
+        if(k<order.length-1){ driveNext=Math.round(_leg(dur,pts,order[k],order[k+1])/60); t=depart+ (driveNext+buffer)*60000; }
+        plan.push({stop:stop, arrive:new Date(arrive), depart:new Date(depart), driveNextMin:driveNext, bufferMin:buffer});
+      }
+      var leaveBy=null, firstDriveMin=null;
+      if(startPt){ firstDriveMin=Math.round(_leg(dur,pts,0,order[0])/60); leaveBy=new Date(startT-firstDriveMin*60000); }
+      _route.plan=plan; _route.dwell=dwell; _route.buffer=buffer; _route.leaveBy=leaveBy; _route.firstDriveMin=firstDriveMin; _route.startAddr=startAddr;
+      renderRoutePlan();
+    }catch(e){ $('rt_err').textContent=(e.message||'Optimize failed.'); btn.disabled=false; btn.textContent='Optimize route'; }
+  }
+
+  function renderRoutePlan(){
+    var r=_route, plan=r.plan;
+    var last=plan[plan.length-1];
+    var totalMin=Math.round((last.depart.getTime()-plan[0].arrive.getTime())/60000);
+    var rows=plan.map(function(p,i){
+      return '<div style="display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)">'
+        +'<div style="font:700 13px \'JetBrains Mono\',monospace;color:var(--accent,#2d6e7e);white-space:nowrap;min-width:118px">'+fmtClock(p.arrive)+'–'+fmtClock(p.depart)+'</div>'
+        +'<div style="min-width:0;flex:1"><div style="font:700 14px \'Bricolage Grotesque\',sans-serif">'+ (i+1)+'. '+esc(p.stop.name)+'</div>'
+        + (p.stop.addr?'<div style="font:500 11.5px Inter;color:var(--ink-soft)">'+esc(p.stop.addr)+'</div>':'')
+        + (p.driveNextMin!=null?'<div style="font:500 11.5px Inter;color:var(--ink-faint);margin-top:4px">↓ '+p.driveNextMin+' min drive + '+p.bufferMin+' min buffer</div>':'')
+        +'</div></div>';
+    }).join('');
+    openSheet('<h3>Optimized tour plan</h3>'
+      +'<div class="ssub">'+plan.length+' buildings · '+totalMin+' min total'
+        +(r.leaveBy?' · leave '+(r.startAddr?esc(r.startAddr):'your start')+' by <b>'+fmtClock(r.leaveBy)+'</b> ('+r.firstDriveMin+' min drive)':'')
+        +'</div>'
+      + rows
+      +(r.nogeo&&r.nogeo.length?'<div style="font-size:11.5px;color:var(--ink-faint);margin-top:10px">Not in this route (no mapped building): '+esc(r.nogeo.join(', '))+'</div>':'')
+      +'<div class="formerr" id="rt_err2"></div>'
+      +'<div class="srow" style="justify-content:space-between"><button class="btn" onclick="DF.optimizeTour(\''+r.dealId+'\')">‹ Adjust</button>'
+      +'<div style="display:flex;gap:10px"><button class="btn" id="rt_apply">Apply schedule</button><button class="btn pri" id="rt_applymail">Apply &amp; draft emails</button></div></div>');
+    $('rt_apply').addEventListener('click',function(){ applyRoute(false); });
+    $('rt_applymail').addEventListener('click',function(){ applyRoute(true); });
+  }
+
+  async function applyRoute(thenMail){
+    var r=_route; if(!r||!r.plan) return;
+    var b1=$('rt_apply'), b2=$('rt_applymail'); if(b1)b1.disabled=true; if(b2){b2.disabled=true;b2.textContent='Saving…';}
+    try{
+      for(var i=0;i<r.plan.length;i++){
+        var p=r.plan[i];
+        await q(sb.from('tour_stops').update({scheduled_at:p.arrive.toISOString(), sort_order:i}).eq('id',p.stop.stopId).select().single());
+      }
+      if(thenMail){ closeSheet(); draftAllTourEmails(r.dealId); }
+      else { closeSheet(); openDeal(r.dealId); if(typeof aiToast==='function') aiToast('Tour schedule updated.'); }
+    }catch(e){ var er=$('rt_err2'); if(er) er.textContent='Could not save: '+(e.message||e); if(b1)b1.disabled=false; if(b2){b2.disabled=false;b2.textContent='Apply & draft emails';} }
+  }
+
+  // ---- coordinated broker emails: one per building, with its time slot ----
+  async function draftAllTourEmails(dealId){
+    var d=deals.filter(function(x){return x.id===dealId;})[0]; if(!d) return;
+    await loadPortalBuildings();
+    var tours=[], props=[];
+    try{
+      tours=await q(sb.from('tour_stops').select('*').eq('deal_id',dealId).order('scheduled_at',{ascending:true,nullsFirst:false}));
+      props=await q(sb.from('deal_properties').select('id,name,building_id').eq('deal_id',dealId));
+    }catch(e){ alert('Could not load the tour.'); return; }
+    var propById={}; props.forEach(function(p){ propById[p.id]=p; });
+    var targets=[];
+    (tours||[]).forEach(function(s){
+      if(s.status==='cancelled') return;
+      var b=_stopBuilding(s, propById);
+      var contact=b&&b.leasingContact;
+      if(contact&&contact.email) targets.push({name:_stopName(s,propById), when:s.scheduled_at, contact:contact, addr:(b&&b.addr)||''});
+    });
+    if(!targets.length){
+      openSheet('<h3>Draft broker emails</h3><div class="ssub">None of the tour stops have a listing-broker email on file yet. Add buildings with contacts, or use the per-stop “Draft email” action.</div><div class="srow"><button class="btn" onclick="DF.close()">Close</button></div>');
+      return;
+    }
+    openSheet('<h3>Coordinated broker emails</h3><div class="ssub">Van is drafting '+targets.length+' email'+(targets.length>1?'s':'')+' — one per listing broker, each with that building’s time slot…</div><div class="loading" style="padding:26px">✨ Drafting…</div>');
+    var s=await sb.auth.getSession(); var token=s&&s.data&&s.data.session?s.data.session.access_token:null;
+    var items=await Promise.all(targets.map(function(tg){
+      var slot = tg.when ? new Date(tg.when).toLocaleString([], {weekday:'long',month:'long',day:'numeric',hour:'numeric',minute:'2-digit'}) : 'a time to be confirmed';
+      var ask='Draft a short, warm, professional email from me — the tenant\'s broker at Havill & Co. — to '
+        + (tg.contact.name||'the listing broker')+(tg.contact.company?' at '+tg.contact.company:'')
+        + ', to CONFIRM a tour of '+tg.name+(tg.addr?' ('+tg.addr+')':'')+' for my client'+(d.client_name?' '+d.client_name:'')
+        + ' on '+slot+'. This time is part of a coordinated multi-building tour that day, so it is fairly fixed — ask them to confirm the building will be accessible and who will meet us. Keep it to 4-6 sentences with a subject line. Output ONLY the email: a "Subject:" line then the body, no preamble.';
+      return fetch('/.netlify/functions/deal-ai-assist',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token, dealId:dealId, question:ask})})
+        .then(function(res){ return res.json().catch(function(){return null;}); })
+        .then(function(data){ return {name:tg.name, to:tg.contact.email, toName:tg.contact.name||'', subject:'Tour confirmation — '+tg.name, text:(data&&data.text)||'Could not draft this one — try again.', sent:false}; })
+        .catch(function(){ return {name:tg.name, to:tg.contact.email, toName:tg.contact.name||'', subject:'Tour confirmation — '+tg.name, text:'Could not draft this one — try again.', sent:false}; });
+    }));
+    _tourMail={dealId:dealId, items:items};
+    renderTourMail();
+  }
+
+  function renderTourMail(){
+    var m=_tourMail; if(!m) return;
+    var rows=m.items.map(function(it,i){
+      return '<div style="border:1px solid var(--line);border-radius:11px;padding:12px 14px;margin-bottom:10px'+(it.sent?';opacity:.6':'')+'">'
+        +'<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">'
+        +'<div style="font:700 13.5px \'Bricolage Grotesque\',sans-serif">'+esc(it.name)+'</div>'
+        +'<div style="font:500 11.5px Inter;color:var(--ink-soft)">'+esc(it.toName?it.toName+' · ':'')+esc(it.to)+'</div></div>'
+        +'<textarea class="te-ta" id="tm_'+i+'" style="margin-top:8px;min-height:150px">'+esc(it.text)+'</textarea>'
+        +'<div class="srow" style="justify-content:flex-end;margin-top:8px">'
+        + (it.sent?'<span style="font:600 12px Inter;color:var(--fitness,#2e7d4f)">Sent ✓</span>'
+                  :'<button class="btn" onclick="DF.tourMailCopy('+i+')">Copy</button><button class="btn pri" onclick="DF.tourMailSend('+i+')">Send</button>')
+        +'</div></div>';
+    }).join('');
+    var anyUnsent=m.items.some(function(it){return !it.sent;});
+    openSheet('<h3>Coordinated broker emails</h3><div class="ssub">Review each note, edit anything, then send. Van already put each building’s time slot in.</div>'
+      + rows
+      +'<div id="tm_msg" style="font:500 12px Inter;min-height:15px;color:var(--ink-faint)"></div>'
+      +'<div class="srow" style="justify-content:space-between"><button class="btn" onclick="DF.close()">Done</button>'
+      +(anyUnsent?'<button class="btn pri" id="tm_all">Send all</button>':'')+'</div>');
+    var all=$('tm_all'); if(all) all.addEventListener('click',function(){ tourMailSendAll(); });
+  }
+
+  function tourMailCopy(i){
+    var t=$('tm_'+i); if(!t) return; t.select();
+    try{ document.execCommand('copy'); if(typeof aiToast==='function') aiToast('Copied.'); }catch(e){}
+  }
+  async function tourMailSend(i){
+    var m=_tourMail; if(!m||!m.items[i]) return;
+    var it=m.items[i]; var ta=$('tm_'+i); var bodyv=ta?ta.value:it.text;
+    var msg=$('tm_msg'); if(msg){ msg.textContent='Sending to '+it.to+'…'; msg.style.color='var(--ink-faint)'; }
+    try{
+      var s=await sb.auth.getSession(); var token=s&&s.data&&s.data.session?s.data.session.access_token:null;
+      var res=await fetch('/.netlify/functions/deal-send-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token, to:it.to, subject:it.subject, body:bodyv, dealId:m.dealId})});
+      var data=await res.json().catch(function(){return null;});
+      if(data&&data.ok){ it.text=bodyv; it.sent=true; renderTourMail(); }
+      else if(msg){ msg.textContent=(data&&data.error)||'Could not send — copy it instead.'; msg.style.color='#C2453F'; }
+    }catch(e){ if(msg){ msg.textContent='Network error.'; msg.style.color='#C2453F'; } }
+  }
+  async function tourMailSendAll(){
+    var m=_tourMail; if(!m) return;
+    var btn=$('tm_all'); if(btn){ btn.disabled=true; btn.textContent='Sending…'; }
+    for(var i=0;i<m.items.length;i++){ if(!m.items[i].sent){ /* eslint-disable no-await-in-loop */ await tourMailSend(i); } }
+  }
+
   return {
+    optimizeTour:optimizeTour, draftAllTourEmails:draftAllTourEmails, tourMailCopy:tourMailCopy, tourMailSend:tourMailSend,
     showEmails:showEmails, filterEmails:filterEmails, viewEmail:viewEmail, composeEmail:composeEmail, draftCompose:draftCompose, connectEmail:connectEmail, pickProvider:pickProvider, sendTourEmail:sendTourEmail,
     openModel:openModel, modelInput:modelInput, modelToggle:modelToggle, modelDeal:modelDeal, modelAdd:modelAdd, modelRemove:modelRemove, modelUnlink:modelUnlink, modelPrint:modelPrint, modelPdf:modelPdf, modelExcel:modelExcel, modelScenario:modelScenario, modelPull:modelPull,
     showDashboard:showDashboard, showPipeline:showPipeline, setPipeView:setPipeView, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, cmpExcel:cmpExcel, toggleClosed:toggleClosed,
