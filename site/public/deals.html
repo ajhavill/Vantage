@@ -54,6 +54,27 @@
   .pcard .top .ad{font:500 12px Inter;color:var(--ink-soft);margin-top:2px}
   .tag{font:600 10px Inter;text-transform:uppercase;letter-spacing:.08em;padding:3px 9px;border-radius:999px;border:1px solid var(--line-2);color:var(--ink-soft);background:var(--paper);white-space:nowrap}
   .tag.b{background:var(--building);color:#fff;border-color:var(--building)}
+  .nm-link{cursor:pointer;transition:color .12s}
+  .nm-link:hover{color:var(--accent)}
+
+  /* building detail sheet */
+  .bd-specs{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 4px}
+  .bd-spec{display:flex;flex-direction:column;gap:1px;border:1px solid var(--line);border-radius:9px;padding:7px 11px;background:var(--paper-2);min-width:78px}
+  .bd-spec-l{font:600 10px Inter;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint)}
+  .bd-spec-v{font:700 13px Inter;color:var(--ink)}
+  .bd-h{font:700 12.5px Inter;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);margin:16px 0 6px}
+  .bd-p{font:500 13px Inter;color:var(--ink-soft);line-height:1.55;margin:3px 0}
+  .bd-avail{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:4px}
+  .bd-avail th{text-align:left;font:600 10.5px Inter;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);border-bottom:1px solid var(--line);padding:5px 8px}
+  .bd-avail td{padding:6px 8px;border-bottom:1px solid var(--line);color:var(--ink)}
+  .bd-avail .num{text-align:right}
+  .bd-amens{display:flex;flex-direction:column;gap:6px}
+  .bd-amen{display:grid;grid-template-columns:70px 1fr 30px;align-items:center;gap:9px;font:600 12px Inter;color:var(--ink-soft)}
+  .bd-amen .bd-bar{height:7px;border-radius:999px;background:var(--line);overflow:hidden}
+  .bd-amen .bd-bar i{display:block;height:100%;background:var(--accent);border-radius:999px}
+  .bd-amen b{text-align:right;color:var(--ink)}
+  .bd-feats{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+  .bd-feat{font:600 11.5px Inter;color:var(--ink-soft);background:var(--paper-2);border:1px solid var(--line);border-radius:999px;padding:4px 10px}
 
   /* rounds table */
   .rounds{margin-top:12px;border:1px solid var(--line);border-radius:10px;overflow:hidden}
@@ -1372,10 +1393,17 @@ window.DF = (function(){
       + '</div>';
 
     var tourPropIds={}; (tours||[]).forEach(function(t){ if(t.property_id) tourPropIds[t.property_id]=true; });
-    var propsHtml = props.length ? props.map(function(p){ return propCard(p, d.id, tourPropIds[p.id]); }).join('') : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No buildings yet.</div>';
+    // Building funnel: candidates (Buildings) → shortlisted (Market report) → tour
+    var candidateProps = props.filter(function(p){ return p.status!=='shortlisted'; });
+    var reportProps = props.filter(function(p){ return p.status==='shortlisted'; });
+    var propsHtml = candidateProps.length ? candidateProps.map(function(p){ return propCard(p, d.id, tourPropIds[p.id]); }).join('') : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No candidate buildings — add best-fit buildings from the questionnaire, or add one manually.</div>';
 
     var propsHtml2 = propsHtml + '<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><button class="miniadd" onclick="DF.newProperty(\''+d.id+'\')">+ Add building</button>'
-      + (props.length?'<button class="miniadd ai" onclick="DF.generateRfp(\''+d.id+'\')" title="Draft a Request for Proposal and send it to the listing brokers">📋 Generate RFP</button>':'')+'</div>';
+      + (candidateProps.length?'<button class="miniadd ai" onclick="DF.generateRfp(\''+d.id+'\')" title="Draft a Request for Proposal and send it to the listing brokers">📋 Generate RFP</button>':'')+'</div>';
+
+    var reportHtml = reportProps.length ? reportProps.map(function(p){ return reportCard(p, d.id); }).join('') : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No buildings in the market report yet. On a candidate building above, click “→ Add to market report”.</div>';
+    var reportSection = reportHtml + '<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:4px">'
+      + (reportProps.length?'<button class="share-btn" onclick="DF.generateMarketReport(\''+d.id+'\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/></svg> Generate market report</button>':'')+'</div>';
 
     // group rounds + documents by proposal
     var roundsByProp={}; rounds.forEach(function(r){ (roundsByProp[r.proposal_id]=roundsByProp[r.proposal_id]||[]).push(r); });
@@ -1434,7 +1462,8 @@ window.DF = (function(){
       +   '<div class="modelcta"><div><div class="modelcta-t">Build the financial case</div><div class="modelcta-s">Model stay-vs-go and every option with full opex, parking, concessions, one-time costs, and headcount-growth bands — the numbers that justify your fee.</div></div>'
       +   '<button class="share-btn" onclick="DF.openModel(\''+d.id+'\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg> Open occupancy model</button></div>'
       + '</div>'
-      + '<div class="sec"><div class="sec-h"><h2>Buildings</h2><span class="hint">The properties in play for this client</span></div>'+propsHtml2+'</div>'
+      + '<div class="sec"><div class="sec-h"><h2>Buildings</h2><span class="hint">Candidate properties — the pool to build a report from</span></div>'+propsHtml2+'</div>'
+      + '<div class="sec"><div class="sec-h"><h2>Market report</h2><span class="hint">The buildings you\'ve curated for this client — generate a report, then send the winners on tour</span></div>'+reportSection+'</div>'
       + '<div class="sec"><div class="sec-h"><h2>Tour schedule</h2><span class="hint">Building visits for this client</span></div>'+toursSection+'</div>'
       + '<div class="sec"><div class="sec-h"><h2>Proposals &amp; rounds</h2>'+addProposalBtn+'</div>'+propsHtmlList+'</div>'
       + '<div class="sec"><div class="sec-h"><h2>Transaction checklist</h2><span class="hint">Every step from engagement to move-in</span></div><div id="checklistBody">'+checklistSection(d,steps)+'</div></div>'
@@ -1584,7 +1613,7 @@ window.DF = (function(){
     if(!matches.length) return '';
     return '<div class="qnr-match"><div class="qnr-match-h">✨ Best-fit buildings <span class="qnr-hint">matched from their answers — amenities, size &amp; budget</span></div>'
       + matches.map(function(m){
-          return '<div class="cd-row" style="cursor:default"><span class="cd-row-nm">'+esc(m.b.name)+' <span class="qnr-fit">fit '+m.score+'</span></span>'
+          return '<div class="cd-row" style="cursor:default"><span class="cd-row-nm nm-link" onclick="DF.viewBuilding(\''+esc(m.b.id)+'\')" title="See building details">'+esc(m.b.name)+' ↗ <span class="qnr-fit">fit '+m.score+'</span></span>'
             + '<span class="cd-row-meta">'+esc(m.b.submarket||'')+(m.reasons.length?' · '+esc(m.reasons.slice(0,2).join(', ')):'')+'</span>'
             + '<button class="qnr-add" onclick="DF.addMatchToDeal(\''+dealId+'\',\''+esc(m.b.id)+'\',this)">+ Add to deal</button></div>';
         }).join('')
@@ -2064,8 +2093,11 @@ window.DF = (function(){
   function propCard(p, dealId, inTour){
     var statusSel='<select class="pstat" onchange="DF.setPropStatus(\''+p.id+'\',this.value,\''+dealId+'\')">'+PROP_STATUS.map(function(s){return '<option value="'+s[0]+'"'+(p.status===s[0]?' selected':'')+'>'+s[1]+'</option>';}).join('')+'</select>';
     var contact=null; if(p.building_id && _portalBuildings){ var pb=_portalBuildings.filter(function(b){return b.id===p.building_id;})[0]; if(pb) contact=pb.leasingContact; }
-    var acts=(inTour?'<span class="ptag-in">✓ in tour</span>':'<button class="miniadd" onclick="DF.addToTour(\''+p.id+'\',\''+dealId+'\')">+ Add to tour</button>');
-    return '<div class="pcard"><div class="top"><div><div class="nm">'+esc(p.name||'Untitled building')+'</div>'
+    var canView=!!p.building_id;
+    var acts='<button class="miniadd" onclick="DF.setPropStatus(\''+p.id+'\',\'shortlisted\',\''+dealId+'\')" title="Curate into the market report">→ Add to market report</button>'
+      + (inTour?'<span class="ptag-in">✓ in tour</span>':'<button class="miniadd" onclick="DF.addToTour(\''+p.id+'\',\''+dealId+'\')">+ Add to tour</button>');
+    var nm=canView?'<div class="nm nm-link" onclick="DF.viewBuilding(\''+esc(p.building_id)+'\')" title="See building details">'+esc(p.name||'Untitled building')+' ↗</div>':'<div class="nm">'+esc(p.name||'Untitled building')+'</div>';
+    return '<div class="pcard"><div class="top"><div>'+nm
       + (p.address?'<div class="ad">'+esc(p.address)+'</div>':'')
       + (contact?'<div class="ad" style="color:var(--ink-faint)">Listing: '+esc(contact.name||'')+(contact.company?', '+esc(contact.company):'')+(contact.email?' · '+esc(contact.email):'')+'</div>':'')
       + '</div>'+statusSel+'</div>'
@@ -2088,6 +2120,109 @@ window.DF = (function(){
     }catch(e){ return false; }
   }
   async function addToTour(propId, dealId){ await ensureTourStop(propId, dealId); openDeal(dealId); }
+
+  /* ---------- building detail (click any building to see the full dossier) ---------- */
+  function _bSpec(l,v){ return v?('<div class="bd-spec"><span class="bd-spec-l">'+l+'</span><span class="bd-spec-v">'+esc(v)+'</span></div>'):''; }
+  function viewBuilding(id){
+    if(!id){ alert('This building isn’t in the market catalog, so there’s no detail sheet for it.'); return; }
+    var b=(_portalBuildings||[]).filter(function(x){return x.id===id;})[0];
+    if(!b){ loadPortalBuildings().then(function(){ if((_portalBuildings||[]).some(function(x){return x.id===id;})) viewBuilding(id); else alert('Building details not found.'); }); return; }
+    var cs=_cscore(b);
+    var specs=_bSpec('Class',b.class)+_bSpec('Size',b.size?b.size+' SF':'')+_bSpec('Built',b.yearBuilt)+_bSpec('Renovated',b.renovated)+_bSpec('Floors',b.floors)+_bSpec('Floor plate',b.floorPlate?b.floorPlate+' SF':'')+_bSpec('Parking',b.parking);
+    var avail = (b.availabilities&&b.availabilities.length)
+      ? '<table class="bd-avail"><thead><tr><th>Suite</th><th>Floor</th><th class="num">SF</th><th>Rent</th></tr></thead><tbody>'
+        + b.availabilities.map(function(a){ return '<tr><td>'+esc(a.suite||'—')+'</td><td>'+esc(a.floor||'—')+'</td><td class="num">'+(a.sf?Number(a.sf).toLocaleString():'—')+'</td><td>'+esc(a.rent||b.rent||'—')+'</td></tr>'; }).join('')
+        + '</tbody></table>'
+      : (b.avail?'<div class="bd-p">'+esc(b.avail)+' SF available'+(b.rent?' · '+esc(b.rent):'')+'</div>':'<div class="bd-p" style="color:var(--ink-faint)">No current availability listed.</div>');
+    var amenBars=MATCH_CATS.map(function(c){ var s=cs[c[0]]||0; return '<div class="bd-amen"><span class="bd-amen-l">'+c[1]+'</span><span class="bd-bar"><i style="width:'+Math.round(s*10)+'%"></i></span><b>'+s.toFixed(1)+'</b></div>'; }).join('');
+    var access = b.access ? Object.keys(b.access).map(function(k){ return '<div class="bd-p"><b>'+esc(k)+':</b> '+esc(b.access[k])+'</div>'; }).join('') : '';
+    var feats = (b.features&&b.features.length)?'<div class="bd-feats">'+b.features.map(function(f){return '<span class="bd-feat">'+esc(f)+'</span>';}).join('')+'</div>':'';
+    var c=b.leasingContact;
+    openSheet('<h3>'+esc(b.name||'Building')+'</h3>'
+      + '<div class="ssub">'+esc([b.class?'Class '+b.class:'', b.submarket, b.addr].filter(Boolean).join(' · '))+'</div>'
+      + (specs?'<div class="bd-specs">'+specs+'</div>':'')
+      + '<div class="bd-h">Availability</div>'+avail
+      + '<div class="bd-h">Walkable amenities</div><div class="bd-amens">'+amenBars+'</div>'
+      + (b.read?'<div class="bd-h">The neighborhood</div><div class="bd-p">'+esc(b.read)+'</div>':'')
+      + (access?'<div class="bd-h">Access</div>'+access:'')
+      + (feats?'<div class="bd-h">Building features</div>'+feats:'')
+      + (c?'<div class="bd-h">Listing contact</div><div class="bd-p">'+esc(c.name||'')+(c.company?', '+esc(c.company):'')+(c.phone?' · '+esc(c.phone):'')+(c.email?' · '+esc(c.email):'')+'</div>':'')
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Close</button>'
+      + '<a class="btn" href="https://www.google.com/maps/search/?api=1&query='+encodeURIComponent((b.name||'')+' '+(b.addr||''))+'" target="_blank" rel="noopener" style="text-decoration:none">View on map ↗</a></div>');
+  }
+
+  /* ---------- market report: broker-curated shortlist (deal_property.status
+     'shortlisted') → a printable report of every building's full info ---------- */
+  function reportCard(p, dealId){
+    var canView=!!p.building_id;
+    return '<div class="pcard"><div class="top"><div>'
+      + (canView?'<div class="nm" style="cursor:pointer" onclick="DF.viewBuilding(\''+esc(p.building_id)+'\')" title="See building details">'+esc(p.name||'Building')+' ↗</div>':'<div class="nm">'+esc(p.name||'Building')+'</div>')
+      + (p.address?'<div class="ad">'+esc(p.address)+'</div>':'')+'</div></div>'
+      + '<div class="pactions">'
+      + (canView?'<button class="miniadd" onclick="DF.viewBuilding(\''+esc(p.building_id)+'\')">View details</button>':'')
+      + '<button class="miniadd" onclick="DF.addToTour(\''+p.id+'\',\''+dealId+'\')">+ Add to tour</button>'
+      + '<button class="miniadd" onclick="DF.setPropStatus(\''+p.id+'\',\'considering\',\''+dealId+'\')" title="Move back to Buildings">↩ Remove from report</button>'
+      + '</div></div>';
+  }
+  async function generateMarketReport(dealId){
+    var d=deals.filter(function(x){return x.id===dealId;})[0]||{};
+    var reportProps=[];
+    try{ reportProps=await q(sb.from('deal_properties').select('*').eq('deal_id',dealId).eq('status','shortlisted')); }catch(e){}
+    if(!reportProps.length){ alert('Add buildings to the market report first.'); return; }
+    await loadPortalBuildings();
+    var dateStr=new Date().toLocaleDateString(undefined,{year:'numeric',month:'long',day:'numeric'});
+    var sections=reportProps.map(function(p,i){
+      var b=(_portalBuildings||[]).filter(function(x){return x.id===p.building_id;})[0];
+      var name=p.name||(b&&b.name)||'Building', addr=p.address||(b&&b.addr)||'';
+      if(!b){ return '<div class="mr-b"><div class="mr-bn">'+(i+1)+'. '+esc(name)+'</div>'+(addr?'<div class="mr-ba">'+esc(addr)+'</div>':'')+'<div class="mr-p" style="color:#888">Detailed specs unavailable for this building.</div></div>'; }
+      var cs=_cscore(b);
+      var specs=[['Class',b.class],['Size',b.size?b.size+' SF':''],['Built',b.yearBuilt],['Floors',b.floors],['Parking',b.parking]].filter(function(x){return x[1];}).map(function(x){return '<span class="mr-spec"><b>'+esc(x[1])+'</b> '+x[0]+'</span>';}).join('');
+      var avail=(b.availabilities&&b.availabilities.length)
+        ? '<table class="mr-avail"><thead><tr><th>Suite</th><th>Floor</th><th class="num">SF</th><th>Rent</th></tr></thead><tbody>'+b.availabilities.map(function(a){return '<tr><td>'+esc(a.suite||'—')+'</td><td>'+esc(a.floor||'—')+'</td><td class="num">'+(a.sf?Number(a.sf).toLocaleString():'—')+'</td><td>'+esc(a.rent||b.rent||'—')+'</td></tr>';}).join('')+'</tbody></table>'
+        : (b.avail?'<div class="mr-p">'+esc(b.avail)+' SF available'+(b.rent?' · '+esc(b.rent):'')+'</div>':'');
+      var amen=MATCH_CATS.map(function(c){return '<span class="mr-chip">'+c[1]+' <b>'+(cs[c[0]]||0).toFixed(1)+'</b></span>';}).join('');
+      var c=b.leasingContact;
+      return '<div class="mr-b"><div class="mr-bn">'+(i+1)+'. '+esc(name)+'</div>'
+        + '<div class="mr-ba">'+esc([b.class?'Class '+b.class:'', b.submarket, addr].filter(Boolean).join(' · '))+'</div>'
+        + (specs?'<div class="mr-specs">'+specs+'</div>':'')
+        + (avail?'<div class="mr-sub">Availability</div>'+avail:'')
+        + '<div class="mr-sub">Walkable amenities <span class="mr-note">(0–10)</span></div><div class="mr-chips">'+amen+'</div>'
+        + (b.read?'<div class="mr-sub">The neighborhood</div><div class="mr-p">'+esc(b.read)+'</div>':'')
+        + (b.features&&b.features.length?'<div class="mr-p"><b>Features:</b> '+esc(b.features.join(', '))+'</div>':'')
+        + (c?'<div class="mr-p"><b>Listing contact:</b> '+esc(c.name||'')+(c.company?', '+esc(c.company):'')+(c.phone?' · '+esc(c.phone):'')+(c.email?' · '+esc(c.email):'')+'</div>':'')
+        + '</div>';
+    }).join('');
+    var toc = reportProps.length>1 ? '<div class="mr-toc"><div class="mr-toc-h">In this report</div><ol>'+reportProps.map(function(p){ var b=(_portalBuildings||[]).filter(function(x){return x.id===p.building_id;})[0]; return '<li>'+esc(p.name||(b&&b.name)||'Building')+(b&&b.submarket?' <span>— '+esc(b.submarket)+'</span>':'')+'</li>'; }).join('')+'</ol></div>' : '';
+    var html='<!doctype html><html><head><meta charset="utf-8"><title>Market Report'+(d.client_name?' — '+esc(d.client_name):'')+'</title>'
+      +'<style>'
+      +'*{box-sizing:border-box}body{font:14px/1.55 -apple-system,Segoe UI,Inter,sans-serif;color:#1a1d21;margin:0;padding:46px 54px;max-width:920px}'
+      +'.mr-head{border-bottom:3px solid #1a1d21;padding-bottom:16px;margin-bottom:6px}'
+      +'.mr-logo{font:800 20px Georgia,serif;letter-spacing:-.01em}.mr-logo span{color:#c0392b}'
+      +'.mr-h1{font:800 30px Georgia,serif;margin:14px 0 4px}'
+      +'.mr-meta{font-size:12.5px;color:#666;text-transform:uppercase;letter-spacing:.06em}'
+      +'.mr-toc{margin:22px 0}.mr-toc-h{font:700 11px sans-serif;text-transform:uppercase;letter-spacing:.08em;color:#888;margin-bottom:6px}'
+      +'.mr-toc ol{margin:0;padding-left:20px}.mr-toc li{font-weight:600;margin:3px 0}.mr-toc li span{font-weight:400;color:#888}'
+      +'.mr-b{border-top:1px solid #e2e5e9;padding:22px 0;page-break-inside:avoid}'
+      +'.mr-bn{font:800 19px Georgia,serif}.mr-ba{color:#666;font-size:13px;margin-top:2px}'
+      +'.mr-specs{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}'
+      +'.mr-spec{border:1px solid #dde0e4;border-radius:8px;padding:5px 10px;font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.04em}.mr-spec b{color:#1a1d21;font-size:13px;text-transform:none;letter-spacing:0}'
+      +'.mr-sub{font:700 11px sans-serif;text-transform:uppercase;letter-spacing:.06em;color:#888;margin:16px 0 6px}.mr-note{font-weight:400;text-transform:none}'
+      +'.mr-avail{width:100%;border-collapse:collapse;font-size:12.5px}.mr-avail th{text-align:left;border-bottom:2px solid #1a1d21;padding:5px 8px;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:#888}.mr-avail td{padding:6px 8px;border-bottom:1px solid #eceef1}.mr-avail .num{text-align:right}'
+      +'.mr-chips{display:flex;flex-wrap:wrap;gap:6px}.mr-chip{background:#f4f5f7;border-radius:999px;padding:4px 11px;font-size:12px;color:#666}.mr-chip b{color:#1a1d21}'
+      +'.mr-p{color:#333;margin:6px 0;font-size:13px}'
+      +'.mr-foot{border-top:1px solid #e2e5e9;margin-top:26px;padding-top:14px;font-size:11px;color:#999}'
+      +'@media print{body{padding:24px}.mr-b{page-break-inside:avoid}}'
+      +'</style></head><body>'
+      +'<div class="mr-head"><div class="mr-logo">Vantage<span>.</span></div>'
+      +'<div class="mr-h1">Market Report</div>'
+      +'<div class="mr-meta">'+esc(d.client_name||'Prepared for your review')+' &nbsp;·&nbsp; '+esc(dateStr)+' &nbsp;·&nbsp; '+reportProps.length+' building'+(reportProps.length===1?'':'s')+'</div></div>'
+      +toc
+      +sections
+      +'<div class="mr-foot">Availability, rents and building specifications are current to the date shown and subject to confirmation. Amenity scores reflect walkable points of interest near each building. Prepared for your confidential review.</div>'
+      +'</body></html>';
+    var w=window.open('','_blank'); if(!w){ alert('Please allow pop-ups to generate the market report.'); return; }
+    w.document.write(html); w.document.close(); w.focus(); setTimeout(function(){ try{ w.print(); }catch(e){} }, 350);
+  }
   async function buildTourFromTouring(dealId){
     try{
       var props=await q(sb.from('deal_properties').select('id,status').eq('deal_id',dealId));
@@ -3891,7 +4026,7 @@ window.DF = (function(){
     deleteDealAsk:deleteDealAsk, deleteDealCancel:deleteDealCancel, deleteDealDo:deleteDealDo,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask, recGo:recGo,
-    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, newRound:newRound,
+    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, viewBuilding:viewBuilding, generateMarketReport:generateMarketReport, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, newRound:newRound,
     generateRfp:generateRfp, copyRfp:copyRfp, downloadRfp:downloadRfp, sendRfpTo:sendRfpTo,
     setStage:setStage, basisChange:basisChange, marketCheck:marketCheck, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
     proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead,
