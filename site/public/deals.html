@@ -1452,6 +1452,7 @@ window.DF = (function(){
         + docsBlock(pr.id, d.id, docsByProp[pr.id]||[])
         + '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">'
         +   '<button class="miniadd" onclick="DF.newRound(\''+d.id+'\',\''+pr.id+'\')">+ Add round</button>'
+        +   '<button class="miniadd" onclick="DF.addProposalToModel(\''+d.id+'\',\''+pr.id+'\')" title="Model this proposal\'s latest round in Financial Analysis and open it">📊 Add to financial analysis</button>'
         +   '<button class="miniadd ai" onclick="DF.aiDraft(\''+d.id+'\',\''+pr.id+'\')">✨ Draft with AI</button>'
         +   '<button class="miniadd ai" onclick="DF.extractFromPdf(\''+d.id+'\',\''+pr.id+'\')" title="Upload a landlord proposal/LOI PDF — Claude reads it into a draft round">📄 Read a landlord PDF</button>'
         + '</div>'
@@ -3370,26 +3371,43 @@ window.DF = (function(){
   // Options LINKED to a proposal (o.proposalId) or the abstract (o.fromAbstract) auto-refresh from
   // that source; manually-added or unlinked options are never touched. Broker-set parking / one-time /
   // make-good on a linked option are preserved (rounds don't carry those).
+  // Map a saved proposal round to occupancy-model option economics.
+  function roundToEcon(r){
+    var nnn=['NNN','NN','N','ABS'].indexOf(r.rent_basis)>=0;
+    return { rsf:num(r.size_sf)||10000, termMonths:num(r.term_months)||60,
+      baseRentPSFmo:Math.round(((num(r.base_rent_psf)||0)/12)*100)/100,
+      opexBasePSFmo:Math.round(((num(r.opex_psf)||0)/12)*100)/100,
+      structure:nnn?'NNN':'FSG', rentEscalationPct:num(r.annual_escalation_pct)||3,
+      freeRentMonths:num(r.free_rent_months)||0, tiPSF:num(r.ti_psf)||0 };
+  }
   function syncDealModel(dealId, proposals, rounds, abstract){
     var key=modelKey(dealId), model;
     try{ var raw=localStorage.getItem(key); model = raw? JSON.parse(raw) : defaultModel(); }catch(e){ model=defaultModel(); }
     if(!model.options) model.options=[];
     model.options.forEach(migrateOpt);
-    var bestRound={}; (rounds||[]).forEach(function(r){ if(r.status!=='final') return; var b=bestRound[r.proposal_id]; if(!b||r.round_no>b.round_no) bestRound[r.proposal_id]=r; });
+    // latest round per proposal (any status) drives refresh; a FINAL round is what
+    // auto-adds a new option (drafts flow in only when the broker clicks "Add to
+    // financial analysis"). Nothing is dropped unless the proposal lost all rounds.
+    var latestRound={}, finalBest={};
+    (rounds||[]).forEach(function(r){
+      var l=latestRound[r.proposal_id]; if(!l||r.round_no>l.round_no) latestRound[r.proposal_id]=r;
+      if(r.status==='final'){ var f=finalBest[r.proposal_id]; if(!f||r.round_no>f.round_no) finalBest[r.proposal_id]=r; }
+    });
     var propById={}; (proposals||[]).forEach(function(p){ propById[p.id]=p; });
-    var byProp={}, abstractOpt=null;
-    model.options.forEach(function(o){ if(o.proposalId) byProp[o.proposalId]=o; if(o.fromAbstract) abstractOpt=o; });
-    // drop linked options whose proposal no longer has a final round
-    model.options=model.options.filter(function(o){ return !(o.proposalId && !bestRound[o.proposalId]); });
-    // refresh / create a "go" option per proposal from its latest final round
-    Object.keys(bestRound).forEach(function(pid){
-      var r=bestRound[pid], pr=propById[pid], nnn=['NNN','NN','N','ABS'].indexOf(r.rent_basis)>=0;
-      var econ={ rsf:num(r.size_sf)||10000, termMonths:num(r.term_months)||60,
-        baseRentPSFmo:Math.round(((num(r.base_rent_psf)||0)/12)*100)/100, opexBasePSFmo:Math.round(((num(r.opex_psf)||0)/12)*100)/100,
-        structure:nnn?'NNN':'FSG', rentEscalationPct:num(r.annual_escalation_pct)||3, freeRentMonths:num(r.free_rent_months)||0, tiPSF:num(r.ti_psf)||0 };
-      var ex=byProp[pid];
-      if(ex){ Object.assign(ex, econ); if(pr&&pr.title) ex.name=pr.title; }
-      else model.options.push(Object.assign(optSeed((pr&&pr.title)||'Proposal','go',econ.structure), econ, {proposalId:pid}));
+    var abstractOpt=null; model.options.forEach(function(o){ if(o.fromAbstract) abstractOpt=o; });
+    // drop linked options whose proposal no longer has any round (proposal cleared/deleted)
+    model.options=model.options.filter(function(o){ return !(o.proposalId && !latestRound[o.proposalId]); });
+    // refresh EVERY existing linked option from its proposal's latest round (keeps
+    // manually-added draft-based options fresh too)
+    model.options.forEach(function(o){
+      if(o.proposalId && latestRound[o.proposalId]){ Object.assign(o, roundToEcon(latestRound[o.proposalId])); var pr=propById[o.proposalId]; if(pr&&pr.title) o.name=pr.title; }
+    });
+    var byProp={}; model.options.forEach(function(o){ if(o.proposalId) byProp[o.proposalId]=o; });
+    // auto-add a "go" option for any proposal with a FINAL round that isn't modeled yet
+    Object.keys(finalBest).forEach(function(pid){
+      if(byProp[pid]) return;
+      var r=finalBest[pid], pr=propById[pid], econ=roundToEcon(r);
+      model.options.push(Object.assign(optSeed((pr&&pr.title)||'Proposal','go',econ.structure), econ, {proposalId:pid}));
     });
     // refresh / create a "stay" option from the lease abstract
     if(abstract){
@@ -3407,6 +3425,24 @@ window.DF = (function(){
   }
   function saveModel(){ try{ localStorage.setItem(modelKey(_modelDeal), JSON.stringify(_model)); }catch(e){} }
   function mergeDeal(o){ return Object.assign({}, o, { discountRatePct:_model.discountRatePct, headcountStart:_model.headcountStart, densityUsfPerEmp:_model.densityUsfPerEmp, loadFactor:_model.loadFactor, growth:_model.growth }); }
+
+  // Explicit "Add to financial analysis": create/refresh a linked option for this
+  // proposal from its latest round (ANY status — draft or final), then open the model.
+  async function addProposalToModel(dealId, proposalId){
+    var rounds=[]; try{ rounds=await q(sb.from('proposal_rounds').select('*').eq('proposal_id',proposalId).order('round_no',{ascending:false})); }catch(e){}
+    var pr=null; try{ pr=(await q(sb.from('proposals').select('*').eq('id',proposalId).limit(1)))[0]||null; }catch(e){}
+    var key=modelKey(dealId), model;
+    try{ var raw=localStorage.getItem(key); model = raw? JSON.parse(raw) : defaultModel(); }catch(e){ model=defaultModel(); }
+    if(!model.options) model.options=[];
+    model.options.forEach(migrateOpt);
+    var econ = rounds.length ? roundToEcon(rounds[0]) : {};
+    var ex = model.options.filter(function(o){ return o.proposalId===proposalId; })[0];
+    if(ex){ Object.assign(ex, econ); if(pr&&pr.title) ex.name=pr.title; }
+    else { model.options.push(Object.assign(optSeed((pr&&pr.title)||'Proposal','go',econ.structure||'NNN'), econ, {proposalId:proposalId})); }
+    if(model.options.some(function(o){ return o.proposalId||o.fromAbstract; })) model.options=model.options.filter(function(o){ return !o._default; });
+    try{ localStorage.setItem(key, JSON.stringify(model)); }catch(e){}
+    openModel(dealId);   // jump straight into Financial Analysis
+  }
 
   async function openModel(dealId){
     if(!window.VModel){ alert('The modeling engine failed to load. Refresh and try again.'); return; }
@@ -4057,7 +4093,7 @@ window.DF = (function(){
   return {
     optimizeTour:optimizeTour, draftAllTourEmails:draftAllTourEmails, tourMailCopy:tourMailCopy, tourMailSend:tourMailSend,
     showEmails:showEmails, filterEmails:filterEmails, viewEmail:viewEmail, composeEmail:composeEmail, draftCompose:draftCompose, connectEmail:connectEmail, pickProvider:pickProvider,
-    openModel:openModel, modelInput:modelInput, modelToggle:modelToggle, modelDeal:modelDeal, modelAdd:modelAdd, modelRemove:modelRemove, modelUnlink:modelUnlink, modelPrint:modelPrint, modelPdf:modelPdf, modelExcel:modelExcel, modelScenario:modelScenario, modelPull:modelPull,
+    openModel:openModel, addProposalToModel:addProposalToModel, modelInput:modelInput, modelToggle:modelToggle, modelDeal:modelDeal, modelAdd:modelAdd, modelRemove:modelRemove, modelUnlink:modelUnlink, modelPrint:modelPrint, modelPdf:modelPdf, modelExcel:modelExcel, modelScenario:modelScenario, modelPull:modelPull,
     showDashboard:showDashboard, showPipeline:showPipeline, setPipeView:setPipeView, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, cmpExcel:cmpExcel, toggleClosed:toggleClosed,
     openPortal:openPortal, portalCoSuggest:portalCoSuggest, portalCoPick:portalCoPick, portalInvite:portalInvite, portalRevoke:portalRevoke, portalAttach:portalAttach, portalDetach:portalDetach, portalNotify:portalNotify,
     clientLinkCompany:clientLinkCompany, clientCoSuggest:clientCoSuggest, clientCoPick:clientCoPick, sendQuestionnaire:sendQuestionnaire, viewQuestionnaire:viewQuestionnaire, copyFieldById:copyFieldById, addMatchToDeal:addMatchToDeal,
