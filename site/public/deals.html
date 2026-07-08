@@ -385,6 +385,25 @@
   .mmg input[type=number]{width:66px}
   .mnote{font:400 11px Inter;color:var(--ink-faint);line-height:1.6;margin-top:12px;max-width:900px}
   @media print{ .topbar,.subnav,.vnav,.app-shell>.vnav,.dsr-back,.mexport,.van-fab,.van-panel{display:none!important} .app-main,.app-shell{display:block!important} #modelView{display:block!important} .mgrid-wrap{overflow:visible;border:0} .mgrid{font-size:10px} }
+
+  /* unified client panel on the deal page */
+  .cl-link{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+  .cl-linkline{font:500 12px Inter;color:var(--ink-soft);margin-bottom:10px}
+  .cl-linkline b{color:var(--ink)}
+  .cl-relink{font:600 11px Inter;color:var(--accent);background:none;border:0;cursor:pointer;padding:0 2px;text-decoration:underline}
+  .cl-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+  .cl-card{border:1px solid var(--line);border-radius:11px;background:var(--paper-2);padding:12px 13px}
+  .cl-card-h{display:flex;justify-content:space-between;align-items:center;font:700 12px Inter;color:var(--ink);margin-bottom:8px}
+  .cl-mini{font:600 11px Inter;color:var(--accent);background:none;border:0;cursor:pointer}
+  .cl-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);text-decoration:none}
+  .cl-row:last-child{border-bottom:0}
+  .cl-row-nm{font:500 12px Inter;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cl-row-meta{font:600 10.5px Inter;color:var(--ink-faint);white-space:nowrap}
+  .cl-row-meta.ok{color:var(--fitness,#2e7d4f)}
+  .cl-empty{font:500 11.5px Inter;color:var(--ink-faint);padding:6px 0}
+  .cl-portal{text-align:center;padding:4px 0}
+  .cl-portal-n{font:800 22px 'Bricolage Grotesque',sans-serif;color:var(--accent)}
+  .cl-portal-l{font:500 11.5px Inter;color:var(--ink-soft);margin-bottom:8px}
 </style>
 </head>
 <body>
@@ -1075,6 +1094,7 @@ window.DF = (function(){
       + '</div>'
       + nextActionBanner(d, steps, proposals, tours, abstract)
       + '<div id="snapWrap">'+snapshotSection(d,steps)+'</div>'
+      + '<div class="sec" id="clientPanel"><div class="sec-h"><h2>Client</h2><span class="hint">Everything for this client — questionnaires, packages, portal &amp; comps</span></div><div id="clientPanelBody"><div class="sub" style="color:var(--ink-faint);font-size:12.5px">Loading client details…</div></div></div>'
       + '<div class="sec"><div class="sec-h"><h2>Tasks &amp; next steps</h2><span class="hint">Your to-dos for this client</span></div><div id="tasksBody">'+tasksSection(d,tasks)+'</div></div>'
       + '<div class="sec"><div class="sec-h"><h2>Occupancy model</h2><span class="hint">Compare options side-by-side — net effective, all-in &amp; NPV</span></div>'
       +   '<div class="modelcta"><div><div class="modelcta-t">Build the financial case</div><div class="modelcta-s">Model stay-vs-go and every option with full opex, parking, concessions, one-time costs, and headcount-growth bands — the numbers that justify your fee.</div></div>'
@@ -1089,6 +1109,117 @@ window.DF = (function(){
                     : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No lease abstract yet.</div><button class="miniadd" onclick="DF.editAbstract(\''+d.id+'\')">+ Create lease abstract</button>')
       +   leaseDocsBlock(d.id, abstract?abstract.id:null, leaseDocs)
       + '</div>';
+    fillClientPanel(d);
+  }
+
+  /* ==================================================================
+     UNIFIED CLIENT PANEL (Phase 1 of merging Clients into Deals)
+     Makes the deal page also the client page: pulls this client's
+     questionnaires + shared packages + portal access + comps by the
+     deal's HubSpot company id (comps match by tenant name — comps have
+     no company id). Loaded async so it never slows the deal view.
+     ================================================================== */
+  async function fillClientPanel(d){
+    var box=$('clientPanelBody'); if(!box) return;
+    if(!d.hs_company_id){
+      box.innerHTML='<div class="cl-link"><div class="sub" style="font-size:12.5px;color:var(--ink-soft)">This deal isn’t linked to a client company yet. Link it to pull in the client’s questionnaires, shared packages, and portal access.</div>'
+        + '<button class="miniadd" onclick="DF.clientLinkCompany(\''+d.id+'\')">🔗 Link to a client company</button></div>';
+      return;
+    }
+    var hsId=d.hs_company_id, name=d.client_name||'this client';
+    var intakes=[], pkgs=[], portal=[], comps=[];
+    try{ intakes=await q(sb.from('intakes').select('slug,company_name,status,created_at,completed_at').eq('hs_company_id',hsId).order('created_at',{ascending:false})); }catch(e){}
+    try{ pkgs=await q(sb.from('portal_package_links').select('slug,label,created_at').eq('hs_company_id',hsId).order('created_at',{ascending:false})); }catch(e){}
+    try{ portal=await q(sb.from('client_access').select('id,active').eq('hs_company_id',hsId)); }catch(e){}
+    if(d.client_name){ try{ comps=await q(sb.from('comps').select('building_name,address,rsf,execution_date,net_effective_rent_psf').ilike('tenant',d.client_name).order('execution_date',{ascending:false}).limit(8)); }catch(e){} }
+    renderClientPanel(d, {intakes:intakes||[], pkgs:pkgs||[], portal:portal||[], comps:comps||[]});
+  }
+
+  function renderClientPanel(d, data){
+    var box=$('clientPanelBody'); if(!box) return;
+    var esc2=esc;
+    // Questionnaires
+    var qHtml = data.intakes.length ? data.intakes.slice(0,4).map(function(it){
+      var done=it.status==='completed';
+      return '<a class="cl-row" href="index.html?intake='+encodeURIComponent(it.slug)+'" target="_blank" rel="noopener">'
+        +'<span class="cl-row-nm">'+esc2(it.company_name||d.client_name||'Questionnaire')+'</span>'
+        +'<span class="cl-row-meta '+(done?'ok':'')+'">'+(done?'Completed ✓':'Awaiting')+'</span></a>';
+    }).join('') : '<div class="cl-empty">None yet.</div>';
+
+    // Packages shared in the portal
+    var pHtml = data.pkgs.length ? data.pkgs.slice(0,4).map(function(p){
+      return '<a class="cl-row" href="client.html?c='+encodeURIComponent(p.slug)+'&via=portal" target="_blank" rel="noopener">'
+        +'<span class="cl-row-nm">'+esc2(p.label||'Building shortlist')+'</span>'
+        +'<span class="cl-row-meta">Open ↗</span></a>';
+    }).join('') : '<div class="cl-empty">None shared yet.</div>';
+
+    // Portal access
+    var activePeople=data.portal.filter(function(g){return g.active;}).length;
+    var portalHtml = '<div class="cl-portal">'
+      + '<div class="cl-portal-n">'+activePeople+'</div>'
+      + '<div class="cl-portal-l">'+(activePeople===1?'person has':'people have')+' portal access</div>'
+      + '<button class="miniadd" onclick="DF.openPortal(\''+d.id+'\')">Manage portal</button></div>';
+
+    // Comps (matched by tenant name)
+    var compHtml = data.comps.length ? data.comps.slice(0,5).map(function(c){
+      var ner=c.net_effective_rent_psf!=null?('$'+Number(c.net_effective_rent_psf).toFixed(2)+' NER'):'—';
+      return '<div class="cl-row" style="cursor:default"><span class="cl-row-nm">'+esc2(c.building_name||c.address||'—')+(c.rsf?' · '+Number(c.rsf).toLocaleString()+' SF':'')+'</span>'
+        +'<span class="cl-row-meta">'+esc2(ner)+'</span></div>';
+    }).join('') : '<div class="cl-empty">No comps found for this tenant name.</div>';
+
+    box.innerHTML =
+      '<div class="cl-linkline">Linked to <b>'+esc2(d.client_name||'client')+'</b>'
+      + ' <button class="cl-relink" onclick="DF.clientLinkCompany(\''+d.id+'\')" title="Change the linked HubSpot company">change</button></div>'
+      + '<div class="cl-grid">'
+      +   '<div class="cl-card"><div class="cl-card-h"><span>Questionnaires</span><button class="cl-mini" onclick="DF.sendQuestionnaire(\''+d.id+'\')">+ Send</button></div>'+qHtml+'</div>'
+      +   '<div class="cl-card"><div class="cl-card-h"><span>Option packages</span></div>'+pHtml+'</div>'
+      +   '<div class="cl-card"><div class="cl-card-h"><span>Portal</span></div>'+portalHtml+'</div>'
+      +   '<div class="cl-card"><div class="cl-card-h"><span>Comps <span style="font-weight:400;color:var(--ink-faint)">(by tenant name)</span></span></div>'+compHtml+'</div>'
+      + '</div>';
+  }
+
+  // Link / relink the deal to a HubSpot company (so the client panel populates).
+  async function clientLinkCompany(dealId){
+    _clcDeal=dealId;
+    openSheet('<h3>Link to a client company</h3><div class="ssub">Connect this deal to a HubSpot company so its questionnaires, packages, and portal access show up here.</div>'
+      + fld('Company','<input id="clc_co" placeholder="start typing the company name" autocomplete="off" oninput="DF.clientCoSuggest(this.value)" autofocus><div class="sugg" id="clc_sugg"></div>')
+      + '<div class="formerr" id="clc_err"></div>'
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Close</button></div>');
+    loadCompanies();
+  }
+  var _clcDeal=null, _clcList=[];
+  function clientCoSuggest(val){
+    var el=$('clc_sugg'); if(!el) return;
+    val=(val||'').trim().toLowerCase();
+    if(val.length<2){ el.innerHTML=''; el.classList.remove('on'); return; }
+    if(_companies===null){ loadCompanies().then(function(){ var f=$('clc_co'); clientCoSuggest(f?f.value:val); }); return; }
+    _clcList=_companies.filter(function(c){ return (c.name||'').toLowerCase().indexOf(val)>=0; }).slice(0,8);
+    if(!_clcList.length){ el.innerHTML='<div class="sugg-none">No HubSpot match. Add the company in the Clients tab first.</div>'; el.classList.add('on'); return; }
+    el.innerHTML=_clcList.map(function(c,i){ return '<div class="sugg-i" onclick="DF.clientCoPick('+i+')"><span class="sugg-n">'+esc(c.name)+'</span><span class="sugg-a">'+esc(c.industry||'')+(c.city?' · '+esc(c.city):'')+'</span></div>'; }).join('');
+    el.classList.add('on');
+  }
+  async function clientCoPick(i){
+    var c=_clcList[i]; if(!c||!_clcDeal) return;
+    try{
+      await q(sb.from('deals').update({hs_company_id:c.id}).eq('id',_clcDeal).select().single());
+      var d=deals.filter(function(x){return x.id===_clcDeal;})[0]; if(d) d.hs_company_id=c.id;
+      closeSheet(); openDeal(_clcDeal);
+    }catch(e){ var er=$('clc_err'); if(er) er.textContent='Could not link: '+(e.message||e); }
+  }
+
+  // Send a questionnaire to this client (create-intake), then refresh the panel.
+  async function sendQuestionnaire(dealId){
+    var d=deals.filter(function(x){return x.id===dealId;})[0]; if(!d) return;
+    try{
+      var s=await sb.auth.getSession(); var token=s&&s.data&&s.data.session?s.data.session.access_token:null;
+      var res=await fetch('/.netlify/functions/create-intake',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token:token, company:d.client_name||'Client', hsCompanyId:d.hs_company_id||undefined})});
+      var out=await res.json().catch(function(){return {};});
+      if(!res.ok||!out.url) throw new Error(out.error||('Error '+res.status));
+      if(typeof aiToast==='function') aiToast('Questionnaire created — link copied.');
+      try{ await navigator.clipboard.writeText(out.url); }catch(e){}
+      fillClientPanel(d);
+    }catch(e){ alert('Could not create the questionnaire: '+(e.message||e)); }
   }
 
   /* ---------- deal snapshot: progress + commission ---------- */
@@ -3245,6 +3376,7 @@ window.DF = (function(){
     openModel:openModel, modelInput:modelInput, modelToggle:modelToggle, modelDeal:modelDeal, modelAdd:modelAdd, modelRemove:modelRemove, modelUnlink:modelUnlink, modelPrint:modelPrint, modelPdf:modelPdf, modelExcel:modelExcel, modelScenario:modelScenario, modelPull:modelPull,
     showDashboard:showDashboard, showPipeline:showPipeline, setPipeView:setPipeView, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, cmpExcel:cmpExcel, toggleClosed:toggleClosed,
     openPortal:openPortal, portalCoSuggest:portalCoSuggest, portalCoPick:portalCoPick, portalInvite:portalInvite, portalRevoke:portalRevoke, portalAttach:portalAttach, portalDetach:portalDetach, portalNotify:portalNotify,
+    clientLinkCompany:clientLinkCompany, clientCoSuggest:clientCoSuggest, clientCoPick:clientCoPick, sendQuestionnaire:sendQuestionnaire,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask, recGo:recGo,
     newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, newRound:newRound,
