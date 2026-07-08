@@ -42,6 +42,21 @@
   .dealhead .meta{font:500 12.5px Inter;color:var(--ink-faint);margin-top:4px}
   .stagepick{display:flex;align-items:center;gap:8px}
   .stagepick label{font:600 10.5px Inter;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-faint)}
+  /* shared styled native <select>: our font + a custom caret so dropdowns aren't browser-default */
+  select.selctl,.stagepick select{-webkit-appearance:none;-moz-appearance:none;appearance:none;
+    font:600 13px Inter;color:var(--ink);padding:9px 34px 9px 13px;border:1px solid var(--line-2);
+    border-radius:9px;background-color:var(--paper);cursor:pointer;line-height:1.2;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238a93a0' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+    background-repeat:no-repeat;background-position:right 11px center;background-size:14px}
+  select.selctl:hover,.stagepick select:hover{border-color:var(--ink-soft)}
+  select.selctl:focus,.stagepick select:focus{outline:none;border-color:var(--accent)}
+  /* Add-proposal: segmented AI/manual mode toggle */
+  .np-modes{display:flex;gap:5px;margin:6px 0 16px;background:var(--paper-2);border:1px solid var(--line);border-radius:12px;padding:4px}
+  .np-mode{flex:1;font:600 12.5px Inter;color:var(--ink-soft);background:none;border:0;border-radius:9px;padding:10px 10px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:background .12s,color .12s}
+  .np-mode:hover{color:var(--ink)}
+  .np-mode.on{background:var(--accent);color:#fff}
+  .np-mode.on:hover{color:#fff}
+  .np-hint{font:500 12px Inter;color:var(--ink-faint);margin:-6px 0 12px}
 
   .sec{margin-top:26px}
   .sec-h{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
@@ -136,7 +151,8 @@
   .sugg-a{font:500 11.5px Inter;color:var(--ink-faint)}
   .sugg-none{padding:9px 12px;font:500 11.5px Inter;color:var(--ink-faint)}
   .pcard .pactions{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:10px}
-  .pstat{font:500 11.5px Inter;padding:5px 9px;border:1px solid var(--line-2);border-radius:7px;background:var(--paper);color:var(--ink-soft);cursor:pointer;white-space:nowrap}
+  .pstat{-webkit-appearance:none;-moz-appearance:none;appearance:none;font:600 11.5px Inter;padding:5px 26px 5px 10px;border:1px solid var(--line-2);border-radius:7px;background-color:var(--paper);color:var(--ink-soft);cursor:pointer;white-space:nowrap;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238a93a0' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");background-repeat:no-repeat;background-position:right 8px center;background-size:12px}
   .pstat:focus{outline:none;border-color:var(--accent)}
   .ptag-in{font:600 11px Inter;color:#2e7d4f}
   .te-ta{width:100%;min-height:230px;font:400 13px Inter;line-height:1.5;padding:12px;border:1px solid var(--line-2);border-radius:9px;background:var(--paper);color:var(--ink);resize:vertical;margin-bottom:12px}
@@ -155,6 +171,9 @@
   .fld.full{grid-column:1/-1}
   .fld label{font:600 10.5px Inter;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint)}
   .fld input,.fld select,.fld textarea{font:500 14px Inter;padding:10px 12px;border:1px solid var(--line-2);border-radius:9px;background:var(--paper);color:var(--ink);width:100%}
+  .fld select{-webkit-appearance:none;-moz-appearance:none;appearance:none;cursor:pointer;padding-right:36px;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238a93a0' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+    background-repeat:no-repeat;background-position:right 12px center;background-size:14px}
   .fld input:focus,.fld select:focus,.fld textarea:focus{outline:none;border-color:var(--accent)}
   .fld textarea{resize:vertical;min-height:62px}
   .fld .u{font:500 11px Inter;color:var(--ink-faint)}
@@ -1474,7 +1493,7 @@ window.DF = (function(){
       +       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>'
       +       'Portal</button>'
       +     '<div class="stagepick"><label>Stage</label>'
-      +     '<select class="fld" style="width:auto" onchange="DF.setStage(\''+d.id+'\',this.value)">'+stageOpts+'</select></div>'
+      +     '<select class="selctl" onchange="DF.setStage(\''+d.id+'\',this.value)">'+stageOpts+'</select></div>'
       +     '<span id="delWrap">'+deleteBtn(d.id)+'</span>'
       +   '</div>'
       + '</div>'
@@ -2345,27 +2364,83 @@ window.DF = (function(){
   }
 
   /* ---------- create: proposal ---------- */
+  var _npMode='ai';
   async function newProposal(dealId){
     var props=[];
     try{ props=await q(sb.from('deal_properties').select('id,name').eq('deal_id',dealId).order('sort_order')); }catch(e){}
     var propSel = props.length
       ? '<select id="f_prop"><option value="">— none —</option>'+props.map(function(p){return '<option value="'+p.id+'">'+esc(p.name)+'</option>';}).join('')+'</select>'
       : '<select id="f_prop" disabled><option>Add a building first (optional)</option></select>';
-    openSheet('<h3>Add proposal</h3><div class="ssub">A negotiation thread, usually for one building.</div>'
+    try{ _aiTmpls=await q(sb.from('proposal_templates').select('id,name,body').order('created_at',{ascending:false})); }catch(e){ _aiTmpls=[]; }
+    var tmplOpts='<option value="">— paste or upload below —</option>'+_aiTmpls.map(function(t){return '<option value="'+t.id+'">'+esc(t.name)+'</option>';}).join('');
+    _npMode='ai';
+
+    var aiPanel = '<div id="npAI" class="np-panel">'
+      + '<div class="np-hint">Describe the deal in plain words — Van drafts the full proposal and drops it in as a round to review.</div>'
+      + fld('Template <span class="u">optional</span>','<select id="ai_tmpl" onchange="DF.aiPickTmpl()">'+tmplOpts+'</select>')
+      + '<div class="fld"><label>Template text <span class="u">paste, or upload a Word .docx</span></label>'
+      +   '<textarea id="ai_tmplbody" placeholder="Paste your standard proposal template here, or upload a .docx →"></textarea>'
+      +   '<div style="display:flex;gap:14px;align-items:center;margin-top:7px;flex-wrap:wrap"><input type="file" id="ai_docx" accept=".docx" onchange="DF.aiDocx()">'
+      +   '<label style="display:flex;gap:6px;align-items:center;font:500 11.5px Inter;color:var(--ink-soft)"><input type="checkbox" id="ai_savetmpl"> save this template for reuse</label></div></div>'
+      + '<div class="fld"><label>Deal points <span class="u">type or talk</span><button class="vbtn" id="ai_mic" onclick="DF.toggleVoice(\'ai_mic\',\'ai_points\')" title="Dictate">🎙</button></label>'
+      +   '<textarea id="ai_points" placeholder="e.g. Water Garden suite 300, ~9,500 SF, 7-year term, asking $5.95 FSG — push for 4 months free and $60 TI, 3% annual bumps, one 5-yr option..."></textarea></div>'
+      + '<div class="formerr" id="ai_err"></div>'
+      + '</div>';
+    var manualPanel = '<div id="npManual" class="np-panel" style="display:none">'
+      + '<div class="np-hint">Enter the terms yourself — we log them as the first round and build the proposal from there.</div>'
+      + roundFields({})
+      + '</div>';
+
+    openSheet('<h3>Add proposal</h3><div class="ssub">Draft it your way — either describe it to Van, or enter the terms. We build the proposal either way.</div>'
       + fld('Title','<input id="f_title" placeholder="e.g. Water Garden — Suite 300" autofocus>')
       + fld('Building (optional)',propSel)
+      + '<div class="np-modes">'
+      +   '<button type="button" class="np-mode on" id="npModeAI" onclick="DF.npMode(\'ai\')">✨ Describe it to Van</button>'
+      +   '<button type="button" class="np-mode" id="npModeManual" onclick="DF.npMode(\'manual\')">✍️ Enter the terms</button>'
+      + '</div>'
+      + aiPanel + manualPanel
       + '<div class="formerr" id="f_err"></div>'
-      + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button><button class="btn pri" id="f_save">Add proposal</button></div>');
-    $('f_save').addEventListener('click',async function(){
-      var title=($('f_title').value||'').trim();
-      if(!title){ $('f_err').textContent='Enter a title.'; return; }
-      this.disabled=true; this.textContent='Saving…';
-      var propEl=$('f_prop'); var pid=(propEl&&!propEl.disabled&&propEl.value)?propEl.value:null;
-      try{
-        await q(sb.from('proposals').insert({deal_id:dealId, title:title, property_id:pid, status:'active'}).select().single());
-        closeSheet(); openDeal(dealId);
-      }catch(e){ $('f_err').textContent=e.message; this.disabled=false; this.textContent='Add proposal'; }
-    });
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button>'
+      +   '<button class="btn" id="np_draft" style="display:none">Save as draft</button>'
+      +   '<button class="btn pri" id="np_go">✨ Generate proposal</button></div>');
+    $('np_go').addEventListener('click', function(){ npSubmit(dealId, this, false); });
+    $('np_draft').addEventListener('click', function(){ npSubmit(dealId, this, true); });
+  }
+  function npMode(mode){
+    _npMode=mode;
+    var ai=mode==='ai';
+    $('npModeAI').classList.toggle('on', ai);
+    $('npModeManual').classList.toggle('on', !ai);
+    $('npAI').style.display = ai?'':'none';
+    $('npManual').style.display = ai?'none':'';
+    $('np_draft').style.display = ai?'none':'';
+    $('np_go').textContent = ai?'✨ Generate proposal':'Create proposal';
+  }
+  async function npSubmit(dealId, btn, asDraft){
+    var title=($('f_title').value||'').trim();
+    if(!title){ $('f_err').textContent='Enter a title.'; return; }
+    $('f_err').textContent='';
+    var propEl=$('f_prop'); var pid=(propEl&&!propEl.disabled&&propEl.value)?propEl.value:null;
+    if(_npMode==='ai'){
+      var points=($('ai_points').value||'').trim();
+      if(!points){ $('ai_err').textContent='Tell Van the deal points first (type or talk).'; return; }
+    }
+    var lbl=btn.textContent; btn.disabled=true; btn.textContent='Saving…';
+    var proposalId=null;
+    try{
+      var row=await q(sb.from('proposals').insert({deal_id:dealId, title:title, property_id:pid, status:'active'}).select().single());
+      proposalId=row&&row.id;
+    }catch(e){ $('f_err').textContent=e.message; btn.disabled=false; btn.textContent=lbl; return; }
+    if(_npMode==='ai'){
+      aiGenerate(dealId, proposalId, btn);   // reads ai_points/ai_tmplbody/ai_savetmpl; closes + toasts + refreshes
+      return;
+    }
+    // manual: log the entered terms as round 1, then open the deal
+    try{
+      var round=Object.assign(readRoundForm(), {deal_id:dealId, proposal_id:proposalId, round_no:1, status:(asDraft?'draft':'final'), source:'manual', created_by:me.id});
+      await q(sb.from('proposal_rounds').insert(round));
+      closeSheet(); openDeal(dealId);
+    }catch(e){ $('f_err').textContent=e.message; btn.disabled=false; btn.textContent=lbl; }
   }
 
   /* ---------- round form (shared by create + edit) ---------- */
@@ -4101,7 +4176,7 @@ window.DF = (function(){
     deleteDealAsk:deleteDealAsk, deleteDealCancel:deleteDealCancel, deleteDealDo:deleteDealDo,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask, recGo:recGo,
-    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, viewBuilding:viewBuilding, generateMarketReport:generateMarketReport, dealTab:dealTab, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, newRound:newRound,
+    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, viewBuilding:viewBuilding, generateMarketReport:generateMarketReport, dealTab:dealTab, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, npMode:npMode, newRound:newRound,
     generateRfp:generateRfp, copyRfp:copyRfp, downloadRfp:downloadRfp, sendRfpTo:sendRfpTo,
     setStage:setStage, basisChange:basisChange, marketCheck:marketCheck, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
     proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead,
