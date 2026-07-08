@@ -1481,6 +1481,7 @@ window.DF = (function(){
       + (function(){
           if(_activeTabDeal !== d.id){ _activeTab = 'overview'; _activeTabDeal = d.id; }
           var active = _activeTab || 'overview';
+          var _hasModel = false; try{ _hasModel = !!localStorage.getItem('vantage_model_'+d.id); }catch(e){}
           var P = {
             overview:
                 '<div id="snapWrap">'+snapshotSection(d,steps)+'</div>'
@@ -1495,11 +1496,13 @@ window.DF = (function(){
             touring:
                 '<div class="sec"><div class="sec-h"><h2>Tour schedule</h2><span class="hint">Building visits for this client</span></div>'+toursSection+'</div>',
             proposals:
-                '<div class="sec"><div class="sec-h"><h2>Occupancy model</h2><span class="hint">Compare options side-by-side — net effective, all-in &amp; NPV</span></div>'
-              +   '<div class="modelcta"><div><div class="modelcta-t">Build the financial case</div><div class="modelcta-s">Model stay-vs-go and every option with full opex, parking, concessions, one-time costs, and headcount-growth bands — the numbers that justify your fee.</div></div>'
+                '<div class="sec"><div class="sec-h"><h2>Proposals &amp; rounds</h2>'+addProposalBtn+'</div>'+propsHtmlList+'</div>',
+            financials:
+                '<div class="sec"><div class="sec-h"><h2>Financial analysis</h2><span class="hint">Evaluate the options you\'re pursuing — model every proposal &amp; round side by side</span></div>'
+              +   '<div class="modelcta"><div><div class="modelcta-t">Build the financial case</div><div class="modelcta-s">Bring in each option you\'re pursuing and every round of proposals, then compare stay-vs-go with full opex, parking, concessions, one-time costs and headcount-growth bands — net effective, all-in &amp; NPV. The numbers that justify your fee.</div></div>'
               +   '<button class="share-btn" onclick="DF.openModel(\''+d.id+'\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg> Open occupancy model</button></div>'
-              + '</div>'
-              + '<div class="sec"><div class="sec-h"><h2>Proposals &amp; rounds</h2>'+addProposalBtn+'</div>'+propsHtmlList+'</div>',
+              +   ((proposals&&proposals.length) ? '<div style="margin-top:14px;display:flex;gap:16px;align-items:center;flex-wrap:wrap"><button class="miniadd" onclick="DF.openCompare(\''+d.id+'\')">⇄ Compare proposals</button><span class="sub" style="color:var(--ink-faint);font-size:12px">'+proposals.length+' proposal'+(proposals.length===1?'':'s')+' on the table — line them up head-to-head.</span></div>' : '')
+              + '</div>',
             checklist:
                 '<div class="sec"><div class="sec-h"><h2>Transaction checklist</h2><span class="hint">Every step from engagement to move-in</span></div><div id="checklistBody">'+checklistSection(d,steps)+'</div></div>',
             lease:
@@ -1516,6 +1519,7 @@ window.DF = (function(){
             ['report','Market report',(reportProps&&reportProps.length)||null],
             ['touring','Touring',(tours&&tours.length)||null],
             ['proposals','Proposals',(proposals&&proposals.length)||null],
+            ['financials','Financial Analysis',(_hasModel?'✓':null)],
             ['checklist','Checklist',null],
             ['lease','Lease',abstract?1:null]
           ];
