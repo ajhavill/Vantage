@@ -424,7 +424,9 @@
 <div class="app-main">
 
 <!-- LOGIN GATE (shares vantage.css styles) -->
-<div id="authGate">
+<!-- hidden by default so a logged-in user never sees a sign-in flash on page load /
+     cross-page navigation; JS reveals it only when there is genuinely no session -->
+<div id="authGate" style="display:none">
   <div class="ag-card">
     <div class="ag-logo">Vantage<span class="dot">.</span></div>
     <div class="ag-by">Deal flow · Havill &amp; Co.</div>
@@ -656,7 +658,7 @@ window.DF = (function(){
   });
 
   function bindAuth(){
-    if(!window.supabase){ $('agErr').textContent='Could not reach the login service. Check your connection and refresh.'; return; }
+    if(!window.supabase){ $('authGate').style.display='flex'; $('agErr').textContent='Could not reach the login service. Check your connection and refresh.'; return; }
     sb=window.supabase.createClient(SUPA_URL, SUPA_ANON);
     window.vantageSB=sb;
     async function login(){
