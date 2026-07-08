@@ -610,20 +610,25 @@ window.DF = (function(){
   var _appBooted=false;
   function showApp(session){
     me=session.user;   // keep the user reference fresh across token refreshes
+    // ALWAYS hide the gate on any signed-in event, so a transient auth event can
+    // never leave the login screen showing over the app.
+    $('authGate').style.display='none';
     var chip=$('userChip'); if(chip){ chip.style.display='inline-flex'; $('userEmail').textContent=me.email||''; }
-    // Supabase re-fires onAuthStateChange on TOKEN_REFRESHED (~hourly / on refocus).
-    // Only bootstrap ONCE — re-running loadDeals() here is what used to yank the
-    // user out of whatever deal they were viewing back to the board.
+    // Bootstrap ONCE — re-running loadDeals() on every token refresh is what used
+    // to yank the user out of whatever deal they were viewing.
     if(_appBooted) return;
     _appBooted=true;
-    $('authGate').style.display='none';
-    // tenant-portal users don't belong in the deal pipeline — send them to their
-    // portal. (RLS already hides all broker data; this is UX, not security.)
-    try{ sb.from('profiles').select('role').eq('id',me.id).single()
-      .then(function(r){ if(r&&r.data&&r.data.role==='client') location.replace('portal.html'); }); }catch(e){}
-    try{ _view=localStorage.getItem('vantage_deal_view')||'board'; }catch(e){}
-    try{ loadPortalBuildings(); }catch(e){}
-    loadDeals();
+    // Defer the startup work OUT of the auth callback: calling Supabase queries
+    // synchronously inside onAuthStateChange can deadlock supabase-js and spuriously
+    // emit signed-out events (the "click a button → flash login → back in" bug).
+    setTimeout(function(){
+      // tenant-portal users don't belong in the deal pipeline — send them to their portal.
+      try{ sb.from('profiles').select('role').eq('id',me.id).single()
+        .then(function(r){ if(r&&r.data&&r.data.role==='client') location.replace('portal.html'); }); }catch(e){}
+      try{ _view=localStorage.getItem('vantage_deal_view')||'board'; }catch(e){}
+      try{ loadPortalBuildings(); }catch(e){}
+      loadDeals();
+    }, 0);
   }
   function showLogin(){ _appBooted=false; $('authGate').style.display='flex'; var c=$('userChip'); if(c) c.style.display='none'; if(window.Van) Van.close(); }
 
@@ -666,7 +671,12 @@ window.DF = (function(){
     $('agBtn').addEventListener('click',login);
     $('agPass').addEventListener('keydown',function(e){ if(e.key==='Enter') login(); });
     $('signOutBtn').addEventListener('click',async function(){ await sb.auth.signOut(); location.reload(); });
-    sb.auth.onAuthStateChange(function(_e,session){ if(session) showApp(session); else showLogin(); });
+    // Only a REAL sign-out shows the login screen. Token refreshes / tab-refocus /
+    // user-updated events keep the session and must never flash the gate.
+    sb.auth.onAuthStateChange(function(evt,session){
+      if(evt==='SIGNED_OUT'){ showLogin(); return; }
+      if(session) showApp(session);
+    });
     sb.auth.getSession().then(function(r){ if(r&&r.data&&r.data.session) showApp(r.data.session); else showLogin(); });
   }
 

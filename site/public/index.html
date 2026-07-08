@@ -3019,17 +3019,21 @@
     // snap the user back to the default module out of nowhere.
     if(showApp._booted) return;
     showApp._booted=true;
-    // tenant-portal users don't belong in the Cockpit — send them to their portal.
-    // (RLS already hides all broker data from them; this is UX, not security.)
-    try{ sb.from('profiles').select('role').eq('id',session.user.id).single()
-      .then(function(r){ if(r&&r.data&&r.data.role==='client') location.replace('portal.html'); }); }catch(e){}
-    // land on the right module (supports ?m= deep links), refreshing greeting + attention
-    if(window.showModule) showModule(initialModule());
-    // email-notification deep link: ?intake=<slug> opens straight to that response
-    if(!showApp._linked){
-      var iq=new URLSearchParams(location.search).get('intake');
-      if(iq){ showApp._linked=true; setTimeout(function(){ if(window.openIntakeFromLink) window.openIntakeFromLink(iq); try{history.replaceState({},'',location.pathname);}catch(e){} }, 400); }
-    }
+    // Defer startup OUT of the auth callback: calling Supabase queries synchronously
+    // inside onAuthStateChange can deadlock supabase-js and spuriously emit signed-out
+    // events (the "click a button → flash login → back in" bug).
+    setTimeout(function(){
+      // tenant-portal users don't belong in the Cockpit — send them to their portal.
+      try{ sb.from('profiles').select('role').eq('id',session.user.id).single()
+        .then(function(r){ if(r&&r.data&&r.data.role==='client') location.replace('portal.html'); }); }catch(e){}
+      // land on the right module (supports ?m= deep links), refreshing greeting + attention
+      if(window.showModule) showModule(initialModule());
+      // email-notification deep link: ?intake=<slug> opens straight to that response
+      if(!showApp._linked){
+        var iq=new URLSearchParams(location.search).get('intake');
+        if(iq){ showApp._linked=true; setTimeout(function(){ if(window.openIntakeFromLink) window.openIntakeFromLink(iq); try{history.replaceState({},'',location.pathname);}catch(e){} }, 400); }
+      }
+    }, 0);
   }
   function showLogin(){
     showApp._booted=false;
@@ -3058,7 +3062,12 @@
   var so=document.getElementById('signOutBtn');
   if(so) so.addEventListener('click',async function(){ await sb.auth.signOut(); location.reload(); });
 
-  sb.auth.onAuthStateChange(function(evt, session){ if(session) showApp(session); else showLogin(); });
+  // Only a REAL sign-out shows the login screen. Token refreshes / tab-refocus /
+  // user-updated events keep the session and must never flash the gate.
+  sb.auth.onAuthStateChange(function(evt, session){
+    if(evt==='SIGNED_OUT'){ showLogin(); return; }
+    if(session) showApp(session);
+  });
   sb.auth.getSession().then(function(r){ if(r && r.data && r.data.session) showApp(r.data.session); else showLogin(); });
 })();
 </script>
