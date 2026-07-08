@@ -137,6 +137,12 @@
 
   /* share + visibility */
   .dhactions{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .act-btn.danger{color:#C2453F;border-color:rgba(194,69,63,.35)}
+  .act-btn.danger:hover{background:rgba(194,69,63,.07);border-color:#C2453F}
+  .act-btn.danger.solid{background:#C2453F;color:#fff;border-color:#C2453F}
+  .act-btn.danger.solid:hover{background:#a83a35}
+  .delconfirm{display:inline-flex;align-items:center;gap:8px;font:600 12px Inter;color:#C2453F}
+  .delconfirm.err{color:#C2453F}
   .vis{font:600 10.5px Inter;border:1px solid var(--line-2);background:var(--paper);color:var(--ink-faint);border-radius:999px;padding:4px 11px;cursor:pointer;white-space:nowrap}
   .vis:hover{border-color:var(--ink-faint)}
   .vis.on{background:rgba(63,143,107,.12);border-color:rgba(63,143,107,.4);color:var(--fitness)}
@@ -1102,6 +1108,7 @@ window.DF = (function(){
       +       'Portal</button>'
       +     '<div class="stagepick"><label>Stage</label>'
       +     '<select class="fld" style="width:auto" onchange="DF.setStage(\''+d.id+'\',this.value)">'+stageOpts+'</select></div>'
+      +     '<span id="delWrap">'+deleteBtn(d.id)+'</span>'
       +   '</div>'
       + '</div>'
       + nextActionBanner(d, steps, proposals, tours, abstract)
@@ -1232,6 +1239,34 @@ window.DF = (function(){
       try{ await navigator.clipboard.writeText(out.url); }catch(e){}
       fillClientPanel(d);
     }catch(e){ alert('Could not create the questionnaire: '+(e.message||e)); }
+  }
+
+  /* ---------- delete a deal (two-click: Delete → Yes, delete) ----------
+     Permanently removes the deal; all its children (buildings, tours, proposals,
+     rounds, documents, abstract, tasks, steps, events) cascade-delete in the DB. */
+  function deleteBtn(dealId){
+    return '<button class="act-btn danger" onclick="DF.deleteDealAsk(\''+dealId+'\')" title="Delete this deal permanently">'
+      + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg> Delete</button>';
+  }
+  function deleteDealAsk(dealId){
+    var w=$('delWrap'); if(!w) return;
+    w.innerHTML='<span class="delconfirm">Delete permanently?'
+      + '<button class="act-btn" onclick="DF.deleteDealCancel(\''+dealId+'\')">Cancel</button>'
+      + '<button class="act-btn danger solid" onclick="DF.deleteDealDo(\''+dealId+'\')">Yes, delete</button></span>';
+  }
+  function deleteDealCancel(dealId){ var w=$('delWrap'); if(w) w.innerHTML=deleteBtn(dealId); }
+  async function deleteDealDo(dealId){
+    var w=$('delWrap'); if(w) w.innerHTML='<span class="delconfirm">Deleting…</span>';
+    try{
+      var res=await q(sb.from('deals').delete().eq('id',dealId).select());
+      if(!res || !res.length) throw new Error('Not permitted, or it was already removed.');
+      deals=deals.filter(function(x){ return x.id!==dealId; });
+      if(typeof aiToast==='function') aiToast('Deal deleted.');
+      showPipeline();
+    }catch(e){
+      if(w) w.innerHTML='<span class="delconfirm err">Could not delete: '+esc(e.message||e)
+        +' <button class="act-btn" onclick="DF.deleteDealCancel(\''+dealId+'\')">OK</button></span>';
+    }
   }
 
   /* ---------- deal snapshot: progress + commission ---------- */
@@ -3389,6 +3424,7 @@ window.DF = (function(){
     showDashboard:showDashboard, showPipeline:showPipeline, setPipeView:setPipeView, openDeal:openDeal, openCompare:openCompare, cmpRound:cmpRound, cmpExcel:cmpExcel, toggleClosed:toggleClosed,
     openPortal:openPortal, portalCoSuggest:portalCoSuggest, portalCoPick:portalCoPick, portalInvite:portalInvite, portalRevoke:portalRevoke, portalAttach:portalAttach, portalDetach:portalDetach, portalNotify:portalNotify,
     clientLinkCompany:clientLinkCompany, clientCoSuggest:clientCoSuggest, clientCoPick:clientCoPick, sendQuestionnaire:sendQuestionnaire,
+    deleteDealAsk:deleteDealAsk, deleteDealCancel:deleteDealCancel, deleteDealDo:deleteDealDo,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask, recGo:recGo,
     newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, newRound:newRound,
