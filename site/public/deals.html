@@ -295,6 +295,22 @@
   .tcard .tnotes{font:400 12px Inter;color:var(--ink-soft);margin-top:4px}
   .tcard .trow{display:flex;gap:9px;align-items:center;margin-top:9px;flex-wrap:wrap}
 
+  /* saved tour (persisted optimizer plan + map) */
+  .tourplan{border:1px solid var(--line);border-radius:12px;background:var(--paper-2);padding:14px 16px;margin-bottom:14px}
+  .tourplan .tp-h{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:4px}
+  .tourplan .tp-t{font:700 14px 'Bricolage Grotesque',sans-serif;color:var(--ink)}
+  .tourplan .tp-sub{font:500 11.5px Inter;color:var(--ink-faint)}
+  .tourplan .tp-row{display:flex;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)}
+  .tourplan .tp-row:last-of-type{border-bottom:0}
+  .tourplan .tp-when{font:700 12.5px 'JetBrains Mono',monospace;color:var(--accent,#2d6e7e);white-space:nowrap;min-width:112px}
+  .tourplan .tp-nm{font:700 13.5px 'Bricolage Grotesque',sans-serif;color:var(--ink)}
+  .tourplan .tp-ad{font:500 11.5px Inter;color:var(--ink-soft)}
+  .tourplan .tp-leg{font:500 11.5px Inter;color:var(--ink-faint);margin-top:3px}
+  .tourmap{height:340px;border:1px solid var(--line);border-radius:11px;margin-top:12px;overflow:hidden;background:var(--paper)}
+  .tp-missing{font:500 11.5px Inter;color:var(--ink-faint);margin-top:8px}
+  .tsave{font:600 11.5px Inter;color:var(--fitness,#3d8a5a);margin-top:8px;min-height:15px}
+  .tsave.warn{color:var(--dining,#c9543f)}
+
   /* lease abstract */
   .la-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px 16px;margin-top:12px}
   .la-l{font:600 10px Inter;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);margin-bottom:2px}
@@ -639,6 +655,7 @@
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.50.0/build/docxtemplater.js"></script>
 <script src="assets/van.js"></script>
 <script src="assets/model-engine.js"></script>
+<script src="assets/tour-plan.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 window.DF = (function(){
@@ -1383,6 +1400,8 @@ window.DF = (function(){
     var wrap = $('dealView'); if(!wrap) return;
     Array.prototype.forEach.call(wrap.querySelectorAll('.dtab-panel'), function(p){ p.classList.toggle('on', p.getAttribute('data-tab')===key); });
     Array.prototype.forEach.call(wrap.querySelectorAll('.dtab'), function(b){ b.classList.toggle('on', b.getAttribute('data-tab')===key); });
+    // the tour map can only size itself once its panel is actually visible
+    if(key==='touring') initTourMap();
   }
 
   async function openDeal(id){
@@ -1409,8 +1428,11 @@ window.DF = (function(){
       var events=[]; try{ events=await q(sb.from('deal_events').select('type,detail,created_at').eq('deal_id',id).order('created_at',{ascending:false})); }catch(e){}
       var steps=[]; try{ steps=await q(sb.from('deal_steps').select('*').eq('deal_id',id).order('sort_order')); }catch(e){}
       var tasks=[]; try{ tasks=await q(sb.from('deal_tasks').select('*').eq('deal_id',id).order('due_date',{ascending:true,nullsFirst:false})); }catch(e){}
+      // saved tour (persisted optimizer result) — renders itinerary + map with ZERO Google calls
+      _savedTour=null; try{ var stv=await q(sb.from('deal_tours').select('*').eq('deal_id',id).limit(1)); _savedTour=(stv&&stv[0])||null; }catch(e){}
       try{ syncDealModel(id, proposals, rounds, abstracts[0]||null); }catch(e){}
       renderDeal(d,props,proposals,rounds,docs,tours,abstracts[0]||null,events,steps,tasks);
+      if(_savedTour && _activeTab==='touring') initTourMap();
     }catch(e){ v.innerHTML='<div class="loading">Could not load deal: '+esc(e.message)+'</div>'; }
   }
 
@@ -1441,7 +1463,8 @@ window.DF = (function(){
     var toursHtml = (tours&&tours.length) ? tours.map(function(s){ return tourCard(s, propById, d.id); }).join('')
       : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No tour stops scheduled yet.</div>';
     var tourCount=(tours&&tours.length)||0;
-    var toursSection = (tourCount?bulkBar('touring',d.id,'→ Start proposals for selected'):'') + toursHtml + '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">'
+    var toursSection = '<div id="savedTourWrap">'+savedTourSection(d.id, _savedTour)+'</div>'
+      + (tourCount?bulkBar('touring',d.id,'→ Start proposals for selected'):'') + toursHtml + '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">'
       + '<button class="miniadd" onclick="DF.newTourStop(\''+d.id+'\')">+ Add tour stop</button>'
       + '<button class="miniadd" onclick="DF.buildTourFromTouring(\''+d.id+'\')">↻ Build from “touring” buildings</button>'
       + (tourCount>=2?'<button class="miniadd" onclick="DF.optimizeTour(\''+d.id+'\')" title="Van orders the buildings for the shortest drive and lays out arrival times">🗺️ Optimize route &amp; times</button>':'')
@@ -3943,6 +3966,126 @@ window.DF = (function(){
      ================================================================== */
   var _route=null;        // {dealId, stops:[...], plan:[...], startAddr, startPt}
   var _tourMail=null;     // {dealId, items:[{to,name,building,subject,text,sent}]}
+  var _savedTour=null;    // deal_tours row for the OPEN deal (set by openDeal)
+
+  /* ---------- saved tour: persist the optimizer result (deal_tours) ----------
+     The optimize run bills Google, so its result must survive click-out: on
+     success we upsert one row per deal (fire-and-forget), and openDeal loads it
+     back — full itinerary + map with ZERO Google calls. Row shape lives in
+     assets/tour-plan.js (pure + unit-tested). */
+  async function saveTourPlan(r){
+    var el=$('rt_saved');
+    try{
+      var row=TourPlan.rowFromPlan(r.dealId, r.plan, {
+        dwell:r.dwell, buffer:r.buffer, startAddr:r.startAddr||null,
+        leaveBy:r.leaveBy||null, firstDriveMin:r.firstDriveMin,
+        nogeo:r.nogeo||[], optimizedAt:r.optimizedAt
+      });
+      var saved=await q(sb.from('deal_tours').upsert(row,{onConflict:'deal_id'}).select().single());
+      _savedTour=saved||row;
+      el=$('rt_saved'); if(el){ el.classList.remove('warn'); el.textContent='✓ Tour saved — reopen this deal anytime, no re-optimize needed.'; }
+      // if the deal view behind the sheet is showing this deal, refresh its saved-tour card
+      var wrap=$('savedTourWrap'); if(wrap){ wrap.innerHTML=savedTourSection(r.dealId, _savedTour); if(_activeTab==='touring') initTourMap(); }
+    }catch(e){
+      el=$('rt_saved'); if(el){ el.classList.add('warn'); el.textContent='⚠ Could not save this tour ('+esc(e.message||'error')+'). It still works here, but will be lost if you close this panel.'; }
+    }
+  }
+
+  // ---- the saved-tour card on the Touring tab: itinerary + leg times + map ----
+  function savedTourSection(dealId, row){
+    if(!row || !window.TourPlan) return '';
+    var m=TourPlan.renderModel(row);
+    if(!m.stops.length) return '';
+    var when=m.optimizedAt?new Date(m.optimizedAt):null;
+    var whenTxt=when?(when.toLocaleDateString()+' '+when.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})):'—';
+    var dateTxt=row.tour_date?new Date(row.tour_date+'T12:00:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}):null;
+    var leave=(m.meta&&m.meta.leaveBy)?new Date(m.meta.leaveBy):null;
+    var rows=m.stops.map(function(s,i){
+      var a=s.arrive?fmtClock(new Date(s.arrive)):'—', dp=s.depart?fmtClock(new Date(s.depart)):'—';
+      var leg=m.legByFrom[i];
+      var legLine=leg?'<div class="tp-leg">↓ '+esc(TourPlan.legLabel(leg.driveMin))+' drive'+((m.meta&&m.meta.bufferMin)?' + '+m.meta.bufferMin+' min buffer':'')+'</div>':'';
+      return '<div class="tp-row"><div class="tp-when">'+a+'–'+dp+'</div>'
+        +'<div style="min-width:0;flex:1"><div class="tp-nm">'+(i+1)+'. '+esc(s.name)+'</div>'
+        +(s.address?'<div class="tp-ad">'+esc(s.address)+'</div>':'')
+        +(s.listingBroker?'<div class="tp-ad">Listing: '+esc(s.listingBroker)+(s.listingEmail?' · '+esc(s.listingEmail):'')+'</div>':'')
+        +legLine+'</div></div>';
+    }).join('');
+    return '<div class="tourplan" id="tourPlanCard">'
+      +'<div class="tp-h"><div><div class="tp-t">🗺️ Saved tour'+(dateTxt?' · '+esc(dateTxt):'')+'</div>'
+      +  '<div class="tp-sub">optimized '+esc(whenTxt)+' · '+m.stops.length+' stops · '+m.totalDriveMin+' min driving'
+      +  (leave?' · leave '+(m.meta.startAddr?esc(m.meta.startAddr):'your start')+' by <b>'+fmtClock(leave)+'</b>'+(m.meta.firstDriveMin!=null?' ('+m.meta.firstDriveMin+' min drive)':''):'')+'</div></div>'
+      +'<button class="miniadd" onclick="DF.optimizeTour(\''+dealId+'\')" title="Re-run the optimizer (paid Google drive-time call) — the result replaces this saved tour">↻ Re-optimize</button></div>'
+      + rows
+      +'<div class="tourmap" id="tourMap"></div>'
+      +(m.missing.length?'<div class="tp-missing">Not on the map (no location on file): '+esc(m.missing.join(', '))+'</div>':'')
+      +((m.meta&&m.meta.nogeo&&m.meta.nogeo.length)?'<div class="tp-missing">Not in this route (no mapped building when optimized): '+esc(m.meta.nogeo.join(', '))+'</div>':'')
+      +'</div>';
+  }
+
+  // ---- Leaflet, loaded on demand only when a saved tour actually renders ----
+  // (same CDN + version as index.html; deals.html doesn't carry it otherwise)
+  var _leafletP=null;
+  function ensureLeaflet(){
+    if(window.L && window.L.map) return Promise.resolve();
+    if(_leafletP) return _leafletP;
+    _leafletP=new Promise(function(resolve,reject){
+      var css=document.createElement('link'); css.rel='stylesheet'; css.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      document.head.appendChild(css);
+      var s=document.createElement('script'); s.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+      s.onload=function(){ resolve(); };
+      s.onerror=function(){ _leafletP=null; reject(new Error('map library failed to load')); };
+      document.head.appendChild(s);
+    });
+    return _leafletP;
+  }
+
+  var _tourMapObj=null;
+  function _tourStopIcon(n){
+    return L.divIcon({className:'',iconSize:[28,28],iconAnchor:[14,14],
+      html:'<div style="width:28px;height:28px;border-radius:50%;background:#2D6E7E;color:#fff;display:flex;align-items:center;justify-content:center;font:700 13px \'Bricolage Grotesque\',sans-serif;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3)">'+n+'</div>'});
+  }
+  function _tourLegIcon(txt){
+    return L.divIcon({className:'',iconSize:[54,18],iconAnchor:[27,9],
+      html:'<div style="min-width:44px;text-align:center;background:#fff;border:1px solid #2D6E7E;color:#2D6E7E;border-radius:9px;font:700 10.5px Inter,sans-serif;padding:2px 6px;box-shadow:0 1px 3px rgba(0,0,0,.2);white-space:nowrap">🚗 '+esc(txt)+'</div>'});
+  }
+  // Init (or resize) the tour map for the currently open deal's saved tour.
+  // Safe to call repeatedly — cheap no-op when already built for this element.
+  function initTourMap(){
+    var elm=$('tourMap');
+    if(!elm || !_savedTour) return;
+    if(elm.getAttribute('data-built')){ if(_tourMapObj) setTimeout(function(){ try{ _tourMapObj.invalidateSize(); }catch(e){} },60); return; }
+    elm.setAttribute('data-built','1');
+    ensureLeaflet().then(function(){ buildTourMap(elm, _savedTour); })
+      .catch(function(){ elm.innerHTML='<div class="tp-missing" style="padding:14px">Could not load the map — the itinerary above is still complete.</div>'; });
+  }
+  function buildTourMap(elm, row){
+    var m=TourPlan.renderModel(row);
+    if(!m.mapStops.length){ elm.style.display='none'; return; }
+    try{ if(_tourMapObj){ _tourMapObj.remove(); } }catch(e){}
+    var map=L.map(elm,{zoomControl:true,scrollWheelZoom:false,attributionControl:true});
+    _tourMapObj=map;
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{attribution:'&copy; OpenStreetMap &copy; CARTO',subdomains:'abcd',maxZoom:20}).addTo(map);
+    var pts=[];
+    m.mapStops.forEach(function(ms,k){
+      var s=ms.stop;
+      var mk=L.marker([s.lat,s.lng],{icon:_tourStopIcon(ms.idx+1)}).addTo(map);
+      mk.bindPopup('<div style="font:700 13px \'Bricolage Grotesque\',sans-serif">'+(ms.idx+1)+'. '+esc(s.name)+'</div>'
+        +(s.arrive?'<div style="font:600 12px \'JetBrains Mono\',monospace;color:#2D6E7E;margin-top:2px">arrive '+fmtClock(new Date(s.arrive))+'</div>':'')
+        +(s.address?'<div style="font:500 11px Inter;color:#666;margin-top:2px">'+esc(s.address)+'</div>':''));
+      pts.push([s.lat,s.lng]);
+    });
+    // route line through the mappable stops, in tour order
+    if(pts.length>1) L.polyline(pts,{color:'#2D6E7E',weight:3,opacity:.75,dashArray:'6 6'}).addTo(map);
+    // drive-time label pinned at each leg's midpoint
+    var byIdx={}; m.mapStops.forEach(function(ms){ byIdx[ms.idx]=ms.stop; });
+    m.mapLegs.forEach(function(l){
+      var mid=TourPlan.legMidpoint(byIdx[l.fromIdx], byIdx[l.toIdx]);
+      if(mid) L.marker([mid.lat,mid.lng],{icon:_tourLegIcon(TourPlan.legLabel(l.driveMin)),interactive:false,keyboard:false}).addTo(map);
+    });
+    if(pts.length>1) map.fitBounds(pts,{padding:[44,44]});
+    else map.setView(pts[0],14);
+    setTimeout(function(){ try{ map.invalidateSize(); }catch(e){} },120);
+  }
 
   // resolve a tour stop to a catalog building (lat/lng + leasingContact).
   // A stop links either directly (building_id) or via its deal_property.
@@ -4042,7 +4185,7 @@ window.DF = (function(){
     (tours||[]).forEach(function(s){
       if(s.status==='cancelled') return;
       var b=_stopBuilding(s, propById);
-      if(b) geo.push({stopId:s.id, name:_stopName(s,propById), lat:b.lat, lng:b.lng, contact:b.leasingContact||null, addr:b.addr||''});
+      if(b) geo.push({stopId:s.id, buildingId:b.id, name:_stopName(s,propById), lat:b.lat, lng:b.lng, contact:b.leasingContact||null, addr:b.addr||''});
       else nogeo.push(_stopName(s,propById));
     });
     if(geo.length<2){
@@ -4113,7 +4256,9 @@ window.DF = (function(){
       var leaveBy=null, firstDriveMin=null;
       if(startPt){ firstDriveMin=Math.round(_leg(dur,pts,0,order[0])/60); leaveBy=new Date(startT-firstDriveMin*60000); }
       _route.plan=plan; _route.dwell=dwell; _route.buffer=buffer; _route.leaveBy=leaveBy; _route.firstDriveMin=firstDriveMin; _route.startAddr=startAddr;
+      _route.optimizedAt=new Date().toISOString();
       renderRoutePlan();
+      saveTourPlan(_route);   // fire-and-forget: the paid result survives click-out
     }catch(e){ $('rt_err').textContent=(e.message||'Optimize failed.'); btn.disabled=false; btn.textContent='Optimize route'; }
   }
 
@@ -4135,6 +4280,7 @@ window.DF = (function(){
         +'</div>'
       + rows
       +(r.nogeo&&r.nogeo.length?'<div style="font-size:11.5px;color:var(--ink-faint);margin-top:10px">Not in this route (no mapped building): '+esc(r.nogeo.join(', '))+'</div>':'')
+      +'<div class="tsave" id="rt_saved">Saving this tour…</div>'
       +'<div class="formerr" id="rt_err2"></div>'
       +'<div class="srow" style="justify-content:space-between"><button class="btn" onclick="DF.optimizeTour(\''+r.dealId+'\')">‹ Adjust</button>'
       +'<div style="display:flex;gap:10px"><button class="btn" id="rt_apply">Apply schedule</button><button class="btn pri" id="rt_applymail">Apply &amp; draft emails</button></div></div>');
