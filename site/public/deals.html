@@ -196,8 +196,12 @@
   .btn.pri:hover{filter:brightness(1.07)}
   .btn:disabled{opacity:.6;cursor:default}
   .formerr{font:500 12px Inter;color:#C2453F;min-height:15px;margin-top:4px}
-  .delx{font:500 11.5px Inter;color:var(--ink-faint);background:none;border:0;cursor:pointer}
+  .delx{font:500 11.5px Inter;color:var(--ink-faint);background:none;border:0;cursor:pointer;border-radius:6px;padding:3px 7px}
   .delx:hover{color:var(--dining)}
+  /* two-click delete: armed = red "Really delete?" (same pattern as the bulk-delete) */
+  .delx.armed,.delx.armed:hover{background:#b23b3b;color:#fff;font-weight:700}
+  .btn.armed,.btn.armed:hover{background:#b23b3b;border-color:#b23b3b;color:#fff}
+  .miniadd.armed,.miniadd.armed:hover{background:#b23b3b;color:#fff;text-decoration:none;padding:6px 9px;border-radius:7px}
   .loading{font:500 13px Inter;color:var(--ink-faint);text-align:center;padding:40px}
 
   /* share + visibility */
@@ -1340,7 +1344,7 @@ window.DF = (function(){
       + (t.priority==='high'&&!t.done?'<span class="task-pri">High</span>':'')
       + (t.due_date?'<span class="task-due'+(over?' over':'')+'">'+fmtDate(t.due_date)+'</span>':'')
       + '<button class="step-mini" onclick="DF.newTask(\''+dealId+'\',\''+t.id+'\')" title="Edit">✎</button>'
-      + '<button class="delx" onclick="DF.deleteTask(\''+t.id+'\',\''+dealId+'\')">remove</button>'
+      + '<button class="delx" onclick="DF.deleteTask(this,\''+t.id+'\',\''+dealId+'\')">remove</button>'
       + '</div>';
   }
   function refreshTaskViews(dealId){
@@ -1356,8 +1360,8 @@ window.DF = (function(){
     try{ await q(sb.from('deal_tasks').update({done:done, completed_at: done?new Date().toISOString():null}).eq('id',id)); refreshTaskViews(dealId); }
     catch(e){ alert('Could not update task: '+(e.message||e)); }
   }
-  async function deleteTask(id, dealId){
-    if(!confirm('Remove this task?')) return;
+  async function deleteTask(btn, id, dealId){
+    if(!armConfirm(btn,'Really remove?')) return;
     try{ await q(sb.from('deal_tasks').delete().eq('id',id)); refreshTaskViews(dealId); }
     catch(e){ alert('Could not remove task: '+(e.message||e)); }
   }
@@ -1407,6 +1411,7 @@ window.DF = (function(){
   async function openDeal(id){
     var d=deals.filter(function(x){return x.id===id;})[0]; if(!d) return;
     _delArm=null; if(_delTimer){ clearTimeout(_delTimer); _delTimer=null; }   // reset any armed bulk-delete
+    armDisarm();                                                              // reset any armed item-delete
     _navTo('deal='+encodeURIComponent(id));
     $('pipelineView').style.display='none';
     $('dashboardView').style.display='none';
@@ -1499,7 +1504,8 @@ window.DF = (function(){
       return '<div class="pcard">'
         + '<div class="top"><div><div class="nm">'+esc(pr.title||'Proposal')+'</div>'
         +   (bldg?'<div class="ad">'+esc(bldg)+'</div>':'')+'</div>'
-        +   '<div style="display:flex;gap:8px;align-items:center">'+visBtn+'<span class="tag">'+esc(pr.status)+'</span></div></div>'
+        +   '<div style="display:flex;gap:8px;align-items:center">'+visBtn+'<span class="tag">'+esc(pr.status)+'</span>'
+      +     '<button class="delx" onclick="DF.deleteProposal(this,\''+pr.id+'\',\''+d.id+'\')" title="Delete this proposal — its rounds and attached files go with it">delete</button></div></div>'
         + '<div class="rounds"><table class="rtable"><thead><tr>'
         +   '<th>Rd</th><th>From</th><th>Structure</th><th class="num">Base $/SF</th><th class="num">Opex</th>'
         +   '<th class="num">≈ Gross</th><th class="num">Size SF</th><th class="num">Term</th><th>Notes</th>'
@@ -1673,11 +1679,13 @@ window.DF = (function(){
       if(done){
         return '<div class="qnr-card"><div class="qnr-card-h"><span class="qnr-co">'+esc(it.company_name||d.client_name||'Questionnaire')+'</span>'
           + '<span class="cd-row-meta ok">Completed ✓'+(it.completed_at?' '+ago(it.completed_at):'')+'</span></div>'
-          + '<div class="qnr-actions"><button class="btn" onclick="DF.viewQuestionnaire(\''+esc(it.slug)+'\')">View answers</button></div>'
+          + '<div class="qnr-actions"><button class="btn" onclick="DF.viewQuestionnaire(\''+esc(it.slug)+'\')">View answers</button>'
+          + '<button class="delx" onclick="DF.deleteIntake(this,\''+esc(it.slug)+'\',\''+d.id+'\')" title="Delete this questionnaire and its answers">delete</button></div>'
           + renderMatchInline(d.id, it.responses||{})
           + '</div>';
       }
-      return '<div class="qnr-card"><div class="qnr-card-h"><span class="qnr-co">'+esc(it.company_name||d.client_name||'Questionnaire')+'</span><span class="cd-row-meta">Awaiting response</span></div>'
+      return '<div class="qnr-card"><div class="qnr-card-h"><span class="qnr-co">'+esc(it.company_name||d.client_name||'Questionnaire')+'</span><span style="display:inline-flex;gap:8px;align-items:center"><span class="cd-row-meta">Awaiting response</span>'
+        + '<button class="delx" onclick="DF.deleteIntake(this,\''+esc(it.slug)+'\',\''+d.id+'\')" title="Delete this questionnaire link">delete</button></span></div>'
         + '<div class="qnr-linkrow"><input id="qnr_link_'+i+'" class="qnr-linkinput" readonly value="'+esc(link)+'" onclick="this.select()"><button class="btn" onclick="DF.copyFieldById(\'qnr_link_'+i+'\')">Copy link</button></div>'
         + '<div class="qnr-hint">Copy this link and send it to your client. Their answers — and the best-fit buildings — come back here.</div></div>';
     }).join('') : '<div class="cl-empty" style="padding:6px 0 10px">No questionnaire yet — create a link to send your client.</div>';
@@ -2064,7 +2072,8 @@ window.DF = (function(){
       + '<div class="tn">'+esc(name)+'</div>'
       + (s.notes?'<div class="tnotes">'+esc(s.notes)+'</div>':'')
       + '<div class="trow"><span class="tag'+(s.status==='toured'?' b':'')+'">'+esc(stLabel)+'</span>'+visBtn
-      + '<button class="rev" onclick="DF.editTourStop(\''+s.id+'\',\''+dealId+'\')">edit</button></div></div>';
+      + '<button class="rev" onclick="DF.editTourStop(\''+s.id+'\',\''+dealId+'\')">edit</button>'
+      + '<button class="delx" onclick="DF.deleteStop(this,\''+s.id+'\',\''+dealId+'\')" title="Delete this tour stop">delete</button></div></div>';
   }
 
   function roundRow(r){
@@ -2091,7 +2100,7 @@ window.DF = (function(){
         + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg> '
         + esc(dc.filename)+'</span>'
         + '<div style="display:flex;gap:9px;align-items:center;flex:none">'+visBtn
-        + '<button class="delx" onclick="DF.deleteDoc(\''+dc.id+'\',\''+esc(dc.storage_path)+'\',\''+dealId+'\')">remove</button></div></div>';
+        + '<button class="delx" onclick="DF.deleteDoc(this,\''+dc.id+'\',\''+esc(dc.storage_path)+'\',\''+dealId+'\')">remove</button></div></div>';
     }).join('');
     return '<div class="docs">'+list+'<button class="miniadd" onclick="DF.attachDoc(\''+proposalId+'\',\''+dealId+'\')">📎 Attach proposal file</button></div>';
   }
@@ -2212,7 +2221,8 @@ window.DF = (function(){
     var contact=null; if(p.building_id && _portalBuildings){ var pb=_portalBuildings.filter(function(b){return b.id===p.building_id;})[0]; if(pb) contact=pb.leasingContact; }
     var canView=!!p.building_id;
     var acts='<button class="miniadd" onclick="DF.setPropStatus(\''+p.id+'\',\'shortlisted\',\''+dealId+'\')" title="Curate into the market report">→ Add to market report</button>'
-      + (inTour?'<span class="ptag-in">✓ in tour</span>':'<button class="miniadd" onclick="DF.addToTour(\''+p.id+'\',\''+dealId+'\')">+ Add to tour</button>');
+      + (inTour?'<span class="ptag-in">✓ in tour</span>':'<button class="miniadd" onclick="DF.addToTour(\''+p.id+'\',\''+dealId+'\')">+ Add to tour</button>')
+      + '<button class="delx" onclick="DF.deleteProp(this,\''+p.id+'\',\''+dealId+'\')" title="Remove this building from the deal (its tour stops go too)">delete</button>';
     var nm=canView?'<div class="nm nm-link" onclick="DF.viewBuilding(\''+esc(p.building_id)+'\',\''+dealId+'\')" title="See building details">'+esc(p.name||'Untitled building')+' ↗</div>':'<div class="nm">'+esc(p.name||'Untitled building')+'</div>';
     return '<div class="pcard"><div class="top">'
       + '<span class="bselwrap"><input type="checkbox" class="bsel" data-id="'+p.id+'" onchange="DF.bulkSync(\'buildings\')" title="Select to add to market report"></span>'
@@ -2310,6 +2320,91 @@ window.DF = (function(){
   }
   function label_(scope){ return scope==='buildings'?'→ Add selected to market report':(scope==='report'?'+ Add selected to tour':'→ Start proposals for selected'); }
 
+  /* ---------- generic two-click delete (same interaction as the bulk-delete):
+     first click ARMS the button — it turns red "Really delete?"; a second click
+     within 3.5s executes. Clicking anywhere else, or the timeout, disarms. ---------- */
+  var _armBtn=null, _armHtml='', _armTmr=null;
+  function armDisarm(){
+    if(_armTmr){ clearTimeout(_armTmr); _armTmr=null; }
+    if(_armBtn){ _armBtn.classList.remove('armed'); _armBtn.innerHTML=_armHtml; }
+    _armBtn=null; _armHtml='';
+  }
+  function armConfirm(btn, label){
+    if(_armBtn===btn){ armDisarm(); return true; }          // second click → go
+    armDisarm();                                            // only one armed button at a time
+    _armBtn=btn; _armHtml=btn.innerHTML;
+    btn.classList.add('armed'); btn.textContent=label||'Really delete?';
+    _armTmr=setTimeout(armDisarm, 3500);
+    return false;
+  }
+  document.addEventListener('mousedown', function(e){
+    if(_armBtn && e.target!==_armBtn && !_armBtn.contains(e.target)) armDisarm();
+  }, true);
+
+  /* ---------- per-item deletes (all two-click via armConfirm) ---------- */
+  // Building off the deal. FKs: tour_stops.property_id / proposals.property_id are
+  // ON DELETE SET NULL — a stop without its building is meaningless, so drop the
+  // stops explicitly (same as the bulk-delete); the proposal THREAD survives.
+  async function deleteProp(btn, propId, dealId){
+    if(!armConfirm(btn)) return;
+    btn.disabled=true; btn.textContent='Deleting…';
+    try{
+      try{ await q(sb.from('tour_stops').delete().eq('property_id',propId)); }catch(e){}
+      await q(sb.from('deal_properties').delete().eq('id',propId));
+      openDeal(dealId);
+    }catch(e){ alert('Could not delete the building: '+(e.message||e)); openDeal(dealId); }
+  }
+  // Tour stop off the schedule (card-level; the edit sheet has the same delete).
+  async function deleteStop(btn, stopId, dealId){
+    if(!armConfirm(btn)) return;
+    btn.disabled=true; btn.textContent='Deleting…';
+    try{ await q(sb.from('tour_stops').delete().eq('id',stopId)); openDeal(dealId); }
+    catch(e){ alert('Could not delete the tour stop: '+(e.message||e)); openDeal(dealId); }
+  }
+  // Whole proposal thread. DB cascades the rounds + document ROWS (FKs), but
+  // Storage objects don't cascade — collect and remove those files first.
+  async function deleteProposal(btn, proposalId, dealId){
+    if(!armConfirm(btn,'Really delete? rounds & files too')) return;
+    btn.disabled=true; btn.textContent='Deleting…';
+    try{
+      var paths=[];
+      try{
+        (await q(sb.from('documents').select('storage_path').eq('proposal_id',proposalId))||[])
+          .forEach(function(dc){ if(dc.storage_path && paths.indexOf(dc.storage_path)<0) paths.push(dc.storage_path); });
+        var rids=((await q(sb.from('proposal_rounds').select('id').eq('proposal_id',proposalId)))||[]).map(function(r){ return r.id; });
+        if(rids.length){
+          (await q(sb.from('documents').select('storage_path').in('round_id',rids))||[])
+            .forEach(function(dc){ if(dc.storage_path && paths.indexOf(dc.storage_path)<0) paths.push(dc.storage_path); });
+        }
+      }catch(e){}
+      if(paths.length){ try{ await sb.storage.from('deal-files').remove(paths); }catch(e){} }
+      await q(sb.from('proposals').delete().eq('id',proposalId));   // rounds + doc rows cascade in the DB
+      openDeal(dealId);
+    }catch(e){ alert('Could not delete the proposal: '+(e.message||e)); openDeal(dealId); }
+  }
+  // Saved tour plan (deal_tours row). The stops themselves stay on the schedule.
+  async function deleteSavedTour(btn, dealId){
+    if(!armConfirm(btn)) return;
+    btn.disabled=true; btn.textContent='Deleting…';
+    try{
+      await q(sb.from('deal_tours').delete().eq('deal_id',dealId));
+      try{ if(_tourMapObj){ _tourMapObj.remove(); } }catch(e){} _tourMapObj=null;
+      _savedTour=null;
+      var wrap=$('savedTourWrap'); if(wrap) wrap.innerHTML='';    // in-place: just the card goes
+      if(typeof aiToast==='function') aiToast('Saved tour deleted.');
+    }catch(e){ alert('Could not delete the saved tour: '+(e.message||e)); btn.disabled=false; btn.textContent='delete'; }
+  }
+  // Questionnaire link (intakes row) — for dead links or duplicates.
+  async function deleteIntake(btn, slug, dealId){
+    if(!armConfirm(btn)) return;
+    btn.disabled=true; btn.textContent='Deleting…';
+    try{
+      await q(sb.from('intakes').delete().eq('slug',slug));
+      var d=deals.filter(function(x){return x.id===dealId;})[0];
+      if(d) fillQuestionnaireSection(d);                          // re-render just this section
+    }catch(e){ alert('Could not delete the questionnaire: '+(e.message||e)); btn.disabled=false; btn.textContent='delete'; }
+  }
+
   /* ---------- building detail (click any building to see the full dossier) ---------- */
   // Open the FULL building dossier (photos, floor plans, amenity map, Street View,
   // leasing, features) on the dedicated building page. Passing the deal id lets the
@@ -2333,6 +2428,7 @@ window.DF = (function(){
       + (canView?'<button class="miniadd" onclick="DF.viewBuilding(\''+esc(p.building_id)+'\',\''+dealId+'\')">View details</button>':'')
       + '<button class="miniadd" onclick="DF.addToTour(\''+p.id+'\',\''+dealId+'\')">+ Add to tour</button>'
       + '<button class="miniadd" onclick="DF.setPropStatus(\''+p.id+'\',\'considering\',\''+dealId+'\')" title="Move back to Buildings">↩ Remove from report</button>'
+      + '<button class="delx" onclick="DF.deleteProp(this,\''+p.id+'\',\''+dealId+'\')" title="Remove this building from the deal (its tour stops go too)">delete</button>'
       + '</div></div>';
   }
   async function generateMarketReport(dealId){
@@ -2700,9 +2796,19 @@ window.DF = (function(){
       $('f_save').addEventListener('click',function(){ persist(null, this); });
     }
     $('f_del').addEventListener('click',async function(){
-      if(!confirm('Delete this round?')) return;
-      try{ await q(sb.from('proposal_rounds').delete().eq('id',roundId)); closeSheet(); openDeal(dealId); }
-      catch(e){ $('f_err').textContent=e.message; }
+      if(!armConfirm(this,'Really delete this round?')) return;   // two-click, disarms on click-away/timeout
+      this.disabled=true; this.textContent='Deleting…';
+      try{
+        // Storage objects for any file attached to this round don't cascade — remove them first.
+        try{
+          var rp=((await q(sb.from('documents').select('storage_path').eq('round_id',roundId)))||[])
+            .map(function(x){ return x.storage_path; }).filter(Boolean);
+          if(rp.length){ try{ await sb.storage.from('deal-files').remove(rp); }catch(e){} }
+        }catch(e){}
+        await q(sb.from('proposal_rounds').delete().eq('id',roundId));   // doc rows cascade in the DB
+        closeSheet(); openDeal(dealId);
+      }
+      catch(e){ $('f_err').textContent=e.message; this.disabled=false; this.textContent='Delete'; }
     });
     marketCheck();
   }
@@ -2885,9 +2991,10 @@ window.DF = (function(){
         .catch(function(e){ $('f_err').textContent=e.message; btn.disabled=false; btn.textContent='Save'; });
     });
     $('f_del').addEventListener('click',async function(){
-      if(!confirm('Delete this tour stop?')) return;
+      if(!armConfirm(this,'Really delete this stop?')) return;
+      this.disabled=true; this.textContent='Deleting…';
       try{ await q(sb.from('tour_stops').delete().eq('id',stopId)); closeSheet(); openDeal(dealId); }
-      catch(e){ $('f_err').textContent=e.message; }
+      catch(e){ $('f_err').textContent=e.message; this.disabled=false; this.textContent='Delete'; }
     });
   }
   async function toggleTourVisible(stopId, makeVisible, dealId){
@@ -2966,9 +3073,10 @@ window.DF = (function(){
         .catch(function(e){ $('f_err').textContent=e.message; btn.disabled=false; btn.textContent=a?'Save':'Create'; });
     });
     if(a){ $('f_del').addEventListener('click',async function(){
-      if(!confirm('Delete this lease abstract?')) return;
+      if(!armConfirm(this,'Really delete the abstract?')) return;
+      this.disabled=true; this.textContent='Deleting…';
       try{ await q(sb.from('lease_abstracts').delete().eq('id',a.id)); closeSheet(); openDeal(dealId); }
-      catch(e){ $('f_err').textContent=e.message; }
+      catch(e){ $('f_err').textContent=e.message; this.disabled=false; this.textContent='Delete'; }
     }); }
   }
   async function toggleAbstractVisible(id, makeVisible, dealId){
@@ -3310,7 +3418,7 @@ window.DF = (function(){
         + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg> '
         + esc(dc.filename)+'</span>'
         + '<div style="display:flex;gap:9px;align-items:center;flex:none">'+visBtn
-        + '<button class="delx" onclick="DF.deleteDoc(\''+dc.id+'\',\''+esc(dc.storage_path)+'\',\''+dealId+'\')">remove</button></div></div>';
+        + '<button class="delx" onclick="DF.deleteDoc(this,\''+dc.id+'\',\''+esc(dc.storage_path)+'\',\''+dealId+'\')">remove</button></div></div>';
     }).join('');
     return '<div class="docs" style="margin-top:12px">'+list
       + '<button class="miniadd" onclick="DF.attachLeaseDoc(\''+dealId+'\',\''+(abstractId||'')+'\')">📎 Attach lease document (PDF)</button>'
@@ -3358,13 +3466,14 @@ window.DF = (function(){
       window.open(r.data.signedUrl,'_blank','noopener');
     }catch(e){ alert('Could not open file: '+(e.message||e)); }
   }
-  async function deleteDoc(docId, path, dealId){
-    if(!confirm('Remove this file? This cannot be undone.')) return;
+  async function deleteDoc(btn, docId, path, dealId){
+    if(!armConfirm(btn,'Really remove?')) return;
+    btn.disabled=true; btn.textContent='Removing…';
     try{
-      await sb.storage.from('deal-files').remove([path]);     // ignore storage error (row is source of truth)
+      try{ await sb.storage.from('deal-files').remove([path]); }catch(e){}   // best-effort — the row is the source of truth
       await q(sb.from('documents').delete().eq('id',docId));
       openDeal(dealId);
-    }catch(e){ alert('Could not remove: '+(e.message||e)); }
+    }catch(e){ alert('Could not remove: '+(e.message||e)); btn.disabled=false; btn.textContent='remove'; }
   }
   async function toggleDocVisible(docId, makeVisible, dealId){
     try{
@@ -4014,7 +4123,9 @@ window.DF = (function(){
       +'<div class="tp-h"><div><div class="tp-t">🗺️ Saved tour'+(dateTxt?' · '+esc(dateTxt):'')+'</div>'
       +  '<div class="tp-sub">optimized '+esc(whenTxt)+' · '+m.stops.length+' stops · '+m.totalDriveMin+' min driving'
       +  (leave?' · leave '+(m.meta.startAddr?esc(m.meta.startAddr):'your start')+' by <b>'+fmtClock(leave)+'</b>'+(m.meta.firstDriveMin!=null?' ('+m.meta.firstDriveMin+' min drive)':''):'')+'</div></div>'
-      +'<button class="miniadd" onclick="DF.optimizeTour(\''+dealId+'\')" title="Re-run the optimizer (paid Google drive-time call) — the result replaces this saved tour">↻ Re-optimize</button></div>'
+      +'<div style="display:flex;gap:10px;align-items:center;flex:none">'
+      +  '<button class="miniadd" onclick="DF.optimizeTour(\''+dealId+'\')" title="Re-run the optimizer (paid Google drive-time call) — the result replaces this saved tour">↻ Re-optimize</button>'
+      +  '<button class="delx" onclick="DF.deleteSavedTour(this,\''+dealId+'\')" title="Delete this saved tour plan — the stops stay on the schedule">delete</button></div></div>'
       + rows
       +'<div class="tourmap" id="tourMap"></div>'
       +(m.missing.length?'<div class="tp-missing">Not on the map (no location on file): '+esc(m.missing.join(', '))+'</div>':'')
@@ -4420,7 +4531,9 @@ window.DF = (function(){
     aiDraft:aiDraft, aiPickTmpl:aiPickTmpl, aiDocx:aiDocx, toggleVoice:toggleVoice, editRound:editRound, extractFromPdf:extractFromPdf,
     newTourStop:newTourStop, editTourStop:editTourStop, toggleTourVisible:toggleTourVisible, tourPropChange:tourPropChange,
     editAbstract:editAbstract, addKeyDate:addKeyDate, toggleAbstractVisible:toggleAbstractVisible, readLease:readLease,
-    effectiveRent:effectiveRent, grossEquiv:grossEquiv
+    effectiveRent:effectiveRent, grossEquiv:grossEquiv,
+    deleteProp:deleteProp, deleteStop:deleteStop, deleteProposal:deleteProposal,
+    deleteSavedTour:deleteSavedTour, deleteIntake:deleteIntake
   };
 })();
 </script>
