@@ -190,6 +190,37 @@
   .fld textarea{resize:vertical;min-height:62px}
   .fld .u{font:500 11px Inter;color:var(--ink-faint)}
   .srow{display:flex;gap:10px;justify-content:flex-end;margin-top:8px}
+  /* CoStar report import — wide review sheet */
+  .sheet.wide{width:min(960px,100%)}
+  .ri-prog{display:flex;gap:14px;align-items:center;padding:18px 4px}
+  .ri-spin{width:26px;height:26px;border:3px solid var(--line-2);border-top-color:var(--accent);border-radius:50%;animation:rispin .8s linear infinite;flex:none}
+  @keyframes rispin{to{transform:rotate(360deg)}}
+  .ri-pt{font:600 13.5px Inter;color:var(--ink)}
+  .ri-ps{font:400 12px Inter;color:var(--ink-faint);margin-top:3px}
+  .ritable{border-collapse:collapse;width:100%;font-size:12.5px}
+  .ritable thead th{font:600 10.5px Inter;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);text-align:left;padding:8px 9px;border-bottom:1px solid var(--line);background:var(--paper);position:sticky;top:0;z-index:1}
+  .ritable td{padding:9px;border-bottom:1px solid var(--line);vertical-align:top}
+  .ritable tr.ri-b{cursor:pointer}
+  .ritable tr.ri-b:hover td{background:rgba(45,110,126,.05)}
+  .ritable tr.ri-b.off .ri-nm,.ritable tr.ri-b.off .ri-ad{opacity:.45}
+  .ri-ck{width:26px}
+  .ri-nm{font:600 13px Inter;color:var(--ink)}
+  .ri-ad{font:400 11.5px Inter;color:var(--ink-soft);margin-top:2px}
+  .ri-cnt{font:600 12px 'JetBrains Mono';white-space:nowrap}
+  .ri-tog{width:22px;color:var(--ink-faint)}
+  .ri-badge{display:inline-block;font:600 9.5px Inter;letter-spacing:.04em;text-transform:uppercase;border-radius:6px;padding:2px 7px;border:1px solid transparent;white-space:nowrap}
+  .ri-badge.hit{color:#1d6e46;background:#e2f3e9;border-color:#bfe3cd}
+  .ri-badge.new{color:#7a5a15;background:#faf0d8;border-color:#ecd9a8}
+  .ri-badge.dup{color:var(--ink-faint);background:var(--paper);border-style:dashed;border-color:var(--line-2)}
+  .ri-d>td{background:var(--paper);padding:6px 9px 12px}
+  .ri-sp{border-collapse:collapse;width:100%;font-size:12px}
+  .ri-sp th{font:600 9.5px Inter;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);text-align:left;padding:5px 7px}
+  .ri-sp td{padding:4px 7px;border-top:1px solid var(--line)}
+  .ri-in{width:78px;font:600 12px 'JetBrains Mono';padding:4px 6px;border:1px solid var(--line-2);border-radius:6px;background:var(--paper-2);color:var(--ink);text-align:right}
+  .ri-in:focus{outline:none;border-color:var(--accent)}
+  .ri-un{font:500 10.5px Inter;color:var(--ink-faint);margin-left:4px}
+  .ri-foot{font:500 11.5px Inter;color:var(--ink-soft);margin-right:auto;align-self:center}
+  .ri-done{font:700 15px 'Bricolage Grotesque';color:var(--ink);margin:6px 0 10px}
   .btn{font:600 13px Inter;border-radius:9px;padding:10px 16px;cursor:pointer;border:1px solid var(--line-2);background:var(--paper);color:var(--ink-soft)}
   .btn:hover{border-color:var(--ink-faint)}
   .btn.pri{background:var(--building);color:#fff;border-color:var(--building)}
@@ -660,6 +691,12 @@
 <script src="assets/van.js"></script>
 <script src="assets/model-engine.js"></script>
 <script src="assets/tour-plan.js"></script>
+<!-- market-spaces.js: only its pure window.MarketSpaces helpers are used here (the
+     normalizer behind the CoStar report import); its map widget stays dormant on
+     this page (no #overviewMap / showModule). report-import.js is the pure mapping
+     layer shared with tools/report-import-test.js. -->
+<script src="assets/market-spaces.js"></script>
+<script src="assets/report-import.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 window.DF = (function(){
@@ -1483,6 +1520,7 @@ window.DF = (function(){
     var propsHtml = candidateProps.length ? candidateProps.map(function(p){ return propCard(p, d.id, tourPropIds[p.id]); }).join('') : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No candidate buildings — add best-fit buildings from the questionnaire, or add one manually.</div>';
 
     var propsHtml2 = (candidateProps.length?bulkBar('buildings',d.id,'→ Add selected to market report'):'') + propsHtml + '<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><button class="miniadd" onclick="DF.newProperty(\''+d.id+'\')">+ Add building</button>'
+      + '<button class="miniadd ai" onclick="DF.importReport(\''+d.id+'\')" title="Upload the CoStar survey PDF you ran for this requirement — Claude reads every building &amp; space into the deal and your internal availability tracker">⬆ Import CoStar report</button>'
       + (candidateProps.length?'<button class="miniadd ai" onclick="DF.generateRfp(\''+d.id+'\')" title="Draft a Request for Proposal and send it to the listing brokers">📋 Generate RFP</button>':'')+'</div>';
 
     var reportHtml = reportProps.length ? reportProps.map(function(p){ return reportCard(p, d.id); }).join('') : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No buildings in the market report yet. On a candidate building above, click “→ Add to market report”.</div>';
@@ -2106,7 +2144,7 @@ window.DF = (function(){
   }
 
   /* ---------- modal plumbing ---------- */
-  function openSheet(html){ $('sheet').innerHTML=html; $('ov').classList.add('show'); }
+  function openSheet(html){ var sh=$('sheet'); sh.classList.remove('wide'); sh.innerHTML=html; $('ov').classList.add('show'); }
   function closeSheet(){ $('ov').classList.remove('show'); }
   $('ov')&&document.getElementById('ov').addEventListener('mousedown',function(e){ if(e.target===this) closeSheet(); });
 
@@ -2249,6 +2287,188 @@ window.DF = (function(){
     }catch(e){ return false; }
   }
   async function addToTour(propId, dealId){ await ensureTourStop(propId, dealId); openDeal(dealId); }
+
+  /* ---------- CoStar market-report import (Buildings tab) ----------
+   * Upload the survey PDF pulled for this requirement → deal-report-import
+   * (JWT-authed Netlify function) parses every building + available space with
+   * Claude → the broker reviews/edits here → confirm writes deal_properties
+   * candidates and upserts the internal market_spaces availability tracker.
+   * The pure mapping (payload shapes, dedup_key, match, summary) lives in
+   * assets/report-import.js, shared with tools/report-import-test.js.
+   * COMPLIANCE: CoStar-sourced rows are broker-internal — they go ONLY to
+   * org-scoped Supabase tables behind this login, never to vantage-data.json
+   * or client/portal surfaces (see supabase/market-spaces.sql). */
+  var _ri=null, _riTimer=null;
+  function importReport(dealId){
+    _ri={dealId:dealId, plan:null, filename:null, open:{}, propsDone:false};
+    loadPortalBuildings();                       // warm the catalog for matching
+    openSheet('<h3>Import CoStar report</h3><div class="ssub">Upload the market survey / availability report you ran for this requirement. Claude reads every building and available space — you review and edit before anything is saved. <b>Internal only:</b> imported CoStar data never reaches client surfaces.</div>'
+      + fld('Report PDF','<input id="ri_file" type="file" accept=".pdf,application/pdf">')
+      + '<div class="ssub" style="margin:2px 0 8px">…or paste the report text instead:</div>'
+      + '<div class="fld"><textarea id="ri_text" placeholder="Optional fallback — paste the CoStar rows here if you don\'t have the PDF"></textarea></div>'
+      + '<div class="formerr" id="ri_err"></div>'
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button><button class="btn pri" id="ri_go">⬆ Read report</button></div>');
+    $('ri_go').addEventListener('click', riStart);
+  }
+  function fileB64(f){
+    return new Promise(function(res,rej){
+      var r=new FileReader();
+      r.onload=function(){ res(String(r.result).split(',')[1]||''); };
+      r.onerror=function(){ rej(new Error('Could not read that file.')); };
+      r.readAsDataURL(f);
+    });
+  }
+  function riStart(){
+    var f=$('ri_file').files&&$('ri_file').files[0];
+    var pasted=($('ri_text').value||'').trim();
+    var err=$('ri_err');
+    if(!f && !pasted){ err.textContent='Pick the report PDF (or paste its text).'; return; }
+    if(f && !/pdf$/i.test(f.name) && f.type!=='application/pdf'){ err.textContent='That file isn\'t a PDF — export the report from CoStar as PDF, or paste its text below.'; return; }
+    if(f && f.size>20*1024*1024){ err.textContent='File too large — 20MB max. Export a lighter version from CoStar (fewer photos).'; return; }
+    _ri.filename=f?f.name:'pasted report text';
+    $('ri_go').disabled=true;
+    (f?fileB64(f):Promise.resolve(null))
+      .then(function(b64){ return riCall(b64, pasted, f?f.name:null); })
+      .catch(function(e){ riFail(e.message||String(e)); });
+  }
+  async function riCall(b64, pasted, filename){
+    var started=Date.now();
+    openSheet('<h3>Reading report…</h3><div class="ssub">'+esc(_ri.filename)+'</div>'
+      + '<div class="ri-prog"><div class="ri-spin"></div><div><div class="ri-pt">Claude is reading every building &amp; available space…</div>'
+      + '<div class="ri-ps">This takes ~30–60s for a full survey. <span id="ri_elapsed">0s</span> elapsed — leave this open.</div></div></div>');
+    clearInterval(_riTimer);
+    _riTimer=setInterval(function(){ var el=$('ri_elapsed'); if(el) el.textContent=Math.round((Date.now()-started)/1000)+'s'; },1000);
+    try{
+      var s=await sb.auth.getSession(); var token=(s&&s.data&&s.data.session)?s.data.session.access_token:null;
+      if(!token) throw new Error('Your session expired — please sign in again.');
+      var res=await fetch('/.netlify/functions/deal-report-import',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token:token, filename:filename, base64pdf:b64||undefined, text:(!b64&&pasted)?pasted:undefined})});
+      if(res.status===401) throw new Error('Your session expired — please sign in again.');
+      var data=await res.json().catch(function(){ return null; });
+      if(!res.ok) throw new Error((data&&data.error)||('The reader hit an error (HTTP '+res.status+'). Try again.'));
+      if(!data||data.error) throw new Error((data&&data.error)||'The reader returned nothing.');
+      clearInterval(_riTimer);
+      var cat=await loadPortalBuildings();
+      var existing=[]; try{ existing=await q(sb.from('deal_properties').select('id,building_id,address,name').eq('deal_id',_ri.dealId)); }catch(e){}
+      _ri.plan=ReportImport.buildPlan({reportDate:data.reportDate, buildings:data.buildings}, cat||[], existing, {filename:_ri.filename});
+      if(!_ri.plan.buildings.length) throw new Error('No buildings found in that document — is it a CoStar availability report or survey export?');
+      riReview();
+    }catch(e){ riFail(e.message||String(e)); }
+  }
+  function riFail(msg){
+    clearInterval(_riTimer);
+    openSheet('<h3>Import CoStar report</h3><div class="ssub">'+esc((_ri&&_ri.filename)||'')+'</div>'
+      + '<div class="formerr" style="margin:4px 0 12px">'+esc(msg)+'</div>'
+      + '<div class="ssub">Nothing was saved. Fix the file (or paste the report text instead) and try again.</div>'
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Close</button><button class="btn pri" onclick="DF.importReport(\''+((_ri&&_ri.dealId)||'')+'\')">Try again</button></div>');
+  }
+  function riFootLine(){
+    var sum=ReportImport.summarize(_ri.plan);
+    return 'Will import '+sum.added+' building'+(sum.added===1?'':'s')+' · '+sum.spaces+' space'+(sum.spaces===1?'':'s')
+      +(sum.matched?' · '+sum.matched+' matched to your map':'')
+      +(sum.skipped?' · '+sum.skipped+' already on this deal (skipped)':'');
+  }
+  function riReview(){
+    var p=_ri.plan;
+    var rows=p.buildings.map(function(b,i){
+      var badge = b.alreadyOnDeal ? '<span class="ri-badge dup" title="Already a candidate on this deal — its spaces still refresh the tracker">already on this deal</span>'
+        : (b.buildingId ? '<span class="ri-badge hit" title="Matched to '+esc(b.catalogName||'')+' in your building catalog">✓ matched</span>'
+        : '<span class="ri-badge new" title="Not in your catalog — imports as an address-only candidate">new — not in catalog</span>');
+      var open=!!_ri.open[i];
+      var head='<tr class="ri-b'+(b.include?'':' off')+'" data-i="'+i+'">'
+        + '<td class="ri-ck"><input type="checkbox" data-act="inc" data-i="'+i+'"'+(b.include?' checked':'')+' title="Import this building"></td>'
+        + '<td><div class="ri-nm">'+esc(b.catalogName||b.name||b.address||'Building')+'</div>'
+        +   '<div class="ri-ad">'+esc(b.address||'')+(b.city?', '+esc(b.city):'')+(b['class']?' · Class '+esc(b['class']):'')+(b.rba?' · '+Number(b.rba).toLocaleString()+' SF':'')+(b.yearBuilt?' · built '+b.yearBuilt:'')+'</div></td>'
+        + '<td>'+badge+'</td>'
+        + '<td class="ri-cnt">'+b.spaces.length+' space'+(b.spaces.length===1?'':'s')+'</td>'
+        + '<td class="ri-tog">'+(b.spaces.length?(open?'▾':'▸'):'')+'</td></tr>';
+      var det='';
+      if(open&&b.spaces.length){
+        det='<tr class="ri-d"><td></td><td colspan="4"><table class="ri-sp"><thead><tr><th>Suite</th><th>Floor</th><th>SF</th><th>Asking rate</th><th>Basis</th><th>Type</th><th>Avail</th><th>Listing</th></tr></thead><tbody>'
+          + b.spaces.map(function(sp,j){
+              return '<tr>'
+                + '<td>'+esc(sp.suite||'—')+'</td><td>'+esc(sp.floor||'—')+'</td>'
+                + '<td><input class="ri-in" data-act="sf" data-i="'+i+'" data-j="'+j+'" inputmode="numeric" value="'+(sp.sf==null?'':sp.sf)+'" placeholder="—" title="Edit SF"></td>'
+                + '<td><input class="ri-in" data-act="rate" data-i="'+i+'" data-j="'+j+'" inputmode="decimal" value="'+(sp.rate==null?'':sp.rate)+'" placeholder="—" title="Edit asking rate">'+(sp.ratePeriod?'<span class="ri-un">/SF/'+sp.ratePeriod+'</span>':'')+'</td>'
+                + '<td>'+esc(sp.rateBasis||'—')+'</td>'
+                + '<td>'+esc(sp.spaceType||'—')+'</td>'
+                + '<td>'+esc(sp.availableDate||'now')+'</td>'
+                + '<td class="ri-ad">'+esc([sp.listingBroker,sp.listingCompany].filter(Boolean).join(', ')||'—')+'</td></tr>';
+            }).join('')
+          + '</tbody></table></td></tr>';
+      }
+      return head+det;
+    }).join('');
+    openSheet('<h3>Review report import</h3><div class="ssub">'+esc(_ri.filename)+(p.reportDate?' · report date '+esc(p.reportDate):'')+' — found <b>'+p.buildings.length+' building'+(p.buildings.length===1?'':'s')+'</b>. Click a row to see &amp; edit its spaces; uncheck any you don\'t want. Checked buildings become candidates on this deal, and every space refreshes your internal availability tracker.</div>'
+      + '<div class="cmpwrap" style="max-height:52vh;overflow-y:auto"><table class="ritable"><thead><tr><th class="ri-ck"><input type="checkbox" id="ri_all" checked title="Select all"></th><th>Building</th><th>Catalog</th><th>Spaces</th><th></th></tr></thead><tbody id="ri_body">'+rows+'</tbody></table></div>'
+      + '<div class="formerr" id="ri_err"></div>'
+      + '<div class="srow"><span class="ri-foot" id="ri_sum">'+esc(riFootLine())+'</span><button class="btn" onclick="DF.close()">Cancel</button><button class="btn pri" id="ri_confirm">Import to deal &amp; tracker</button></div>');
+    $('sheet').classList.add('wide');
+    $('ri_all').addEventListener('change',function(){ var on=this.checked; p.buildings.forEach(function(b){ b.include=on; }); riReview(); });
+    var body=$('ri_body');
+    body.addEventListener('click',function(e){
+      if(e.target.closest('input')) return;                 // clicks on inputs never toggle the row
+      var tr=e.target.closest('tr.ri-b'); if(!tr) return;
+      var i=+tr.getAttribute('data-i');
+      _ri.open[i]=!_ri.open[i]; riReview();
+    });
+    body.addEventListener('change',function(e){
+      var t=e.target;
+      if(t.getAttribute('data-act')!=='inc') return;
+      var b=p.buildings[+t.getAttribute('data-i')]; if(!b) return;
+      b.include=t.checked;
+      var tr=t.closest('tr.ri-b'); if(tr) tr.classList.toggle('off',!t.checked);
+      var el=$('ri_sum'); if(el) el.textContent=riFootLine();
+    });
+    body.addEventListener('input',function(e){
+      var t=e.target, act=t.getAttribute('data-act');
+      if(act!=='sf'&&act!=='rate') return;
+      var b=p.buildings[+t.getAttribute('data-i')]; var sp=b&&b.spaces[+t.getAttribute('data-j')]; if(!sp) return;
+      var n=t.value===''?null:Number(String(t.value).replace(/[$,\s]/g,''));
+      if(n!=null&&!isFinite(n)) n=null;
+      if(act==='sf') sp.sf=(n==null?null:Math.round(n)); else sp.rate=n;
+    });
+    $('ri_confirm').addEventListener('click',riConfirm);
+  }
+  async function riConfirm(){
+    var p=_ri.plan, btn=$('ri_confirm'), err=$('ri_err');
+    var included=p.buildings.filter(function(b){ return b.include; });
+    if(!included.length){ err.textContent='Check at least one building to import.'; return; }
+    var sum=ReportImport.summarize(p);
+    btn.disabled=true; btn.textContent='Importing…'; err.textContent='';
+    try{
+      // 1) deal_properties candidates (skip buildings already on the deal);
+      //    _ri.propsDone guards a retry after a tracker error from double-adding
+      if(!_ri.propsDone){
+        var adds=included.filter(function(b){ return !b.alreadyOnDeal; }).map(function(b){ return ReportImport.dealPropertyRow(b,_ri.dealId); });
+        if(adds.length) await q(sb.from('deal_properties').insert(adds));
+        _ri.propsDone=true;
+      }
+      // 2) market_spaces upsert on (org_id, dedup_key): refresh hits, insert the rest
+      var rows=ReportImport.spacePayloads(p);
+      var inserted=0, refreshed=0;
+      if(rows.length){
+        var keys=rows.map(function(r){ return r.dedup_key; });
+        var hits=await q(sb.from('market_spaces').select('id,dedup_key').eq('org_id',ReportImport.ORG_ID).in('dedup_key',keys));
+        var byKey={}; (hits||[]).forEach(function(h){ byKey[h.dedup_key]=h.id; });
+        var seen={}, toInsert=[];
+        for(var k=0;k<rows.length;k++){
+          var r=rows[k];
+          if(byKey[r.dedup_key]){ await q(sb.from('market_spaces').update(ReportImport.spacePatch(r)).eq('id',byKey[r.dedup_key])); refreshed++; }
+          else if(!seen[r.dedup_key]){ seen[r.dedup_key]=1; toInsert.push(r); }   // in-report dupes collapse
+        }
+        if(toInsert.length){ await q(sb.from('market_spaces').insert(toInsert)); inserted=toInsert.length; }
+      }
+      openDeal(_ri.dealId);            // re-render Buildings behind the sheet (same tab stays active)
+      openSheet('<h3>Report imported ✓</h3>'
+        + '<div class="ri-done">'+esc(sum.line)+'</div>'
+        + '<div class="ssub">Availability tracker: '+inserted+' new space'+(inserted===1?'':'s')+', '+refreshed+' refreshed — source “CoStar report”, internal only. They\'re live in the Market map\'s Spaces drawer.</div>'
+        + '<div class="srow"><button class="btn pri" onclick="DF.close()">Done</button></div>');
+    }catch(e){
+      err.textContent='Import failed: '+(e.message||e)+(/market_spaces.*(does not exist|relation)/i.test(e.message||'')?' — run supabase/market-spaces.sql first.':'');
+      btn.disabled=false; btn.textContent='Import to deal & tracker';
+    }
+  }
 
   /* ---------- bulk-select: move several buildings to the next funnel section ---------- */
   function bulkBar(scope, dealId, label){
@@ -4522,7 +4742,7 @@ window.DF = (function(){
     deleteDealAsk:deleteDealAsk, deleteDealCancel:deleteDealCancel, deleteDealDo:deleteDealDo,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask, recGo:recGo,
-    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, bulkSync:bulkSync, bulkAll:bulkAll, bulkMove:bulkMove, bulkDelete:bulkDelete, viewBuilding:viewBuilding, generateMarketReport:generateMarketReport, dealTab:dealTab, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, npMode:npMode, newRound:newRound,
+    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, importReport:importReport, bulkSync:bulkSync, bulkAll:bulkAll, bulkMove:bulkMove, bulkDelete:bulkDelete, viewBuilding:viewBuilding, generateMarketReport:generateMarketReport, dealTab:dealTab, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, npMode:npMode, newRound:newRound,
     generateRfp:generateRfp, copyRfp:copyRfp, downloadRfp:downloadRfp, sendRfpTo:sendRfpTo,
     setStage:setStage, basisChange:basisChange, marketCheck:marketCheck, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
     proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead,
