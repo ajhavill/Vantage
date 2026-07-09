@@ -126,16 +126,174 @@
     return period === "mo" ? Math.round(n * 12 * 100) / 100 : n;
   }
 
+  /* ---------------- map-filter predicate (pure; used by the Market Filters rail) ---------------- */
+
+  // tolerant numeric coercion: ''/null/garbage -> null
+  function toNum(v) {
+    if (v == null || v === "") return null;
+    var n = Number(v);
+    return isFinite(n) ? n : null;
+  }
+
+  // parking-ratio text -> spaces per 1,000 SF.
+  // "3.0 / 1,000" -> 3, "2.5 : 1000" -> 2.5, "3 per 1,000 SF (structure)" -> 3,
+  // bare "2.8" -> 2.8, anything unparseable -> null.
+  function parseParkingRatio(text) {
+    if (text == null || text === "") return null;
+    if (typeof text === "number") return isFinite(text) ? text : null;
+    var s = String(text).replace(/,/g, "");
+    var m = s.match(/(\d+(?:\.\d+)?)\s*(?:\/|:|per)\s*1000/i);
+    if (m) return parseFloat(m[1]);
+    m = s.match(/^\s*\$?(\d+(?:\.\d+)?)\s*$/); // bare number = spaces per 1,000 SF
+    return m ? parseFloat(m[1]) : null;
+  }
+
+  // SF-ish text -> number. "~64,000 SF" -> 64000, "320,000" -> 320000, 320000 -> 320000, junk -> null
+  function parseSFText(v) {
+    if (v == null || v === "") return null;
+    if (typeof v === "number") return isFinite(v) ? v : null;
+    var m = String(v).replace(/,/g, "").match(/\d+(?:\.\d+)?/);
+    return m ? parseFloat(m[0]) : null;
+  }
+
+  // filters object uses the deal_requirements.filters jsonb keys:
+  //   sfMin, sfMax, rateMin, rateMax (annual $/SF), spaceType ('direct'|'sublease'),
+  //   availableBy (ISO date), classes[], parkingMin, builtAfter, plateMin, plateMax,
+  //   rbaMin, rbaMax, industries[], owners[], submarkets[] — all optional.
+  function spaceFiltersActive(f) {
+    f = f || {};
+    return toNum(f.sfMin) != null || toNum(f.sfMax) != null ||
+      toNum(f.rateMin) != null || toNum(f.rateMax) != null ||
+      f.spaceType === "direct" || f.spaceType === "sublease" || !!f.availableBy;
+  }
+
+  // does one tracked space satisfy ALL active space filters?
+  function spaceMatchesFilters(r, f) {
+    r = r || {}; f = f || {};
+    var sfMin = toNum(f.sfMin), sfMax = toNum(f.sfMax), rMin = toNum(f.rateMin), rMax = toNum(f.rateMax);
+    var sf = toNum(r.sf);
+    if (sfMin != null && !(sf != null && sf >= sfMin)) return false;
+    if (sfMax != null && !(sf != null && sf <= sfMax)) return false;
+    if (rMin != null || rMax != null) {
+      var yr = annualRate(r.asking_rate, r.rate_period); // compare in ANNUAL $/SF
+      if (yr == null) return false;
+      if (rMin != null && yr < rMin) return false;
+      if (rMax != null && yr > rMax) return false;
+    }
+    if ((f.spaceType === "direct" || f.spaceType === "sublease") && r.space_type !== f.spaceType) return false;
+    if (f.availableBy) {
+      // null available_date = available now -> always passes
+      if (r.available_date && String(r.available_date).slice(0, 10) > String(f.availableBy).slice(0, 10)) return false;
+    }
+    return true;
+  }
+
+  // building-level predicate. `building` carries the vantage building fields
+  // ({class, parking, yearBuilt, renovated, floorPlate, size|rba, owner, submarket,
+  //   byInd|tenants}); `spaces` is that building's ACTIVE tracked market_spaces rows.
+  // Returns { pass, lacked } — lacked=true when the building was hidden only because
+  // it is missing data an active attribute filter needs (surfaced in the count line).
+  function buildingPassesFilters(building, spaces, f) {
+    var b = building || {}; f = f || {};
+    var lacked = false;
+    function missing() { lacked = true; return false; }
+    var pass = (function () {
+      // space filters: needs >=1 tracked space matching ALL of them (none tracked = hidden)
+      if (spaceFiltersActive(f)) {
+        var list = spaces || [], hit = false;
+        for (var i = 0; i < list.length; i++) if (spaceMatchesFilters(list[i], f)) { hit = true; break; }
+        if (!hit) return false;
+      }
+      if (f.classes && f.classes.length) {
+        var cls = b["class"] != null && String(b["class"]).trim() !== "" ? String(b["class"]).trim().toUpperCase().slice(0, 1) : null;
+        if (!cls) return missing();
+        var okC = false;
+        for (var c = 0; c < f.classes.length; c++) if (String(f.classes[c]).toUpperCase() === cls) { okC = true; break; }
+        if (!okC) return false;
+      }
+      var pMin = toNum(f.parkingMin);
+      if (pMin != null) {
+        var ratio = parseParkingRatio(b.parking);
+        if (ratio == null) return missing();
+        if (ratio < pMin) return false;
+      }
+      var after = toNum(f.builtAfter);
+      if (after != null) {
+        var yb = toNum(b.yearBuilt), rn = toNum(b.renovated);
+        if (yb == null && rn == null) return missing();
+        if (!((yb != null && yb >= after) || (rn != null && rn >= after))) return false;
+      }
+      var plMin = toNum(f.plateMin), plMax = toNum(f.plateMax);
+      if (plMin != null || plMax != null) {
+        var plate = parseSFText(b.floorPlate);
+        if (plate == null) return missing();
+        if (plMin != null && plate < plMin) return false;
+        if (plMax != null && plate > plMax) return false;
+      }
+      var rbMin = toNum(f.rbaMin), rbMax = toNum(f.rbaMax);
+      if (rbMin != null || rbMax != null) {
+        var rba = parseSFText(b.rba != null ? b.rba : b.size);
+        if (rba == null) return missing();
+        if (rbMin != null && rba < rbMin) return false;
+        if (rbMax != null && rba > rbMax) return false;
+      }
+      if (f.industries && f.industries.length) {
+        var counts = b.byInd || null;
+        if (!counts && b.tenants && b.tenants.length) {
+          counts = {};
+          for (var t = 0; t < b.tenants.length; t++) { var k = b.tenants[t] && b.tenants[t][1]; if (k) counts[k] = (counts[k] || 0) + 1; }
+        }
+        var total = 0;
+        if (counts) for (var k2 in counts) total += counts[k2] || 0;
+        if (!total) return missing(); // no roster data at all -> can't evaluate
+        var anyInd = false;
+        for (var q = 0; q < f.industries.length; q++) if ((counts[f.industries[q]] || 0) > 0) { anyInd = true; break; }
+        if (!anyInd) return false;
+      }
+      if (f.owners && f.owners.length) {
+        var ow = b.owner == null ? "" : String(b.owner).trim();
+        if (!ow) return missing();
+        if (f.owners.indexOf(ow) < 0) return false;
+      }
+      if (f.submarkets && f.submarkets.length) {
+        var sm = b.submarket == null ? "" : String(b.submarket).trim();
+        if (!sm) return missing();
+        if (f.submarkets.indexOf(sm) < 0) return false;
+      }
+      return true;
+    })();
+    return { pass: pass, lacked: !pass && lacked };
+  }
+
   var API = {
     normalizeAddress: normalizeAddress,
     addressesMatch: addressesMatch,
     matchBuilding: matchBuilding,
     freshnessBucket: freshnessBucket,
-    annualRate: annualRate
+    annualRate: annualRate,
+    parseParkingRatio: parseParkingRatio,
+    parseSFText: parseSFText,
+    spaceFiltersActive: spaceFiltersActive,
+    spaceMatchesFilters: spaceMatchesFilters,
+    buildingPassesFilters: buildingPassesFilters
   };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   if (typeof window === "undefined" || !window.document) return; // Node: pure logic only
   window.MarketSpaces = API;
+
+  // browser-only extensions (wired to live state below): the Market Filters rail in
+  // index.html consumes these instead of duplicating the loader/matcher.
+  var changeCbs = [];
+  function notifyChange() { changeCbs.forEach(function (cb) { try { cb(); } catch (e) {} }); }
+  API.onChange = function (cb) { if (typeof cb === "function") changeCbs.push(cb); };
+  API.isLoaded = function () { return !!S.loaded; };
+  API.ensureLoaded = function () { return ensureData(); };
+  API.getActiveSpaces = function () { return activeRows(); };            // active rows, each with _bid when matched
+  API.matchBuildingId = function (row) {
+    if (row && row._bid !== undefined) return row._bid;
+    var b = matchBuilding(row, S.buildings);
+    return b ? b.id : null;
+  };
 
   /* ================================================================
    *  BROWSER WIDGET (broker UI only — behind the login gate)
@@ -278,11 +436,12 @@
   }
 
   function ensureData(force) {
-    if (S.loading || (S.loaded && !force)) return Promise.resolve();
+    if (S.loading) return S.loadPromise || Promise.resolve();
+    if (S.loaded && !force) return Promise.resolve();
     var sb = getSB();
     if (!sb) return Promise.resolve();
     S.loading = true; S.loadErr = null; renderDrawer();
-    return Promise.all([
+    S.loadPromise = Promise.all([
       sb.from("market_spaces").select("*").order("as_of", { ascending: false }),
       loadBuildings()
     ]).then(function (out) {
@@ -295,7 +454,9 @@
     }).then(function () {
       S.loading = false; S.loaded = true;
       renderAll();
+      notifyChange();
     });
+    return S.loadPromise;
   }
 
   function updateRow(id, patch) {
@@ -304,7 +465,7 @@
     return sb.from("market_spaces").update(patch).eq("id", id).then(function (res) {
       if (res.error) throw res.error;
       S.rows.forEach(function (r) { if (r.id === id) Object.keys(patch).forEach(function (k) { r[k] = patch[k]; }); });
-      matchAll(); renderAll();
+      matchAll(); renderAll(); notifyChange();
     });
   }
 
@@ -459,6 +620,7 @@
       return '<div class="msp-row' + (closed ? " closed" : "") + '" data-id="' + esc(r.id) + '">' +
         '<div class="msp-r1"><span class="msp-bn" title="' + esc(r.address || "") + '">' + esc(label) + '</span><span class="msp-sf">' + fmtSF(r.sf) + "</span></div>" +
         '<div class="msp-r2">' + (r.suite ? "Suite " + esc(r.suite) + " · " : "") + '<span title="' + esc(rateTitle(r)) + '">' + fmtRate(r) + "</span> · " + typeLabel(r) +
+          (r.available_date ? " · avail " + esc(String(r.available_date).slice(0, 10)) : "") +
           (r.status === "in-lease" ? " · in lease" : (closed ? " · " + esc(r.status) : "")) + "</div>" +
         '<div class="msp-r3"><span class="msp-badge src-' + sb2[0] + '">' + sb2[1] + '</span><span class="msp-badge fr-' + fb[0] + '">' + fb[1] + "</span>" +
         (r._bid ? "" : '<span class="msp-badge nomatch">not in portfolio</span>') + "</div></div>";
