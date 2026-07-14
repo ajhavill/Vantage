@@ -67,6 +67,7 @@
     <button class="vnav-subitem" data-sv="tenants" onclick="marketSub('tenants')">Tenants</button>
     <button class="vnav-subitem" data-sv="commute" onclick="marketSub('commute')">Commute</button>
     <button class="vnav-subitem" data-sv="comps" onclick="marketSub('comps')">Comps</button>
+    <button class="vnav-subitem" data-sv="reports" onclick="marketSub('reports')">Reports</button>
   </div>
   <a class="vnav-item" data-m="deals" href="deals.html?view=pipeline" title="Active Deals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg><span>Active Deals</span></a>
   <a class="vnav-item" data-m="clients" href="deals.html?view=clients" title="Clients"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 6.6a3 3 0 0 1 0 5.8M20.5 20a5 5 0 0 0-4-4.9"/></svg><span>Clients</span></a>
@@ -347,6 +348,9 @@
 
 <!-- COMPS sub-view: comparable transactions (filled by showComps) -->
 <section class="comps-v" id="compsView"><div id="compsBody"></div></section>
+
+<!-- REPORTS sub-view: quarterly brokerage market reports (owned by assets/market-reports.js) -->
+<section class="mrep-v" id="reportsView"><div id="reportsBody"></div></section>
 </div><!-- /marketModule -->
 
 <!-- CLIENTS module (filled by renderClients) -->
@@ -2573,7 +2577,7 @@
       document.querySelectorAll('#vnav .vnav-item').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-m')==='market'); });
     }
     setMarketSubOpen(true);
-    if(sv==='tenants') showCompetition(); else if(sv==='commute') showCommute(); else if(sv==='comps') showComps(); else showPortfolio();
+    if(sv==='tenants') showCompetition(); else if(sv==='commute') showCommute(); else if(sv==='comps') showComps(); else if(sv==='reports'&&window.showMarketReports) showMarketReports(); else showPortfolio();
   };
   window.showModule=function(m){
     // Clients now live in the unified Deals workspace (Phase 2 merge). Any path to
@@ -2586,7 +2590,7 @@
     if(m==='home') renderHome();
     else if(m==='clients') renderClients();
     else if(m==='settings') renderSettings();
-    else if(m==='market'){ var dv=document.getElementById('detailView'); if((!dv||!dv.classList.contains('show')) && !document.getElementById('competitionView').classList.contains('show') && !document.getElementById('commuteView').classList.contains('show') && !document.getElementById('compsView').classList.contains('show')){ if(window.showPortfolio) showPortfolio(); } setTimeout(function(){ try{ if(overviewMap) overviewMap.invalidateSize(); if(detailMap) detailMap.invalidateSize(); }catch(e){} },60); }
+    else if(m==='market'){ var dv=document.getElementById('detailView'); if((!dv||!dv.classList.contains('show')) && !document.getElementById('competitionView').classList.contains('show') && !document.getElementById('commuteView').classList.contains('show') && !document.getElementById('compsView').classList.contains('show') && !document.getElementById('reportsView').classList.contains('show')){ if(window.showPortfolio) showPortfolio(); } setTimeout(function(){ try{ if(overviewMap) overviewMap.invalidateSize(); if(detailMap) detailMap.invalidateSize(); }catch(e){} },60); }
     if(m!=='market'){ var d=document.getElementById('detailView'); if(d) d.classList.remove('show'); }
   };
   var MAIL_IC='<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>';
@@ -3400,5 +3404,7 @@
 <!-- Broker Home dashboard — takes over the Home tab with the deal command-center. Owned by the deal-flow session. -->
 <script src="assets/broker-home.js"></script>
 <script src="assets/market-spaces.js"></script>
+<!-- Market → Reports — quarterly brokerage research library (self-contained sub-view). -->
+<script src="assets/market-reports.js"></script>
 </body>
 </html>
