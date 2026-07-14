@@ -23,62 +23,63 @@
 
 const sb = require("./_sb");
 
-const NUMN = { anyOf: [{ type: "number" }, { type: "null" }] };
-const INTN = { anyOf: [{ type: "integer" }, { type: "null" }] };
-const STRN = { anyOf: [{ type: "string" }, { type: "null" }] };
-function ENUMN(vals) { return { anyOf: [{ type: "string", enum: vals }, { type: "null" }] }; }
+// No anyOf/null unions here: the structured-outputs compiler caps union-typed
+// parameters at 16 and this schema has ~29 optional stats (the first deploy
+// 400'd on exactly that). Unknown fields are OPTIONAL instead — omitted from
+// `required`, and the system prompt says to leave them out rather than guess.
+// The browser's normalizeReport() already treats missing as null.
+const NUM = { type: "number" };
+const INT = { type: "integer" };
+const STR = { type: "string" };
+function ENUM(vals) { return { type: "string", enum: vals }; }
 
 const SUBMARKET_SCHEMA = {
   type: "object",
   additionalProperties: false,
   properties: {
-    name: { type: "string" },
-    inventorySf: INTN,
-    vacancyPct: NUMN,
-    availabilityPct: NUMN,
-    netAbsorptionSf: INTN,
-    subleaseSf: INTN,
-    avgAskingRate: NUMN,
-    classARate: NUMN
+    name: STR,
+    inventorySf: INT,
+    vacancyPct: NUM,
+    availabilityPct: NUM,
+    netAbsorptionSf: INT,
+    subleaseSf: INT,
+    avgAskingRate: NUM,
+    classARate: NUM
   },
-  required: ["name", "inventorySf", "vacancyPct", "availabilityPct",
-    "netAbsorptionSf", "subleaseSf", "avgAskingRate", "classARate"]
+  required: ["name"]
 };
 
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
   properties: {
-    brokerage: STRN,                       // 'CBRE', 'JLL', 'Cushman & Wakefield', ...
-    reportTitle: STRN,                     // as printed on the cover
-    market: STRN,                          // geography covered, e.g. 'Greater Los Angeles'
-    productType: ENUMN(["office", "industrial", "retail", "flex", "lab", "medical", "mixed"]),
-    year: INTN,
-    quarter: INTN,                         // 1-4
-    reportDate: STRN,                      // 'YYYY-MM-DD' when stated
-    inventorySf: INTN,
-    vacancyPct: NUMN,
-    availabilityPct: NUMN,
-    subleaseSf: INTN,
-    netAbsorptionSf: INTN,                 // the quarter's; negative = occupancy loss
-    netAbsorptionYtdSf: INTN,
-    leasingActivitySf: INTN,
-    underConstructionSf: INTN,
-    deliveriesSf: INTN,
-    avgAskingRate: NUMN,                   // $/SF number only
-    ratePeriod: ENUMN(["mo", "yr"]),
-    rateBasis: ENUMN(["FSG", "NNN", "MG"]),
-    classARate: NUMN,
-    salePricePsf: NUMN,
-    capRatePct: NUMN,
-    takeaways: { type: "array", items: { type: "string" } },
+    brokerage: STR,                        // 'CBRE', 'JLL', 'Cushman & Wakefield', ...
+    reportTitle: STR,                      // as printed on the cover
+    market: STR,                           // geography covered, e.g. 'Greater Los Angeles'
+    productType: ENUM(["office", "industrial", "retail", "flex", "lab", "medical", "mixed"]),
+    year: INT,
+    quarter: INT,                          // 1-4
+    reportDate: STR,                       // 'YYYY-MM-DD' when stated
+    inventorySf: INT,
+    vacancyPct: NUM,
+    availabilityPct: NUM,
+    subleaseSf: INT,
+    netAbsorptionSf: INT,                  // the quarter's; negative = occupancy loss
+    netAbsorptionYtdSf: INT,
+    leasingActivitySf: INT,
+    underConstructionSf: INT,
+    deliveriesSf: INT,
+    avgAskingRate: NUM,                    // $/SF number only
+    ratePeriod: ENUM(["mo", "yr"]),
+    rateBasis: ENUM(["FSG", "NNN", "MG"]),
+    classARate: NUM,
+    salePricePsf: NUM,
+    capRatePct: NUM,
+    takeaways: { type: "array", items: STR },
     submarkets: { type: "array", items: SUBMARKET_SCHEMA }
   },
-  required: ["brokerage", "reportTitle", "market", "productType", "year", "quarter", "reportDate",
-    "inventorySf", "vacancyPct", "availabilityPct", "subleaseSf", "netAbsorptionSf",
-    "netAbsorptionYtdSf", "leasingActivitySf", "underConstructionSf", "deliveriesSf",
-    "avgAskingRate", "ratePeriod", "rateBasis", "classARate", "salePricePsf", "capRatePct",
-    "takeaways", "submarkets"]
+  // only what's on every quarterly report's cover; every stat is optional
+  required: ["brokerage", "market", "year", "quarter", "takeaways", "submarkets"]
 };
 
 const SYSTEM =
@@ -87,7 +88,7 @@ const SYSTEM =
   "Colliers, Newmark, Savills, Lee & Associates, Kidder Mathews, or similar research PDF) and extract its statistics " +
   "precisely for the broker. Rules:\n" +
   "- Extract ONLY what the document states. Never infer, estimate, or compute a value the report doesn't print; if a " +
-  "field isn't stated, return null for it.\n" +
+  "field isn't stated, OMIT it from your output entirely (all statistic fields are optional).\n" +
   "- `brokerage` is the publishing firm ('CBRE', 'JLL', 'Cushman & Wakefield', 'Colliers', 'Newmark', 'Savills', " +
   "'Lee & Associates', 'Kidder Mathews', ...). `market` is the geography the report covers as titled (e.g. 'Greater " +
   "Los Angeles', 'West Los Angeles'). `productType` is the property sector the report covers; a report spanning " +
