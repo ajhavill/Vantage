@@ -23,30 +23,37 @@
 
 const sb = require("./_sb");
 
-// No anyOf/null unions here: the structured-outputs compiler caps union-typed
-// parameters at 16 and this schema has ~29 optional stats (the first deploy
-// 400'd on exactly that). Unknown fields are OPTIONAL instead — omitted from
-// `required`, and the system prompt says to leave them out rather than guess.
-// The browser's normalizeReport() already treats missing as null.
+// The structured-outputs compiler enforces TWO budgets, and this schema has
+// tripped both in production: max 16 union-typed (anyOf/null) parameters
+// (first deploy: 29 unions → 400) and max 24 OPTIONAL parameters (second
+// deploy: 25 optionals → 400). Split the load between the budgets:
+//   * top-level stats stay OPTIONAL plain types (18 of 24) — the prompt says
+//     to omit unstated fields, normalizeReport() treats missing as null;
+//   * submarket-row stats are REQUIRED but NULLABLE (7 of 16 unions) — table
+//     rows naturally have gaps, so null-per-cell is the right shape anyway.
+// If you add a field, check both counts.
 const NUM = { type: "number" };
 const INT = { type: "integer" };
 const STR = { type: "string" };
 function ENUM(vals) { return { type: "string", enum: vals }; }
+const NUMN = { anyOf: [{ type: "number" }, { type: "null" }] };
+const INTN = { anyOf: [{ type: "integer" }, { type: "null" }] };
 
 const SUBMARKET_SCHEMA = {
   type: "object",
   additionalProperties: false,
   properties: {
     name: STR,
-    inventorySf: INT,
-    vacancyPct: NUM,
-    availabilityPct: NUM,
-    netAbsorptionSf: INT,
-    subleaseSf: INT,
-    avgAskingRate: NUM,
-    classARate: NUM
+    inventorySf: INTN,
+    vacancyPct: NUMN,
+    availabilityPct: NUMN,
+    netAbsorptionSf: INTN,
+    subleaseSf: INTN,
+    avgAskingRate: NUMN,
+    classARate: NUMN
   },
-  required: ["name"]
+  required: ["name", "inventorySf", "vacancyPct", "availabilityPct",
+    "netAbsorptionSf", "subleaseSf", "avgAskingRate", "classARate"]
 };
 
 const SCHEMA = {
@@ -100,8 +107,9 @@ const SYSTEM =
   "- Rates: `avgAskingRate` (and `classARate`) is the $/SF NUMBER as printed; `ratePeriod` is 'mo' for $/SF/month " +
   "(common in Los Angeles) or 'yr' for $/SF/year. `rateBasis` is FSG (full service/gross), NNN, or MG when the report " +
   "states the service type; otherwise null. Read the units printed — never convert between monthly and annual.\n" +
-  "- `submarkets`: one entry per row of the report's submarket statistics table, with each row's own figures. Skip " +
-  "subtotal/total rows (the market-wide totals belong in the headline fields).\n" +
+  "- `submarkets`: one entry per row of the report's submarket statistics table, with each row's own figures; use " +
+  "null for any value the table doesn't state for that row. Skip subtotal/total rows (the market-wide totals belong " +
+  "in the headline fields).\n" +
   "- `takeaways`: 3-7 SHORT scannable bullets, each one specific fact or trend the report highlights (rate direction, " +
   "notable move-ins/move-outs, big leases signed, construction pipeline, concessions, forecast). Each bullet is a " +
   "single crisp sentence fragment — never a paragraph.\n" +
