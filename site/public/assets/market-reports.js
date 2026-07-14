@@ -77,8 +77,16 @@
     ".mr-grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 12px}" +
     ".mr-err{font:600 12.5px Inter;color:var(--dining,#C9543F);margin:6px 0}" +
     ".mr-row{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}" +
+    /* background-import banners */
+    ".mr-job{display:flex;gap:12px;align-items:center;background:var(--paper-2,#FCFBF8);border:1px solid var(--line-2,#D2CCBF);border-left:3px solid var(--accent,#2D6E7E);border-radius:12px;padding:12px 14px;margin:0 0 12px}" +
+    ".mr-job.done{border-left-color:var(--fitness,#3F8F6B)}" +
+    ".mr-job.err{border-left-color:var(--dining,#C9543F)}" +
+    ".mr-jt{flex:1;min-width:0}" +
+    ".mr-jt b{display:block;font:600 13.5px Inter;color:var(--ink,#1A2230)}" +
+    ".mr-jt span{font:12px Inter;color:var(--ink-soft,#55606F)}" +
     ".mr-prog{display:flex;gap:14px;align-items:center;padding:18px 4px}" +
     ".mr-spin{width:26px;height:26px;border:3px solid var(--line-2,#D2CCBF);border-top-color:var(--accent,#2D6E7E);border-radius:50%;animation:mrspin .8s linear infinite;flex:none}" +
+    ".mr-spin.sm{width:18px;height:18px;border-width:2.5px}" +
     "@keyframes mrspin{to{transform:rotate(360deg)}}" +
     ".mr-pt{font:600 13.5px Inter;color:var(--ink,#1A2230)}" +
     ".mr-ps{font:12px Inter;color:var(--ink-soft,#55606F);margin-top:3px}" +
@@ -94,8 +102,9 @@
   })();
 
   /* ================= state + helpers ================= */
-  var st = { loaded: false, loading: false, err: "", rows: [], prod: "all", brok: "all" };
-  var _imp = null;      // in-flight import {report, filename, timer}
+  var st = { loaded: false, loading: false, err: "", rows: [], jobs: [], prod: "all", brok: "all" };
+  var _imp = null;      // import the SHEET is showing {jobId, stage, report, filename, timer}
+  var _jobsIv = null;   // page-level job poller — keeps running after the sheet is closed
 
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
   function toNum(v) { if (v == null || v === "") return null; var n = Number(String(v).replace(/[$,%\s,]/g, "")); return isFinite(n) ? n : null; }
@@ -154,6 +163,7 @@
     var c = document.getElementById("crumb"); if (c) c.innerHTML = "Market · <b>Quarterly Reports</b>";
     render();
     if (!st.loaded && !st.loading) load();
+    loadJobs();                    // pick up imports still running from earlier visits
   };
 
   /* ================= data ================= */
@@ -169,6 +179,88 @@
           : (e.message || "Could not load reports.");
         st.loaded = true; st.loading = false; render();
       });
+  }
+
+  /* ---- background import jobs (market_report_extracts rows) ----
+   * The extraction runs server-side against a job row, so it survives closing
+   * the sheet, leaving the page, even closing the browser. This poller owns
+   * job state page-wide: banners above the library show running/ready/failed
+   * imports, and if the "Reading…" sheet is open for a job it drives that too.
+   * NOTE: never select pdf_b64 here — that's the staged multi-MB upload. */
+  var JOB_COLS = "id,filename,status,error,result,created_at";
+  var POLL_MS = 3000;
+
+  function loadJobs() {
+    var sb = sbc(); if (!sb) return;
+    q(sb.from("market_report_extracts").select(JOB_COLS).order("created_at", { ascending: false }))
+      .then(function (rows) { st.jobs = rows || []; render(); ensurePoller(); })
+      .catch(function () { /* table missing → the import flow surfaces it */ });
+  }
+
+  function ensurePoller() {
+    var pending = st.jobs.some(function (j) { return j.status === "queued"; });
+    if (!pending) { if (_jobsIv) { clearInterval(_jobsIv); _jobsIv = null; } return; }
+    if (_jobsIv) return;
+    _jobsIv = setInterval(function () {
+      var sb = sbc(); if (!sb) return;
+      q(sb.from("market_report_extracts").select(JOB_COLS).order("created_at", { ascending: false }))
+        .then(function (rows) {
+          var prev = {}; st.jobs.forEach(function (j) { prev[j.id] = j.status; });
+          st.jobs = rows || [];
+          // a job the open sheet is watching just settled → drive the sheet
+          st.jobs.forEach(function (j) {
+            if (prev[j.id] === "queued" && j.status !== "queued" &&
+                _imp && _imp.jobId === j.id && _imp.stage === "reading" && document.getElementById("mrOvl")) {
+              if (j.status === "done") reviewJob(j.id);
+              else failSheet(j.error || "The reader hit an error. Try again.");
+            }
+          });
+          render(); ensurePoller();
+        })
+        .catch(function () { /* transient — keep polling */ });
+    }, POLL_MS);
+  }
+
+  function findJob(id) { for (var i = 0; i < st.jobs.length; i++) if (st.jobs[i].id === id) return st.jobs[i]; return null; }
+
+  // open the review sheet for a finished job (from the sheet flow or a banner)
+  function reviewJob(id) {
+    var j = findJob(id); if (!j || j.status !== "done") return;
+    if (_imp && _imp.timer) { clearInterval(_imp.timer); _imp.timer = null; }
+    _imp = { jobId: id, stage: "review", filename: j.filename || "report", timer: null, report: normalizeReport(j.result) };
+    review();
+  }
+
+  function dismissJob(id) {
+    st.jobs = st.jobs.filter(function (j) { return j.id !== id; });
+    render(); ensurePoller();
+    cleanupJob(id);
+  }
+
+  function jobAge(j) {
+    var ms = Date.now() - new Date(j.created_at).getTime();
+    if (!isFinite(ms) || ms < 0) return "";
+    var m = Math.floor(ms / 60000);
+    return m < 1 ? "under a minute" : (m + " min");
+  }
+
+  function renderJobs() {
+    if (!st.jobs.length) return "";
+    return st.jobs.map(function (j) {
+      if (j.status === "queued") {
+        var long = (Date.now() - new Date(j.created_at).getTime()) > 10 * 60 * 1000;
+        return '<div class="mr-job"><div class="mr-spin sm"></div><div class="mr-jt"><b>Reading ' + esc(j.filename || "report") + "…</b>" +
+          "<span>" + (long ? "Taking unusually long — you can dismiss this and try a lighter PDF." : "Running for " + jobAge(j) + " — you can leave this page; it finishes on its own.") + "</span></div>" +
+          '<button class="mr-del" data-mr-dismiss="' + esc(j.id) + '">Dismiss</button></div>';
+      }
+      if (j.status === "error") {
+        return '<div class="mr-job err"><div class="mr-jt"><b>' + esc(j.filename || "Report") + " couldn’t be read</b><span>" + esc(j.error || "Unknown error") + "</span></div>" +
+          '<button class="mr-del" data-mr-dismiss="' + esc(j.id) + '">Dismiss</button></div>';
+      }
+      return '<div class="mr-job done"><div class="mr-jt"><b>' + esc(j.filename || "Report") + " is ready</b><span>Review the extracted stats, then save it to the library.</span></div>" +
+        '<button class="cmp-btn primary" data-mr-review="' + esc(j.id) + '">Review &amp; save</button>' +
+        '<button class="mr-del" data-mr-dismiss="' + esc(j.id) + '">Dismiss</button></div>';
+    }).join("");
   }
 
   // previous quarter's row from the same brokerage/market/product, for QoQ deltas
@@ -299,9 +391,15 @@
         }).join("");
       }
     }
-    el.innerHTML = head + body;
+    el.innerHTML = head + renderJobs() + body;
 
     var ib = document.getElementById("mrImportBtn"); if (ib) ib.addEventListener("click", openImport);
+    el.querySelectorAll("[data-mr-review]").forEach(function (b) {
+      b.addEventListener("click", function () { reviewJob(this.getAttribute("data-mr-review")); });
+    });
+    el.querySelectorAll("[data-mr-dismiss]").forEach(function (b) {
+      b.addEventListener("click", function () { dismissJob(this.getAttribute("data-mr-dismiss")); });
+    });
     var ps = document.getElementById("mrProd"); if (ps) ps.addEventListener("change", function () { st.prod = this.value; render(); });
     var bs = document.getElementById("mrBrok"); if (bs) bs.addEventListener("change", function () { st.brok = this.value; render(); });
     el.querySelectorAll("[data-mr-sm]").forEach(function (b) {
@@ -389,16 +487,14 @@
   }
 
   function callExtract(b64, pasted, filename) {
-    var started = Date.now(), jobId = newJobId();
-    sheet("<h3>Reading report…</h3><div class=\"mr-ssub\">" + esc(_imp.filename) + "</div>" +
-      '<div class="mr-prog"><div class="mr-spin"></div><div><div class="mr-pt">Claude is reading the stats, submarkets &amp; takeaways…</div>' +
-      '<div class="mr-ps">A full report takes ~1–3 minutes. <span id="mr_elapsed">0s</span> elapsed — leave this open.</div></div></div>');
-    _imp.timer = setInterval(function () { var el = document.getElementById("mr_elapsed"); if (el) el.textContent = Math.round((Date.now() - started) / 1000) + "s"; }, 1000);
+    var jobId = newJobId();
+    _imp.jobId = jobId; _imp.stage = "reading";
+    readingSheet(jobId, Date.now());
 
     var supa = sbc();
     if (!supa) { failSheet("Sign-in isn't ready — reload the page."); return; }
     return q(supa.from("market_report_extracts").insert({
-      id: jobId, org_id: ORG_ID, filename: filename || null,
+      id: jobId, org_id: ORG_ID, filename: filename || _imp.filename || null,
       pdf_b64: b64 || null, src_text: (!b64 && pasted) ? pasted : null
     })).then(function () {
       return getToken();
@@ -412,7 +508,9 @@
       if (res.status === 401) throw new Error("Your session expired — please sign in again.");
       // background fns reply 202 before running; anything else <500 is still "accepted"
       if (res.status >= 500) throw new Error("The reader couldn't start (HTTP " + res.status + "). Try again.");
-      pollJob(jobId, started);
+      // job is live: show it as a banner too, and let the page-level poller own it
+      st.jobs.unshift({ id: jobId, filename: filename || _imp.filename || null, status: "queued", error: null, result: null, created_at: new Date().toISOString() });
+      render(); ensurePoller();
     }).catch(function (e) {
       var m = e.message || String(e);
       if (/does not exist|relation|schema cache/i.test(m)) m = "The reports tables need an update — run supabase/market-reports.sql once and reload.";
@@ -421,30 +519,22 @@
     });
   }
 
-  var POLL_MS = 3000, POLL_MAX_MS = 5 * 60 * 1000;   // fn budget is 15 min; 5 is generous for one report
-  function pollJob(jobId, started) {
-    var supa = sbc();
-    var iv = setInterval(function () {
-      // the sheet is the poll's owner: if the broker closed it, stop polling
-      if (!document.getElementById("mrOvl")) { clearInterval(iv); cleanupJob(jobId); return; }
-      if (Date.now() - started > POLL_MAX_MS) {
-        clearInterval(iv); cleanupJob(jobId);
-        failSheet("The reader is taking unusually long. Try again — a lighter PDF (fewer pages/photos) reads faster.");
-        return;
-      }
-      q(supa.from("market_report_extracts").select("status,result,error").eq("id", jobId))
-        .then(function (rows) {
-          var row = rows && rows[0];
-          if (!row || row.status === "queued") return;          // still working
-          clearInterval(iv);
-          cleanupJob(jobId);
-          if (row.status === "error") { failSheet(row.error || "The reader hit an error. Try again."); return; }
-          if (_imp && _imp.timer) { clearInterval(_imp.timer); _imp.timer = null; }
-          _imp.report = normalizeReport(row.result);
-          review();
-        })
-        .catch(function () { /* transient poll error — keep trying until timeout */ });
-    }, POLL_MS);
+  // The "Reading…" sheet is OPTIONAL now — the extraction belongs to the job
+  // row, not the sheet. "Run in background" just closes it; the banner (and
+  // the page-level poller) carry on, and "Review & save" appears when done.
+  function readingSheet(jobId, started) {
+    sheet("<h3>Reading report…</h3><div class=\"mr-ssub\">" + esc(_imp.filename) + "</div>" +
+      '<div class="mr-prog"><div class="mr-spin"></div><div><div class="mr-pt">Claude is reading the stats, submarkets &amp; takeaways…</div>' +
+      '<div class="mr-ps">A full report takes ~1–3 minutes. <span id="mr_elapsed">0s</span> elapsed.</div></div></div>' +
+      '<div class="mr-ssub">You don’t need to wait here — run it in the background and a <b>Review &amp; save</b> button appears on the Reports page when it’s done.</div>' +
+      '<div class="mr-row"><button class="cmp-btn" id="mr_cancel">Cancel import</button><button class="cmp-btn primary" id="mr_bg">Run in background</button></div>');
+    _imp.timer = setInterval(function () { var el = document.getElementById("mr_elapsed"); if (el) el.textContent = Math.round((Date.now() - started) / 1000) + "s"; }, 1000);
+    document.getElementById("mr_bg").addEventListener("click", function () { closeSheet(); _imp = null; });
+    document.getElementById("mr_cancel").addEventListener("click", function () {
+      var id = _imp && _imp.jobId;
+      closeSheet(); _imp = null;
+      if (id) dismissJob(id);
+    });
   }
 
   function cleanupJob(jobId) {
@@ -597,7 +687,12 @@
         if (hits && hits.length) return q(sb.from("market_reports").update(row).eq("id", hits[0].id));
         return q(sb.from("market_reports").insert(row));
       })
-      .then(function () { closeSheet(); st.loaded = false; load(); })
+      .then(function () {
+        var jobId = _imp && _imp.jobId;
+        closeSheet(); _imp = null;
+        if (jobId) { st.jobs = st.jobs.filter(function (j) { return j.id !== jobId; }); cleanupJob(jobId); }
+        st.loaded = false; load(); ensurePoller();
+      })
       .catch(function (e) {
         document.getElementById("mrr_save").disabled = false;
         err.textContent = "Save failed: " + (e.message || e) +
