@@ -27,71 +27,22 @@
 
 const sb = require("./_sb");
 
-// The structured-outputs compiler enforces TWO budgets, and this schema has
-// tripped both in production: max 16 union-typed (anyOf/null) parameters
-// (first deploy: 29 unions → 400) and max 24 OPTIONAL parameters (second
-// deploy: 25 optionals → 400). Split the load between the budgets:
-//   * top-level stats stay OPTIONAL plain types (18 of 24) — the prompt says
-//     to omit unstated fields, normalizeReport() treats missing as null;
-//   * submarket-row stats are REQUIRED but NULLABLE (7 of 16 unions) — table
-//     rows naturally have gaps, so null-per-cell is the right shape anyway.
-// If you add a field, check both counts.
-const NUM = { type: "number" };
-const INT = { type: "integer" };
-const STR = { type: "string" };
-function ENUM(vals) { return { type: "string", enum: vals }; }
-const NUMN = { anyOf: [{ type: "number" }, { type: "null" }] };
-const INTN = { anyOf: [{ type: "integer" }, { type: "null" }] };
-
-const SUBMARKET_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    name: STR,
-    inventorySf: INTN,
-    vacancyPct: NUMN,
-    availabilityPct: NUMN,
-    netAbsorptionSf: INTN,
-    subleaseSf: INTN,
-    avgAskingRate: NUMN,
-    classARate: NUMN
-  },
-  required: ["name", "inventorySf", "vacancyPct", "availabilityPct",
-    "netAbsorptionSf", "subleaseSf", "avgAskingRate", "classARate"]
-};
-
-const SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    brokerage: STR,                        // 'CBRE', 'JLL', 'Cushman & Wakefield', ...
-    reportTitle: STR,                      // as printed on the cover
-    market: STR,                           // geography covered, e.g. 'Greater Los Angeles'
-    productType: ENUM(["office", "industrial", "retail", "flex", "lab", "medical", "mixed"]),
-    year: INT,
-    quarter: INT,                          // 1-4
-    reportDate: STR,                       // 'YYYY-MM-DD' when stated
-    inventorySf: INT,
-    vacancyPct: NUM,
-    availabilityPct: NUM,
-    subleaseSf: INT,
-    netAbsorptionSf: INT,                  // the quarter's; negative = occupancy loss
-    netAbsorptionYtdSf: INT,
-    leasingActivitySf: INT,
-    underConstructionSf: INT,
-    deliveriesSf: INT,
-    avgAskingRate: NUM,                    // $/SF number only
-    ratePeriod: ENUM(["mo", "yr"]),
-    rateBasis: ENUM(["FSG", "NNN", "MG"]),
-    classARate: NUM,
-    salePricePsf: NUM,
-    capRatePct: NUM,
-    takeaways: { type: "array", items: STR },
-    submarkets: { type: "array", items: SUBMARKET_SCHEMA }
-  },
-  // only what's on every quarterly report's cover; every stat is optional
-  required: ["brokerage", "market", "year", "quarter", "takeaways", "submarkets"]
-};
+// NO structured outputs here — this endpoint burned three production deploys
+// on the schema compiler (400: >16 union params; 400: >24 optional params;
+// then "Grammar compilation timed out" on a schema within both budgets).
+// Plain prompted JSON instead: the shape is spelled out in the system prompt,
+// the reply is parsed tolerantly below, and the browser's normalizeReport()
+// coerces every field defensively anyway — it never trusted the shape.
+const JSON_SHAPE =
+  '{"brokerage":"CBRE","reportTitle":"Greater Los Angeles Office Figures Q2 2026","market":"Greater Los Angeles",' +
+  '"productType":"office","year":2026,"quarter":2,"reportDate":"2026-07-01",' +
+  '"inventorySf":215400000,"vacancyPct":24.1,"availabilityPct":27.8,"subleaseSf":7200000,' +
+  '"netAbsorptionSf":-412000,"netAbsorptionYtdSf":-1080000,"leasingActivitySf":3400000,' +
+  '"underConstructionSf":1100000,"deliveriesSf":0,"avgAskingRate":3.61,"ratePeriod":"mo","rateBasis":"FSG",' +
+  '"classARate":3.94,"salePricePsf":null,"capRatePct":null,' +
+  '"takeaways":["Asking rates held flat at $3.61 FSG despite rising vacancy"],' +
+  '"submarkets":[{"name":"Santa Monica","inventorySf":8900000,"vacancyPct":21.3,"availabilityPct":24.0,' +
+  '"netAbsorptionSf":45000,"subleaseSf":610000,"avgAskingRate":5.12,"classARate":null}]}';
 
 const SYSTEM =
   "You are an expert commercial real estate research analyst at Havill & Co., a tenant-rep firm. You read a " +
@@ -118,7 +69,12 @@ const SYSTEM =
   "notable move-ins/move-outs, big leases signed, construction pipeline, concessions, forecast). Each bullet is a " +
   "single crisp sentence fragment — never a paragraph.\n" +
   "- Dates as 'YYYY-MM-DD'.\n" +
-  "Respond only with the structured result.";
+  "OUTPUT FORMAT: respond with ONLY one JSON object — no markdown fences, no commentary before or after. Use exactly " +
+  "the key names and value types of this example (the numbers here are illustrative, never copy them): " + JSON_SHAPE + " " +
+  "`productType` is one of office|industrial|retail|flex|lab|medical|mixed; `ratePeriod` is mo|yr; `rateBasis` is " +
+  "FSG|NNN|MG. OMIT any headline-statistic key the report doesn't state (or set it null); in `submarkets` rows use " +
+  "null for unstated cells. `brokerage`, `market`, `year`, `quarter`, `takeaways` and `submarkets` must always be present " +
+  "(`submarkets` may be an empty array).";
 
 // ~30MB of base64 ≈ 22MB PDF — past Anthropic's request ceiling once wrapped in JSON.
 const MAX_B64 = 30 * 1024 * 1024;
@@ -153,7 +109,7 @@ async function extractWithClaude(input) {
       model: "claude-opus-4-8",
       max_tokens: 12000,
       thinking: { type: "adaptive" },
-      output_config: { effort: "high", format: { type: "json_schema", schema: SCHEMA } },
+      output_config: { effort: "high" },
       system: SYSTEM,
       messages: [{ role: "user", content: content }]
     })
@@ -167,7 +123,19 @@ async function extractWithClaude(input) {
   if (data.stop_reason === "refusal") throw new Error("The model's safety system declined this request.");
   const textBlock = (data.content || []).filter((b) => b.type === "text")[0];
   if (!textBlock || !textBlock.text) throw new Error("No extraction returned.");
-  return JSON.parse(textBlock.text);
+  return parseJSONLoose(textBlock.text);
+}
+
+// Prompted JSON instead of structured outputs — tolerate the usual wrappers:
+// markdown fences, a sentence before/after the object. normalizeReport() in
+// the browser does the per-field coercion; this only has to find the object.
+function parseJSONLoose(text) {
+  let t = String(text || "").trim();
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) t = fence[1].trim();
+  const a = t.indexOf("{"), b = t.lastIndexOf("}");
+  if (a < 0 || b <= a) throw new Error("No JSON object in the reply.");
+  return JSON.parse(t.slice(a, b + 1));
 }
 
 // Write the job's outcome back to the row (service_role). Always clears the
