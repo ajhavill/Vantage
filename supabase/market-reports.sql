@@ -108,3 +108,61 @@ create policy market_reports_update on public.market_reports for update using (
 create policy market_reports_delete on public.market_reports for delete using (
   org_id = public.current_org()
 );
+
+-- ============================================================================
+-- market_report_extracts — job rows for the ASYNC extraction pipeline.
+--
+-- Netlify's synchronous functions cap at ~26s and a full quarterly-report read
+-- takes longer (the first live import 504'd), so extraction runs in a
+-- BACKGROUND function (market-report-extract-background, 202-immediately /
+-- 15-min budget). Background invocations can't carry a multi-MB payload, so:
+--   1. the browser stages the PDF here (RLS insert, pdf_b64/src_text),
+--   2. invokes the background fn with just {token, jobId},
+--   3. the fn (service_role) reads the row, extracts with Claude, writes
+--      status/result back and CLEARS pdf_b64,
+--   4. the browser polls this row (RLS select) and deletes it after reading.
+-- Rows are transient; the browser deletes on consume.
+-- ============================================================================
+
+create table if not exists public.market_report_extracts (
+  id uuid primary key,                       -- client-generated job id
+  org_id uuid not null references public.orgs(id) on delete cascade,
+  filename text,
+  pdf_b64  text,                             -- staged upload; cleared by the fn after reading
+  src_text text,                             -- pasted-text fallback
+  status text not null default 'queued' check (status in ('queued','done','error')),
+  result jsonb,                              -- the extraction, verbatim, when status='done'
+  error  text,                               -- friendly message when status='error'
+  created_by uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create or replace function public.stamp_market_report_extract()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.org_id is null then
+    select org_id into new.org_id from public.profiles where id = auth.uid();
+  end if;
+  if new.created_by is null then new.created_by := auth.uid(); end if;
+  return new;
+end; $$;
+drop trigger if exists market_report_extracts_stamp on public.market_report_extracts;
+create trigger market_report_extracts_stamp before insert on public.market_report_extracts
+  for each row execute function public.stamp_market_report_extract();
+
+alter table public.market_report_extracts enable row level security;
+
+drop policy if exists market_report_extracts_select on public.market_report_extracts;
+drop policy if exists market_report_extracts_insert on public.market_report_extracts;
+drop policy if exists market_report_extracts_delete on public.market_report_extracts;
+
+-- No UPDATE policy on purpose: only the background fn (service_role) writes results.
+create policy market_report_extracts_select on public.market_report_extracts for select using (
+  org_id = public.current_org() or public.is_platform_admin()
+);
+create policy market_report_extracts_insert on public.market_report_extracts for insert with check (
+  org_id = public.current_org()
+);
+create policy market_report_extracts_delete on public.market_report_extracts for delete using (
+  org_id = public.current_org()
+);
