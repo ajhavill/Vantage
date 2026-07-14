@@ -21,7 +21,7 @@
   "use strict";
 
   var ORG_ID = "00000000-0000-0000-0000-000000000001";   // Havill & Co. (same constant as report-import.js)
-  var FN = "/.netlify/functions/market-report-extract";
+  var FN = "/.netlify/functions/market-report-extract-background";
   var PRODUCTS = [["office", "Office"], ["industrial", "Industrial"], ["retail", "Retail"],
                   ["flex", "Flex"], ["lab", "Lab"], ["medical", "Medical"], ["mixed", "Mixed"]];
 
@@ -378,28 +378,78 @@
       .catch(function (e) { failSheet(e.message || String(e)); });
   }
 
+  // Async pipeline (the synchronous call 504'd — Netlify caps sync functions
+  // at ~26s and a full-report Opus read runs longer):
+  //   1. stage the PDF/text in an org-scoped market_report_extracts job row,
+  //   2. kick the background fn with just {token, jobId} (202-immediately),
+  //   3. poll the job row until it flips to done/error.
+  function newJobId() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return "xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx".replace(/x/g, function () { return (Math.random() * 16 | 0).toString(16); });
+  }
+
   function callExtract(b64, pasted, filename) {
-    var started = Date.now();
+    var started = Date.now(), jobId = newJobId();
     sheet("<h3>Reading report…</h3><div class=\"mr-ssub\">" + esc(_imp.filename) + "</div>" +
       '<div class="mr-prog"><div class="mr-spin"></div><div><div class="mr-pt">Claude is reading the stats, submarkets &amp; takeaways…</div>' +
-      '<div class="mr-ps">This takes ~20–45s. <span id="mr_elapsed">0s</span> elapsed — leave this open.</div></div></div>');
+      '<div class="mr-ps">A full report takes ~1–3 minutes. <span id="mr_elapsed">0s</span> elapsed — leave this open.</div></div></div>');
     _imp.timer = setInterval(function () { var el = document.getElementById("mr_elapsed"); if (el) el.textContent = Math.round((Date.now() - started) / 1000) + "s"; }, 1000);
-    return getToken().then(function (token) {
+
+    var supa = sbc();
+    if (!supa) { failSheet("Sign-in isn't ready — reload the page."); return; }
+    return q(supa.from("market_report_extracts").insert({
+      id: jobId, org_id: ORG_ID, filename: filename || null,
+      pdf_b64: b64 || null, src_text: (!b64 && pasted) ? pasted : null
+    })).then(function () {
+      return getToken();
+    }).then(function (token) {
       if (!token) throw new Error("Your session expired — please sign in again.");
       return fetch(FN, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: token, filename: filename, base64pdf: b64 || undefined, text: (!b64 && pasted) ? pasted : undefined })
+        body: JSON.stringify({ token: token, jobId: jobId })
       });
     }).then(function (res) {
       if (res.status === 401) throw new Error("Your session expired — please sign in again.");
-      return res.json().catch(function () { return null; }).then(function (data) {
-        if (!res.ok) throw new Error((data && data.error) || ("The reader hit an error (HTTP " + res.status + "). Try again."));
-        if (!data || data.error) throw new Error((data && data.error) || "The reader returned nothing.");
-        clearInterval(_imp.timer); _imp.timer = null;
-        _imp.report = normalizeReport(data.report);
-        review();
-      });
-    }).catch(function (e) { failSheet(e.message || String(e)); });
+      // background fns reply 202 before running; anything else <500 is still "accepted"
+      if (res.status >= 500) throw new Error("The reader couldn't start (HTTP " + res.status + "). Try again.");
+      pollJob(jobId, started);
+    }).catch(function (e) {
+      var m = e.message || String(e);
+      if (/does not exist|relation|schema cache/i.test(m)) m = "The reports tables need an update — run supabase/market-reports.sql once and reload.";
+      cleanupJob(jobId);
+      failSheet(m);
+    });
+  }
+
+  var POLL_MS = 3000, POLL_MAX_MS = 5 * 60 * 1000;   // fn budget is 15 min; 5 is generous for one report
+  function pollJob(jobId, started) {
+    var supa = sbc();
+    var iv = setInterval(function () {
+      // the sheet is the poll's owner: if the broker closed it, stop polling
+      if (!document.getElementById("mrOvl")) { clearInterval(iv); cleanupJob(jobId); return; }
+      if (Date.now() - started > POLL_MAX_MS) {
+        clearInterval(iv); cleanupJob(jobId);
+        failSheet("The reader is taking unusually long. Try again — a lighter PDF (fewer pages/photos) reads faster.");
+        return;
+      }
+      q(supa.from("market_report_extracts").select("status,result,error").eq("id", jobId))
+        .then(function (rows) {
+          var row = rows && rows[0];
+          if (!row || row.status === "queued") return;          // still working
+          clearInterval(iv);
+          cleanupJob(jobId);
+          if (row.status === "error") { failSheet(row.error || "The reader hit an error. Try again."); return; }
+          if (_imp && _imp.timer) { clearInterval(_imp.timer); _imp.timer = null; }
+          _imp.report = normalizeReport(row.result);
+          review();
+        })
+        .catch(function () { /* transient poll error — keep trying until timeout */ });
+    }, POLL_MS);
+  }
+
+  function cleanupJob(jobId) {
+    var supa = sbc(); if (!supa) return;
+    q(supa.from("market_report_extracts").delete().eq("id", jobId)).catch(function () { /* best effort */ });
   }
 
   function failSheet(msg) {
