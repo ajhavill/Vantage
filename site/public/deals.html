@@ -697,6 +697,7 @@
      layer shared with tools/report-import-test.js. -->
 <script src="assets/market-spaces.js"></script>
 <script src="assets/report-import.js"></script>
+<script src="assets/brochure-file.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 window.DF = (function(){
@@ -1521,6 +1522,7 @@ window.DF = (function(){
 
     var propsHtml2 = (candidateProps.length?bulkBar('buildings',d.id,'→ Add selected to market report'):'') + propsHtml + '<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><button class="miniadd" onclick="DF.newProperty(\''+d.id+'\')">+ Add building</button>'
       + '<button class="miniadd ai" onclick="DF.importReport(\''+d.id+'\')" title="Upload the CoStar survey PDF you ran for this requirement — Claude reads every building &amp; space into the deal and your internal availability tracker">⬆ Import CoStar report</button>'
+      + '<button class="miniadd ai" onclick="DF.fileBrochures(\''+d.id+'\')" title="Drop the listing brokers’ marketing PDFs — Claude identifies each building, files the brochure &amp; floor plans under it, and refreshes the availability tracker">📎 File brochures</button>'
       + (candidateProps.length?'<button class="miniadd ai" onclick="DF.generateRfp(\''+d.id+'\')" title="Draft a Request for Proposal and send it to the listing brokers">📋 Generate RFP</button>':'')+'</div>';
 
     var reportHtml = reportProps.length ? reportProps.map(function(p){ return reportCard(p, d.id); }).join('') : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No buildings in the market report yet. On a candidate building above, click “→ Add to market report”.</div>';
@@ -2467,6 +2469,283 @@ window.DF = (function(){
     }catch(e){
       err.textContent='Import failed: '+(e.message||e)+(/market_spaces.*(does not exist|relation)/i.test(e.message||'')?' — run supabase/market-spaces.sql first.':'');
       btn.disabled=false; btn.textContent='Import to deal & tracker';
+    }
+  }
+
+  /* ---------- Brochure auto-filing (Buildings tab) ----------
+   * Phase 2 of the requirement→deliverable flow. Batch-drop listing brokers'
+   * marketing PDFs → each is staged in a deal_brochure_extracts job row and
+   * read by deal-brochure-extract-background (Claude identifies the building,
+   * advertised spaces, floor-plan pages, filing label) → the broker reviews →
+   * confirm uploads the PDF to the building-media bucket + building_media
+   * (kind 'brochure'), renders the floor-plan pages to images (pdf.js, lazy)
+   * as kind 'floorplan', and upserts market_spaces (source 'flyer').
+   * Pure mapping lives in assets/brochure-file.js (shared with
+   * tools/brochure-test.js). Not CoStar data — no firewall — but everything
+   * here still runs behind the broker login. */
+  var BF_BUCKET='building-media', BF_MAX_FILES=12;
+  var _bf=null, _bfTimer=null, _bfSeq=0, _pdfjsP=null;
+  function bfUniq(){ _bfSeq++; return Date.now()+'-'+_bfSeq; }
+  function bfNewJobId(){
+    if(window.crypto&&crypto.randomUUID) return crypto.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx'.replace(/x/g,function(){ return (Math.random()*16|0).toString(16); });
+  }
+  function fileBrochures(dealId){
+    _bf={dealId:dealId, jobs:[], plan:null, open:{}};
+    loadPortalBuildings();                       // warm the catalog for matching
+    openSheet('<h3>File brochures &amp; flyers</h3><div class="ssub">Drop the listing brokers\' marketing PDFs for this requirement — brochures, availability flyers, floor-plan packages, up to '+BF_MAX_FILES+' at once. Claude identifies which building each one belongs to, pulls the advertised spaces and floor-plan pages, and you review everything before it\'s filed.</div>'
+      + fld('Marketing PDFs','<input id="bf_files" type="file" accept=".pdf,application/pdf" multiple>')
+      + '<div class="formerr" id="bf_err"></div>'
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button><button class="btn pri" id="bf_go">⬆ Read files</button></div>');
+    $('bf_go').addEventListener('click', bfStart);
+  }
+  async function bfStart(){
+    var files=Array.prototype.slice.call(($('bf_files').files)||[]);
+    var err=$('bf_err');
+    if(!files.length){ err.textContent='Pick at least one PDF.'; return; }
+    if(files.length>BF_MAX_FILES){ err.textContent='Up to '+BF_MAX_FILES+' files per batch — split the rest into a second run.'; return; }
+    for(var i=0;i<files.length;i++){
+      var f=files[i];
+      if(!/pdf$/i.test(f.name)&&f.type!=='application/pdf'){ err.textContent='"'+f.name+'" isn\'t a PDF.'; return; }
+      if(f.size>20*1024*1024){ err.textContent='"'+f.name+'" is over 20MB — export a lighter version.'; return; }
+    }
+    $('bf_go').disabled=true; err.textContent='';
+    try{
+      var s=await sb.auth.getSession(); var token=(s&&s.data&&s.data.session)?s.data.session.access_token:null;
+      if(!token) throw new Error('Your session expired — please sign in again.');
+      // stage every file as a job row, then kick the background reader for each
+      for(var k=0;k<files.length;k++){
+        var file=files[k], jobId=bfNewJobId();
+        var b64=await fileB64(file);
+        await q(sb.from('deal_brochure_extracts').insert({ id:jobId, org_id:ReportImport.ORG_ID, deal_id:_bf.dealId, filename:file.name, pdf_b64:b64 }));
+        var res=await fetch('/.netlify/functions/deal-brochure-extract-background',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({token:token, jobId:jobId})});
+        if(res.status===401) throw new Error('Your session expired — please sign in again.');
+        if(res.status>=500) throw new Error('The reader couldn\'t start for "'+file.name+'" (HTTP '+res.status+'). Try again.');
+        _bf.jobs.push({ id:jobId, file:file, filename:file.name, status:'queued', result:null, error:null });
+      }
+      bfProgress(); bfPoll();
+    }catch(e){ bfFail((e&&e.message)||String(e), /brochure_extracts.*(does not exist|relation)/i.test((e&&e.message)||'')?' Run supabase/brochure-filing.sql first.':''); }
+  }
+  function bfProgress(){
+    var rows=_bf.jobs.map(function(j){
+      var st=j.status==='done'?'<span class="ri-badge hit">✓ read</span>'
+        : j.status==='error'?'<span class="ri-badge new" title="'+esc(j.error||'')+'">failed</span>'
+        : '<span class="ri-badge dup">reading…</span>';
+      return '<div style="display:flex;gap:10px;align-items:center;padding:6px 2px;border-bottom:1px solid var(--line)">'
+        + '<span style="font:500 12.5px Inter;color:var(--ink);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(j.filename)+'</span>'+st+'</div>';
+    }).join('');
+    var done=_bf.jobs.filter(function(j){ return j.status!=='queued'; }).length;
+    openSheet('<h3>Reading '+_bf.jobs.length+' file'+(_bf.jobs.length===1?'':'s')+'…</h3>'
+      + '<div class="ri-prog"><div class="ri-spin"></div><div><div class="ri-pt">Claude is identifying each building &amp; its floor plans…</div>'
+      + '<div class="ri-ps"><span id="bf_stat">'+done+' of '+_bf.jobs.length+'</span> finished — each file takes ~15–45s. Leave this open.</div></div></div>'
+      + '<div style="max-height:36vh;overflow-y:auto">'+rows+'</div>');
+  }
+  function bfPoll(){
+    clearInterval(_bfTimer);
+    _bfTimer=setInterval(async function(){
+      if(!$('bf_stat')){ clearInterval(_bfTimer); return; }     // sheet closed — stop polling
+      var pending=_bf.jobs.filter(function(j){ return j.status==='queued'; }).map(function(j){ return j.id; });
+      if(!pending.length){ clearInterval(_bfTimer); return; }
+      try{
+        // never select pdf_b64 — that's the staged multi-MB upload
+        var rows=await q(sb.from('deal_brochure_extracts').select('id,status,result,error').in('id',pending));
+        var by={}; (rows||[]).forEach(function(r){ by[r.id]=r; });
+        var flipped=false;
+        _bf.jobs.forEach(function(j){
+          var r=by[j.id]; if(!r||r.status==='queued') return;
+          j.status=r.status; j.result=r.result||null; j.error=r.error||null; flipped=true;
+        });
+        if(_bf.jobs.every(function(j){ return j.status!=='queued'; })){
+          clearInterval(_bfTimer);
+          // consume: job rows are transient — delete them now that we hold the results
+          try{ await q(sb.from('deal_brochure_extracts').delete().in('id',_bf.jobs.map(function(j){ return j.id; }))); }catch(e){}
+          bfBuildReview();
+        } else if(flipped){ bfProgress(); }
+      }catch(e){ /* transient — keep polling */ }
+    },4000);
+  }
+  async function bfBuildReview(){
+    var cat=await loadPortalBuildings();
+    var readable=_bf.jobs.filter(function(j){ return j.status==='done'&&j.result; });
+    if(!readable.length){
+      bfFail('None of the files could be read.', _bf.jobs.map(function(j){ return j.filename+': '+(j.error||'no result'); }).join(' · '));
+      return;
+    }
+    _bf.plan=BrochureFile.buildPlan(readable.map(function(j){ return {filename:j.filename, result:j.result}; }), cat||[], {});
+    // re-attach the original File objects (same order buildPlan preserves)
+    _bf.plan.entries.forEach(function(e,i){ e._file=readable[i]?readable[i].file:null; });
+    _bf.failed=_bf.jobs.filter(function(j){ return j.status==='error'; });
+    bfReview();
+  }
+  function bfFail(msg, extra){
+    clearInterval(_bfTimer);
+    openSheet('<h3>File brochures &amp; flyers</h3>'
+      + '<div class="formerr" style="margin:4px 0 12px">'+esc(msg)+(extra?' '+esc(extra):'')+'</div>'
+      + '<div class="ssub">Nothing was filed. Fix the files and try again.</div>'
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Close</button><button class="btn pri" onclick="DF.fileBrochures(\''+((_bf&&_bf.dealId)||'')+'\')">Try again</button></div>');
+  }
+  function bfCatValue(b){ return (b.name||'Untitled')+' — '+(b.addr||''); }
+  function bfFootLine(){ return BrochureFile.summarize(_bf.plan).line; }
+  function bfReview(){
+    var p=_bf.plan, cat=_portalBuildings||[];
+    var dl='<datalist id="bf_dl">'+cat.map(function(b){ return '<option value="'+esc(bfCatValue(b))+'"></option>'; }).join('')+'</datalist>';
+    var rows=p.entries.map(function(e,i){
+      var open=!!_bf.open[i];
+      var bcell = e.buildingId
+        ? '<span class="ri-badge hit" title="Filing under '+esc(e.catalogName||'')+'">✓ '+esc(e.catalogName||'matched')+'</span> <button class="lk" data-act="repick" data-i="'+i+'" style="font:600 11px Inter;background:none;border:0;color:var(--ink-faint);cursor:pointer">change</button>'
+        : '<input class="ri-in" list="bf_dl" data-act="pick" data-i="'+i+'" placeholder="Type to pick the building…" style="width:200px" title="This building wasn\'t matched — pick it from your catalog">';
+      var head='<tr class="ri-b'+(e.include?'':' off')+'" data-i="'+i+'">'
+        + '<td class="ri-ck"><input type="checkbox" data-act="inc" data-i="'+i+'"'+(e.include?' checked':'')+' title="File this document"></td>'
+        + '<td><div class="ri-nm">'+esc(e.filename)+'</div>'
+        +   '<div class="ri-ad"><input class="ri-in" data-act="label" data-i="'+i+'" value="'+esc(e.label||'')+'" style="width:min(320px,100%)" title="Filing label shown on the building dossier"></div></td>'
+        + '<td><span class="ri-badge dup">'+esc(e.docTypeLabel)+'</span></td>'
+        + '<td>'+bcell+'</td>'
+        + '<td class="ri-cnt">'+(e.floorPlanPages.length?e.floorPlanPages.length+' plan pg':'—')+'<br>'+(e.spaces.length?e.spaces.length+' space'+(e.spaces.length===1?'':'s'):'—')+'</td>'
+        + '<td class="ri-tog">'+((e.spaces.length||e.highlights.length)?(open?'▾':'▸'):'')+'</td></tr>';
+      var det='';
+      if(open&&(e.spaces.length||e.highlights.length)){
+        var sp=e.spaces.length?'<table class="ri-sp"><thead><tr><th>Suite</th><th>Floor</th><th>SF</th><th>Asking rate</th><th>Basis</th><th>Type</th><th>Avail</th></tr></thead><tbody>'
+          + e.spaces.map(function(s){
+              return '<tr><td>'+esc(s.suite||'—')+'</td><td>'+esc(s.floor||'—')+'</td><td>'+(s.sf==null?'—':Number(s.sf).toLocaleString())+'</td>'
+                + '<td>'+(s.rate==null?'—':'$'+s.rate+(s.ratePeriod?'/SF/'+s.ratePeriod:''))+'</td>'
+                + '<td>'+esc(s.rateBasis||'—')+'</td><td>'+esc(s.spaceType||'—')+'</td><td>'+esc(s.availableDate||'now')+'</td></tr>';
+            }).join('')+'</tbody></table>':'';
+        var hl=e.highlights.length?'<div class="ri-ad" style="margin-top:6px">'+e.highlights.map(function(h){ return '• '+esc(h); }).join('&nbsp;&nbsp;')+'</div>':'';
+        det='<tr class="ri-d"><td></td><td colspan="5">'+sp+hl+'</td></tr>';
+      }
+      return head+det;
+    }).join('');
+    var failedNote=_bf.failed&&_bf.failed.length
+      ? '<div class="ssub" style="color:#7a5a15">'+_bf.failed.length+' file'+(_bf.failed.length===1?'':'s')+' couldn\'t be read: '+esc(_bf.failed.map(function(j){ return j.filename; }).join(', '))+' — nothing from '+(_bf.failed.length===1?'it':'them')+' will be filed.</div>':'';
+    openSheet('<h3>Review brochure filing</h3><div class="ssub">Each document files under its building — the PDF lands on the building dossier, floor-plan pages become dossier images, and advertised spaces refresh your internal availability tracker (source “flyer”). Fix any building Claude missed, uncheck anything you don\'t want.</div>'
+      + failedNote + dl
+      + '<div class="cmpwrap" style="max-height:52vh;overflow-y:auto"><table class="ritable"><thead><tr><th class="ri-ck"><input type="checkbox" id="bf_all" checked title="Select all"></th><th>Document</th><th>Type</th><th>Building</th><th>Contents</th><th></th></tr></thead><tbody id="bf_body">'+rows+'</tbody></table></div>'
+      + '<div class="formerr" id="bf_err"></div>'
+      + '<div class="srow"><span class="ri-foot" id="bf_sum">'+esc(bfFootLine())+'</span><button class="btn" onclick="DF.close()">Cancel</button><button class="btn pri" id="bf_confirm">File documents</button></div>');
+    $('sheet').classList.add('wide');
+    $('bf_all').addEventListener('change',function(){ var on=this.checked; p.entries.forEach(function(e){ e.include=on; }); bfReview(); });
+    var body=$('bf_body');
+    body.addEventListener('click',function(ev){
+      var t=ev.target;
+      if(t.getAttribute&&t.getAttribute('data-act')==='repick'){ var e=p.entries[+t.getAttribute('data-i')]; if(e){ BrochureFile.assignBuilding(e,null); bfReview(); } return; }
+      if(t.closest('input')) return;
+      var tr=t.closest('tr.ri-b'); if(!tr) return;
+      var i=+tr.getAttribute('data-i');
+      _bf.open[i]=!_bf.open[i]; bfReview();
+    });
+    body.addEventListener('change',function(ev){
+      var t=ev.target, act=t.getAttribute('data-act'), e=p.entries[+t.getAttribute('data-i')];
+      if(!e) return;
+      if(act==='inc'){
+        e.include=t.checked;
+        var tr=t.closest('tr.ri-b'); if(tr) tr.classList.toggle('off',!t.checked);
+        var el=$('bf_sum'); if(el) el.textContent=bfFootLine();
+      } else if(act==='pick'){
+        var hit=null, v=(t.value||'').trim();
+        for(var i2=0;i2<cat.length;i2++){ if(bfCatValue(cat[i2])===v){ hit=cat[i2]; break; } }
+        if(hit){ BrochureFile.assignBuilding(e,hit); bfReview(); }
+      }
+    });
+    body.addEventListener('input',function(ev){
+      var t=ev.target;
+      if(t.getAttribute('data-act')!=='label') return;
+      var e=p.entries[+t.getAttribute('data-i')]; if(e) e.label=t.value.trim()||e.label;
+    });
+    $('bf_confirm').addEventListener('click',bfConfirm);
+  }
+  function loadPdfjs(){
+    if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+    if(_pdfjsP) return _pdfjsP;
+    _pdfjsP=new Promise(function(res,rej){
+      var s=document.createElement('script');
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      s.onload=function(){
+        try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; res(window.pdfjsLib); }
+        catch(e){ rej(e); }
+      };
+      s.onerror=function(){ rej(new Error('Could not load the PDF renderer for floor-plan pages.')); };
+      document.head.appendChild(s);
+    });
+    return _pdfjsP;
+  }
+  function bfRenderPage(pdf, pageNo){
+    return pdf.getPage(pageNo).then(function(page){
+      var viewport=page.getViewport({scale:1.6});
+      var canvas=document.createElement('canvas');
+      canvas.width=Math.ceil(viewport.width); canvas.height=Math.ceil(viewport.height);
+      return page.render({canvasContext:canvas.getContext('2d'), viewport:viewport}).promise.then(function(){
+        return new Promise(function(res){ canvas.toBlob(function(b){ res(b); },'image/png'); });
+      });
+    });
+  }
+  async function bfConfirm(){
+    var p=_bf.plan, btn=$('bf_confirm'), err=$('bf_err');
+    var sum=BrochureFile.summarize(p);
+    if(!sum.filed){ err.textContent='Nothing to file — check at least one document with a building picked.'; return; }
+    btn.disabled=true; err.textContent='';
+    var todo=p.entries.filter(function(e){ return e.include&&e.buildingId&&e._file; });
+    var filed=0, planImgs=0, planSkipped=0, spacesNew=0, spacesRefreshed=0;
+    try{
+      for(var i=0;i<todo.length;i++){
+        var e=todo[i];
+        btn.textContent='Filing '+(i+1)+' of '+todo.length+'…';
+        // 1) the PDF itself → building-media bucket + building_media (kind 'brochure')
+        var path=BrochureFile.storagePath(e,'brochure',bfUniq());
+        var up=await sb.storage.from(BF_BUCKET).upload(path, e._file, {upsert:false, contentType:'application/pdf'});
+        if(up.error) throw new Error('Upload failed for "'+e.filename+'": '+up.error.message);
+        var pub=sb.storage.from(BF_BUCKET).getPublicUrl(path);
+        var url=pub&&pub.data?pub.data.publicUrl:null;
+        await q(sb.from('building_media').insert(BrochureFile.brochureMediaRow(e,path,url)));
+        filed++;
+        // 2) floor-plan pages → rendered PNGs (kind 'floorplan'); a bad page never sinks the filing
+        if(e.floorPlanPages.length){
+          try{
+            var pdfjs=await loadPdfjs();
+            var buf=await e._file.arrayBuffer();
+            var pdf=await pdfjs.getDocument({data:buf}).promise;
+            for(var j2=0;j2<e.floorPlanPages.length;j2++){
+              var pg=e.floorPlanPages[j2];
+              if(pg>pdf.numPages){ planSkipped++; continue; }
+              try{
+                var blob=await bfRenderPage(pdf,pg);
+                if(!blob){ planSkipped++; continue; }
+                var fpName=e.filename.replace(/\.pdf$/i,'')+'_p'+pg+'.png';
+                var fpPath=BrochureFile.storagePath(e,'floorplan',bfUniq(),fpName);
+                var fpUp=await sb.storage.from(BF_BUCKET).upload(fpPath, blob, {upsert:false, contentType:'image/png'});
+                if(fpUp.error){ planSkipped++; continue; }
+                var fpPub=sb.storage.from(BF_BUCKET).getPublicUrl(fpPath);
+                await q(sb.from('building_media').insert(BrochureFile.floorplanMediaRow(e,pg,fpPath,fpPub&&fpPub.data?fpPub.data.publicUrl:null)));
+                planImgs++;
+              }catch(pe){ planSkipped++; }
+            }
+          }catch(pe){ planSkipped+=e.floorPlanPages.length; }
+        }
+      }
+      // 3) tracker refresh: upsert on (org_id, dedup_key) — flyers fill, never
+      //    blank, and never demote listing-broker-confirmed rows (spacePatch)
+      var rows=BrochureFile.spacePayloads(p);
+      if(rows.length){
+        var keys=rows.map(function(r){ return r.dedup_key; });
+        var hits=await q(sb.from('market_spaces').select('id,dedup_key,source,listing_broker,listing_company,listing_email,listing_phone').eq('org_id',ReportImport.ORG_ID).in('dedup_key',keys));
+        var byKey={}; (hits||[]).forEach(function(h){ byKey[h.dedup_key]=h; });
+        var seen={}, toInsert=[];
+        for(var k=0;k<rows.length;k++){
+          var r=rows[k], ex=byKey[r.dedup_key];
+          if(ex){ await q(sb.from('market_spaces').update(BrochureFile.spacePatch(r,ex)).eq('id',ex.id)); spacesRefreshed++; }
+          else if(!seen[r.dedup_key]){ seen[r.dedup_key]=1; toInsert.push(r); }
+        }
+        if(toInsert.length){ await q(sb.from('market_spaces').insert(toInsert)); spacesNew=toInsert.length; }
+      }
+      openDeal(_bf.dealId);
+      openSheet('<h3>Brochures filed ✓</h3>'
+        + '<div class="ri-done">Filed '+filed+' document'+(filed===1?'':'s')+(planImgs?' · '+planImgs+' floor-plan image'+(planImgs===1?'':'s'):'')+(planSkipped?' ('+planSkipped+' page'+(planSkipped===1?'':'s')+' couldn\'t render)':'')+'</div>'
+        + '<div class="ssub">Each PDF and its floor plans are on the building\'s dossier now (open a building to see them under Brochures / floor plans).'
+        + (spacesNew||spacesRefreshed?' Availability tracker: '+spacesNew+' new space'+(spacesNew===1?'':'s')+', '+spacesRefreshed+' refreshed — source “flyer”, live in the Market map\'s Spaces drawer.':'')+'</div>'
+        + '<div class="srow"><button class="btn pri" onclick="DF.close()">Done</button></div>');
+    }catch(e2){
+      err.textContent='Filing failed: '+(e2.message||e2)+' — '+filed+' document'+(filed===1?'':'s')+' were already filed; fix and retry for the rest.';
+      btn.disabled=false; btn.textContent='File documents';
     }
   }
 
@@ -4742,7 +5021,7 @@ window.DF = (function(){
     deleteDealAsk:deleteDealAsk, deleteDealCancel:deleteDealCancel, deleteDealDo:deleteDealDo,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask, recGo:recGo,
-    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, importReport:importReport, bulkSync:bulkSync, bulkAll:bulkAll, bulkMove:bulkMove, bulkDelete:bulkDelete, viewBuilding:viewBuilding, generateMarketReport:generateMarketReport, dealTab:dealTab, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, npMode:npMode, newRound:newRound,
+    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, importReport:importReport, fileBrochures:fileBrochures, bulkSync:bulkSync, bulkAll:bulkAll, bulkMove:bulkMove, bulkDelete:bulkDelete, viewBuilding:viewBuilding, generateMarketReport:generateMarketReport, dealTab:dealTab, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, npMode:npMode, newRound:newRound,
     generateRfp:generateRfp, copyRfp:copyRfp, downloadRfp:downloadRfp, sendRfpTo:sendRfpTo,
     setStage:setStage, basisChange:basisChange, marketCheck:marketCheck, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
     proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead,
