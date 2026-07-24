@@ -200,6 +200,10 @@
   .mchips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
   .mchip{display:inline-flex;align-items:center;gap:4px;font:600 11px Inter;color:var(--ink-soft);background:var(--paper);border:1px solid var(--line-2);border-radius:999px;padding:3px 10px;text-decoration:none;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
   .mchip:hover{border-color:var(--accent);color:var(--accent)}
+  .mchip .mchip-x{display:none;margin-left:2px;color:var(--ink-faint);font-size:10px;padding:0 2px;border-radius:4px}
+  .mchip:hover .mchip-x{display:inline}
+  .mchip .mchip-x:hover{color:#c0392b;background:rgba(192,57,43,.08)}
+  .mchip .mchip-x.armed{display:inline;color:#fff;background:#c0392b;font-weight:700}
   .ri-drop{display:flex;gap:12px;align-items:center;margin-top:12px;padding:14px 16px;border:1.5px dashed var(--line-2);border-radius:12px;cursor:pointer;color:var(--ink-soft);font:500 12.5px Inter;transition:border-color .15s,background .15s}
   .ri-drop:hover,.ri-drop.over{border-color:var(--accent);background:rgba(45,110,126,.05)}
   .ri-drop .ri-drop-ic{font-size:20px;flex:none}
@@ -1502,7 +1506,7 @@ window.DF = (function(){
       try{
         var mIds=(props||[]).map(propMediaKey).filter(Boolean);
         if(mIds.length){
-          var mrows=await q(sb.from('building_media').select('building_id,kind,url,title').in('building_id',mIds).order('sort_order'));
+          var mrows=await q(sb.from('building_media').select('id,building_id,kind,url,title,storage_path').in('building_id',mIds).order('sort_order'));
           (mrows||[]).forEach(function(m){ if(m.url&&(m.kind==='brochure'||m.kind==='floorplan')){ (_dealMedia[m.building_id]=_dealMedia[m.building_id]||[]).push(m); } });
         }
       }catch(e){}
@@ -2714,6 +2718,17 @@ window.DF = (function(){
   function propBrowse(dealId, buildingId){
     _pdropTarget=buildingId; var inp=$('rfDropInput'); if(inp) inp.click();
   }
+  // Remove a filed chip (two-click confirm). Inside the chip's <a>, so the
+  // link must not open while confirming/deleting.
+  async function deleteMediaChip(ev, el, mediaId, storagePath, dealId){
+    ev.preventDefault(); ev.stopPropagation();
+    if(!armConfirm(el,'sure?')) return;
+    try{
+      if(storagePath){ try{ await sb.storage.from(BF_BUCKET).remove([storagePath]); }catch(se){} }
+      await q(sb.from('building_media').delete().eq('id',mediaId));
+      openDeal(dealId);
+    }catch(e){ alert('Could not remove: '+(e.message||e)); }
+  }
   function fileBrochuresDrop(dealId, files, targetBuildingId){
     if(!files.length){
       // e.g. OneDrive cloud-placeholder drops can arrive with zero readable files
@@ -2724,7 +2739,89 @@ window.DF = (function(){
     if(v){ aiToast(v); return; }
     _bf={dealId:dealId, jobs:[], plan:null, open:{}, target:targetBuildingId||null};
     loadPortalBuildings();
-    bfLaunch(files);
+    if(targetBuildingId){ bfDirectFile(files); } else { bfLaunch(files); }
+  }
+  /* Direct filing (card drops): the broker said WHICH building — so the PDF
+   * files there IMMEDIATELY as a clickable chip; no AI gate, no review, no
+   * "doesn't look like marketing" rejection. Claude still reads each file in
+   * the background as pure ENRICHMENT (floor-plan images, availability) and
+   * quietly adds whatever it finds. */
+  async function bfDirectFile(files){
+    pillSet('bf','Filing '+files.length+' file'+(files.length===1?'':'s')+'…','busy');
+    try{
+      var mediaIds=[];
+      for(var i=0;i<files.length;i++){
+        var f=files[i];
+        var entry={ buildingId:_bf.target, filename:f.name };
+        var path=BrochureFile.storagePath(entry,'brochure',bfUniq());
+        var up=await sb.storage.from(BF_BUCKET).upload(path, f, {upsert:false, contentType:'application/pdf'});
+        if(up.error) throw new Error('Upload failed for "'+f.name+'": '+up.error.message);
+        var pub=sb.storage.from(BF_BUCKET).getPublicUrl(path);
+        var row=await q(sb.from('building_media').insert({ building_id:_bf.target, kind:'brochure', storage_path:path,
+          url:pub&&pub.data?pub.data.publicUrl:null, title:f.name.replace(/\.pdf$/i,'') }).select().single());
+        mediaIds.push((row&&row.id)||null);
+      }
+      _bf.mediaIds=mediaIds; _bf.mode='direct';
+      openDeal(_bf.dealId);   // the chip is on the card NOW
+      aiToast('Filed ✓ — click the chip under the address to open it. Claude is reading in the background for floor plans & availability.');
+      bfLaunchEnrich(files);
+    }catch(e){
+      pillClear('bf');
+      var m=(e&&e.message)||String(e);
+      aiToast('Filing failed: '+m);
+    }
+  }
+  // Stage the enrichment jobs (same background reader); completion is handled
+  // by bfPoll's 'direct' branch. Failures here are non-fatal — the PDF is filed.
+  async function bfLaunchEnrich(files){
+    try{
+      var s=await sb.auth.getSession(); var token=(s&&s.data&&s.data.session)?s.data.session.access_token:null;
+      if(!token) return;
+      for(var k=0;k<files.length;k++){
+        var file=files[k], jobId=bfNewJobId();
+        var b64=await fileB64(file);
+        await q(sb.from('deal_brochure_extracts').insert({ id:jobId, org_id:ReportImport.ORG_ID, deal_id:_bf.dealId, filename:file.name, pdf_b64:b64 }));
+        var res=await fetch('/.netlify/functions/deal-brochure-extract-background',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({token:token, jobId:jobId})});
+        if(res.status>=400) continue;
+        _bf.jobs.push({ id:jobId, file:file, filename:file.name, mediaId:_bf.mediaIds[k]||null, status:'queued', result:null, error:null });
+      }
+      if(!_bf.jobs.length){ pillClear('bf'); return; }
+      pillSet('bf','Reading for floor plans & availability…','busy');
+      bfPoll();
+    }catch(e){ pillClear('bf'); /* enrichment is best-effort */ }
+  }
+  // Apply enrichment silently: label the filed chips, add scrubbed floor-plan
+  // images, refresh the tracker. Never opens a review, never reports "not
+  // marketing" as an error — the PDF is already where the broker put it.
+  async function bfEnrichApply(){
+    try{
+      var cat=await loadPortalBuildings();
+      var readable=_bf.jobs.filter(function(j){ return j.status==='done'&&j.result; });
+      if(!readable.length){ pillClear('bf'); return; }   // filed; nothing more to add
+      var pickables=(cat||[]).concat(_dealProps.filter(function(x){ return !x.building_id; })
+        .map(function(x){ return { id:'prop_'+x.id, name:x.name||x.address||'Untitled', addr:x.address||'' }; }));
+      _bf.plan=BrochureFile.buildPlan(readable.map(function(j){ return {filename:j.filename, result:j.result}; }), pickables, {});
+      _bf.plan.entries.forEach(function(e,i){ e._file=readable[i]?readable[i].file:null; e._mediaId=readable[i]?readable[i].mediaId:null; });
+      var tb=pickables.filter(function(b){ return b.id===_bf.target; })[0]||{ id:_bf.target, name:null };
+      var planImgs=0, planSkipped=0;
+      for(var i=0;i<_bf.plan.entries.length;i++){
+        var e=_bf.plan.entries[i];
+        BrochureFile.assignBuilding(e, tb);
+        if(e._mediaId&&e.label){ try{ await q(sb.from('building_media').update({title:e.label}).eq('id',e._mediaId)); }catch(ue){} }
+        var fr=await bfFilePlans(e);
+        planImgs+=fr.imgs; planSkipped+=fr.skipped;
+      }
+      var ur=await bfUpsertSpaces(BrochureFile.spacePayloads(_bf.plan));
+      pillClear('bf');
+      if(planImgs||ur.inserted||ur.refreshed){
+        openDeal(_bf.dealId);
+        aiToast('Also pulled from '+(readable.length===1?'it':'them')+': '
+          +(planImgs?planImgs+' floor-plan image'+(planImgs===1?'':'s')+' (broker contacts masked)':'')
+          +(planImgs&&(ur.inserted||ur.refreshed)?' · ':'')
+          +((ur.inserted||ur.refreshed)?(ur.inserted+' new / '+ur.refreshed+' refreshed tracker space'+((ur.inserted+ur.refreshed)===1?'':'s')):''));
+      }
+    }catch(e){ pillClear('bf'); /* enrichment is best-effort */ }
   }
   function bfProgress(){
     var done=_bf.jobs.filter(function(j){ return j.status!=='queued'; }).length;
@@ -2748,6 +2845,7 @@ window.DF = (function(){
           clearInterval(_bfTimer);
           // consume: job rows are transient — delete them now that we hold the results
           try{ await q(sb.from('deal_brochure_extracts').delete().in('id',_bf.jobs.map(function(j){ return j.id; }))); }catch(e){}
+          if(_bf.mode==='direct'){ bfEnrichApply(); return; }   // card drop: PDF already filed — enrichment only
           var readable=_bf.jobs.filter(function(j){ return j.status==='done'&&j.result; }).length;
           if(!readable){
             bfFailPill('None of the files could be read.', _bf.jobs.map(function(j){ return j.filename+': '+(j.error||'no result'); }).join(' · '));
@@ -2908,6 +3006,54 @@ window.DF = (function(){
       });
     });
   }
+  // Render this entry's flagged floor-plan pages (masking broker-contact
+  // boxes) and file them under the entry's building. Best-effort — a bad page
+  // never sinks the filing. Returns {imgs, skipped}.
+  async function bfFilePlans(e){
+    var imgs=0, skipped=0;
+    if(!e.floorPlanPages||!e.floorPlanPages.length||!e._file) return {imgs:0, skipped:0};
+    try{
+      var pdfjs=await loadPdfjs();
+      var buf=await e._file.arrayBuffer();
+      var pdf=await pdfjs.getDocument({data:buf}).promise;
+      for(var j2=0;j2<e.floorPlanPages.length;j2++){
+        var fp=e.floorPlanPages[j2];
+        if(fp.page>pdf.numPages){ skipped++; continue; }
+        try{
+          var blob=await bfRenderPage(pdf,fp.page,fp.contactBox);
+          if(!blob){ skipped++; continue; }
+          var fpName=e.filename.replace(/\.pdf$/i,'')+'_p'+fp.page+'.png';
+          var fpPath=BrochureFile.storagePath(e,'floorplan',bfUniq(),fpName);
+          var fpUp=await sb.storage.from(BF_BUCKET).upload(fpPath, blob, {upsert:false, contentType:'image/png'});
+          if(fpUp.error){ skipped++; continue; }
+          var fpPub=sb.storage.from(BF_BUCKET).getPublicUrl(fpPath);
+          await q(sb.from('building_media').insert(BrochureFile.floorplanMediaRow(e,fp.page,fpPath,fpPub&&fpPub.data?fpPub.data.publicUrl:null)));
+          imgs++;
+        }catch(pe){ skipped++; }
+      }
+    }catch(pe){ skipped+=e.floorPlanPages.length; }
+    return {imgs:imgs, skipped:skipped};
+  }
+  // Tracker refresh: upsert on (org_id, dedup_key) — flyers fill, never blank,
+  // and never demote listing-broker-confirmed rows (spacePatch). Synthetic
+  // 'prop_' media keys are NOT catalog ids — those rows key by address alone.
+  async function bfUpsertSpaces(rows){
+    var inserted=0, refreshed=0;
+    rows.forEach(function(r){ if(/^prop_/.test(r.building_id||'')) r.building_id=null; });
+    if(rows.length){
+      var keys=rows.map(function(r){ return r.dedup_key; });
+      var hits=await q(sb.from('market_spaces').select('id,dedup_key,source,listing_broker,listing_company,listing_email,listing_phone').eq('org_id',ReportImport.ORG_ID).in('dedup_key',keys));
+      var byKey={}; (hits||[]).forEach(function(h){ byKey[h.dedup_key]=h; });
+      var seen={}, toInsert=[];
+      for(var k=0;k<rows.length;k++){
+        var r=rows[k], ex=byKey[r.dedup_key];
+        if(ex){ await q(sb.from('market_spaces').update(BrochureFile.spacePatch(r,ex)).eq('id',ex.id)); refreshed++; }
+        else if(!seen[r.dedup_key]){ seen[r.dedup_key]=1; toInsert.push(r); }
+      }
+      if(toInsert.length){ await q(sb.from('market_spaces').insert(toInsert)); inserted=toInsert.length; }
+    }
+    return {inserted:inserted, refreshed:refreshed};
+  }
   async function bfConfirm(){
     var p=_bf.plan, btn=$('bf_confirm'), err=$('bf_err');
     var sum=BrochureFile.summarize(p);
@@ -2927,48 +3073,13 @@ window.DF = (function(){
         var url=pub&&pub.data?pub.data.publicUrl:null;
         await q(sb.from('building_media').insert(BrochureFile.brochureMediaRow(e,path,url)));
         filed++;
-        // 2) floor-plan pages → rendered PNGs (kind 'floorplan'); a bad page never sinks the filing
-        if(e.floorPlanPages.length){
-          try{
-            var pdfjs=await loadPdfjs();
-            var buf=await e._file.arrayBuffer();
-            var pdf=await pdfjs.getDocument({data:buf}).promise;
-            for(var j2=0;j2<e.floorPlanPages.length;j2++){
-              var fp=e.floorPlanPages[j2];
-              if(fp.page>pdf.numPages){ planSkipped++; continue; }
-              try{
-                var blob=await bfRenderPage(pdf,fp.page,fp.contactBox);
-                if(!blob){ planSkipped++; continue; }
-                var fpName=e.filename.replace(/\.pdf$/i,'')+'_p'+fp.page+'.png';
-                var fpPath=BrochureFile.storagePath(e,'floorplan',bfUniq(),fpName);
-                var fpUp=await sb.storage.from(BF_BUCKET).upload(fpPath, blob, {upsert:false, contentType:'image/png'});
-                if(fpUp.error){ planSkipped++; continue; }
-                var fpPub=sb.storage.from(BF_BUCKET).getPublicUrl(fpPath);
-                await q(sb.from('building_media').insert(BrochureFile.floorplanMediaRow(e,fp.page,fpPath,fpPub&&fpPub.data?fpPub.data.publicUrl:null)));
-                planImgs++;
-              }catch(pe){ planSkipped++; }
-            }
-          }catch(pe){ planSkipped+=e.floorPlanPages.length; }
-        }
+        // 2) floor-plan pages → rendered PNGs (kind 'floorplan')
+        var fr=await bfFilePlans(e);
+        planImgs+=fr.imgs; planSkipped+=fr.skipped;
       }
-      // 3) tracker refresh: upsert on (org_id, dedup_key) — flyers fill, never
-      //    blank, and never demote listing-broker-confirmed rows (spacePatch).
-      //    Synthetic 'prop_' media keys are NOT catalog ids — the tracker keys
-      //    those rows by address alone.
-      var rows=BrochureFile.spacePayloads(p);
-      rows.forEach(function(r){ if(/^prop_/.test(r.building_id||'')) r.building_id=null; });
-      if(rows.length){
-        var keys=rows.map(function(r){ return r.dedup_key; });
-        var hits=await q(sb.from('market_spaces').select('id,dedup_key,source,listing_broker,listing_company,listing_email,listing_phone').eq('org_id',ReportImport.ORG_ID).in('dedup_key',keys));
-        var byKey={}; (hits||[]).forEach(function(h){ byKey[h.dedup_key]=h; });
-        var seen={}, toInsert=[];
-        for(var k=0;k<rows.length;k++){
-          var r=rows[k], ex=byKey[r.dedup_key];
-          if(ex){ await q(sb.from('market_spaces').update(BrochureFile.spacePatch(r,ex)).eq('id',ex.id)); spacesRefreshed++; }
-          else if(!seen[r.dedup_key]){ seen[r.dedup_key]=1; toInsert.push(r); }
-        }
-        if(toInsert.length){ await q(sb.from('market_spaces').insert(toInsert)); spacesNew=toInsert.length; }
-      }
+      // 3) tracker refresh
+      var ur=await bfUpsertSpaces(BrochureFile.spacePayloads(p));
+      spacesNew=ur.inserted; spacesRefreshed=ur.refreshed;
       pillClear('bf');                 // the background-job pill has served its purpose
       openDeal(_bf.dealId);
       openSheet('<h3>Brochures filed ✓</h3>'
@@ -3158,7 +3269,8 @@ window.DF = (function(){
       var shown=media.slice(0,canView?4:6);
       chips='<div class="mchips">'+shown.map(function(m){
         var lbl=(m.title||(m.kind==='brochure'?'Brochure':'Floor plan'));
-        return '<a class="mchip" href="'+esc(m.url)+'" target="_blank" rel="noopener" title="'+esc(m.title||'')+'">'+(m.kind==='brochure'?'📄':'🗺')+' '+esc(lbl.length>40?lbl.slice(0,38)+'…':lbl)+'</a>';
+        return '<a class="mchip" href="'+esc(m.url)+'" target="_blank" rel="noopener" title="'+esc(m.title||'')+'">'+(m.kind==='brochure'?'📄':'🗺')+' '+esc(lbl.length>40?lbl.slice(0,38)+'…':lbl)
+          +'<span class="mchip-x" onclick="DF.deleteMediaChip(event,this,\''+m.id+'\',\''+esc(m.storage_path||'')+'\',\''+dealId+'\')" title="Remove this file from the building">✕</span></a>';
       }).join('')
       +(media.length>shown.length
           ?(canView
@@ -5384,7 +5496,7 @@ window.DF = (function(){
     deleteDealAsk:deleteDealAsk, deleteDealCancel:deleteDealCancel, deleteDealDo:deleteDealDo,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask, recGo:recGo,
-    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, importReport:importReport, fileBrochures:fileBrochures, reportDragOver:reportDragOver, reportDragLeave:reportDragLeave, reportDrop:reportDrop, reportBrowse:reportBrowse, reportDropPick:reportDropPick, propDrop:propDrop, propBrowse:propBrowse, bulkSync:bulkSync, bulkAll:bulkAll, bulkMove:bulkMove, bulkDelete:bulkDelete, viewBuilding:viewBuilding, generateMarketReport:generateMarketReport, clientSurvey:clientSurvey, copySurveyLink:copySurveyLink, deleteSurvey:deleteSurvey, dealTab:dealTab, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, npMode:npMode, newRound:newRound,
+    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, importReport:importReport, fileBrochures:fileBrochures, reportDragOver:reportDragOver, reportDragLeave:reportDragLeave, reportDrop:reportDrop, reportBrowse:reportBrowse, reportDropPick:reportDropPick, propDrop:propDrop, propBrowse:propBrowse, deleteMediaChip:deleteMediaChip, bulkSync:bulkSync, bulkAll:bulkAll, bulkMove:bulkMove, bulkDelete:bulkDelete, viewBuilding:viewBuilding, generateMarketReport:generateMarketReport, clientSurvey:clientSurvey, copySurveyLink:copySurveyLink, deleteSurvey:deleteSurvey, dealTab:dealTab, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, npMode:npMode, newRound:newRound,
     generateRfp:generateRfp, copyRfp:copyRfp, downloadRfp:downloadRfp, sendRfpTo:sendRfpTo,
     setStage:setStage, basisChange:basisChange, marketCheck:marketCheck, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
     proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead,
