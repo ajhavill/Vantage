@@ -192,6 +192,9 @@
   .srow{display:flex;gap:10px;justify-content:flex-end;margin-top:8px}
   /* CoStar report import — wide review sheet */
   .sheet.wide{width:min(960px,100%)}
+  .mchips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+  .mchip{display:inline-flex;align-items:center;gap:4px;font:600 11px Inter;color:var(--ink-soft);background:var(--paper);border:1px solid var(--line-2);border-radius:999px;padding:3px 10px;text-decoration:none;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+  .mchip:hover{border-color:var(--accent);color:var(--accent)}
   .ri-drop{display:flex;gap:12px;align-items:center;margin-top:12px;padding:14px 16px;border:1.5px dashed var(--line-2);border-radius:12px;cursor:pointer;color:var(--ink-soft);font:500 12.5px Inter;transition:border-color .15s,background .15s}
   .ri-drop:hover,.ri-drop.over{border-color:var(--accent);background:rgba(45,110,126,.05)}
   .ri-drop .ri-drop-ic{font-size:20px;flex:none}
@@ -326,6 +329,13 @@
   .draftbox{font:400 13px Inter;color:var(--ink);background:var(--paper);border:1px solid var(--line-2);border-radius:9px;padding:12px 14px;max-height:300px;overflow-y:auto;line-height:1.55}
   .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;font:600 13px Inter;padding:12px 18px;border-radius:10px;box-shadow:var(--shadow);opacity:0;transition:all .3s;z-index:4000;max-width:90vw;text-align:center}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  /* background-job pills: persistent bottom-center status while Claude reads uploads */
+  .jobpills{position:fixed;left:50%;bottom:74px;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;z-index:3990;align-items:center;pointer-events:none}
+  .jobpill{pointer-events:auto;background:var(--paper-2);border:1px solid var(--line-2);color:var(--ink);font:600 12.5px Inter;padding:10px 16px;border-radius:999px;box-shadow:var(--shadow);display:flex;gap:9px;align-items:center;max-width:90vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .jobpill .jp-spin{width:14px;height:14px;border:2px solid var(--line-2);border-top-color:var(--accent);border-radius:50%;animation:rispin .8s linear infinite;flex:none}
+  .jobpill.ready{cursor:pointer;border-color:var(--accent);color:var(--accent);background:#fff}
+  .jobpill.ready:hover{background:rgba(45,110,126,.07)}
+  .jobpill.err{cursor:pointer;border-color:#c0392b;color:#c0392b;background:#fff}
 
   /* tour stops */
   .tcard{border:1px solid var(--line);border-radius:11px;background:var(--paper-2);padding:12px 14px;margin-bottom:10px}
@@ -1479,6 +1489,15 @@ window.DF = (function(){
       _savedTour=null; try{ var stv=await q(sb.from('deal_tours').select('*').eq('deal_id',id).limit(1)); _savedTour=(stv&&stv[0])||null; }catch(e){}
       // client surveys generated from this deal (ledger of share links)
       _dealSurveys=[]; try{ _dealSurveys=await q(sb.from('deal_surveys').select('*').eq('deal_id',id).order('created_at',{ascending:false})); }catch(e){}
+      // filed media (brochures + floor plans) for this deal's buildings — clickable chips on the report cards
+      _dealMedia={};
+      try{
+        var mIds=(props||[]).map(function(pp){ return pp.building_id; }).filter(Boolean);
+        if(mIds.length){
+          var mrows=await q(sb.from('building_media').select('building_id,kind,url,title').in('building_id',mIds).order('sort_order'));
+          (mrows||[]).forEach(function(m){ if(m.url&&(m.kind==='brochure'||m.kind==='floorplan')){ (_dealMedia[m.building_id]=_dealMedia[m.building_id]||[]).push(m); } });
+        }
+      }catch(e){}
       try{ syncDealModel(id, proposals, rounds, abstracts[0]||null); }catch(e){}
       renderDeal(d,props,proposals,rounds,docs,tours,abstracts[0]||null,events,steps,tasks);
       if(_savedTour && _activeTab==='touring') initTourMap();
@@ -2348,6 +2367,7 @@ window.DF = (function(){
     if(f && !/pdf$/i.test(f.name) && f.type!=='application/pdf'){ err.textContent='That file isn\'t a PDF — export the report from CoStar as PDF, or paste its text below.'; return; }
     if(f && f.size>20*1024*1024){ err.textContent='File too large — 20MB max. Export a lighter version from CoStar (fewer photos).'; return; }
     _ri.filename=f?f.name:'pasted report text';
+    _ri.file=f||null;   // kept for confirm: floor-plan pages render from this PDF
     $('ri_go').disabled=true;
     (f?fileB64(f):Promise.resolve(null))
       .then(function(b64){ return riCall(b64, pasted, f?f.name:null); })
@@ -2356,13 +2376,15 @@ window.DF = (function(){
   /* Background job pattern (market-reports / brochure filing): a sync function
    * 504s while Opus reads a full survey, so stage the PDF in a
    * deal_report_imports row, kick the background reader, poll the row. */
+  /* Fully background: the sheet closes as soon as the upload is staged, a
+   * bottom pill tracks progress, and it becomes a "Review & import" button
+   * when Claude's done. The broker keeps working the whole time. */
   async function riCall(b64, pasted, filename){
     var started=Date.now();
-    openSheet('<h3>Reading report…</h3><div class="ssub">'+esc(_ri.filename)+'</div>'
-      + '<div class="ri-prog"><div class="ri-spin"></div><div><div class="ri-pt">Claude is reading every building &amp; available space…</div>'
-      + '<div class="ri-ps">This takes ~1–3 minutes for a full survey. <span id="ri_elapsed">0s</span> elapsed — leave this open.</div></div></div>');
-    clearInterval(_riTimer);
-    _riTimer=setInterval(function(){ var el=$('ri_elapsed'); if(el) el.textContent=Math.round((Date.now()-started)/1000)+'s'; },1000);
+    closeSheet();
+    clearInterval(_riTimer); clearInterval(_riTimer2);
+    pillSet('ri','Uploading '+esc(_ri.filename)+'…','busy');
+    aiToast('Reading the report in the background — keep working. A Review button appears at the bottom when it\'s ready.');
     try{
       var s=await sb.auth.getSession(); var token=(s&&s.data&&s.data.session)?s.data.session.access_token:null;
       if(!token) throw new Error('Your session expired — please sign in again.');
@@ -2373,15 +2395,15 @@ window.DF = (function(){
         body:JSON.stringify({token:token, jobId:jobId})});
       if(res.status===401) throw new Error('Your session expired — please sign in again.');
       if(res.status>=500) throw new Error('The reader couldn\'t start (HTTP '+res.status+'). Try again.');
+      _riTimer=setInterval(function(){ pillSet('ri','Reading '+esc(_ri.filename)+' — '+Math.round((Date.now()-started)/1000)+'s (takes ~1–3 min)','busy'); },1000);
       riPoll(jobId);
     }catch(e){
       var m=(e&&e.message)||String(e);
-      riFail(m + (/report_imports.*(does not exist|relation)/i.test(m)?' — run supabase/report-import-jobs.sql first.':''));
+      riFailPill(m + (/report_imports.*(does not exist|relation)/i.test(m)?' — run supabase/report-import-jobs.sql first.':''));
     }
   }
   function riPoll(jobId){
     _riTimer2=setInterval(async function(){
-      if(!$('ri_elapsed')){ clearInterval(_riTimer2); clearInterval(_riTimer); return; }   // sheet closed — stop polling
       try{
         // never select pdf_b64/src_text — that's the staged multi-MB upload
         var rows=await q(sb.from('deal_report_imports').select('id,status,result,error').eq('id',jobId).limit(1));
@@ -2389,15 +2411,22 @@ window.DF = (function(){
         clearInterval(_riTimer2); clearInterval(_riTimer);
         // consume: job rows are transient — delete now that we hold the result
         try{ await q(sb.from('deal_report_imports').delete().eq('id',jobId)); }catch(e){}
-        if(row.status==='error'){ riFail(row.error||'The reader failed. Try again.'); return; }
+        if(row.status==='error'){ riFailPill(row.error||'The reader failed. Try again.'); return; }
         var data=row.result||{};
         var cat=await loadPortalBuildings();
         var existing=[]; try{ existing=await q(sb.from('deal_properties').select('id,building_id,address,name').eq('deal_id',_ri.dealId)); }catch(e){}
         _ri.plan=ReportImport.buildPlan({reportDate:data.reportDate, buildings:data.buildings||[]}, cat||[], existing, {filename:_ri.filename});
-        if(!_ri.plan.buildings.length){ riFail('No buildings found in that document — is it a CoStar availability report or survey export?'); return; }
-        riReview();
+        if(!_ri.plan.buildings.length){ riFailPill('No buildings found in that document — is it a CoStar availability report or survey export?'); return; }
+        pillSet('ri','📄 Report read — '+_ri.plan.buildings.length+' building'+(_ri.plan.buildings.length===1?'':'s')+' · Review &amp; import','ready',function(){ riReview(); });
+        aiToast('Report read ✓ — click the button at the bottom to review & import.');
       }catch(e){ /* transient — keep polling */ }
     },4000);
+  }
+  // Errors surface on the pill first; clicking it opens the full explanation
+  // sheet with the Try-again button.
+  function riFailPill(msg){
+    clearInterval(_riTimer); clearInterval(_riTimer2);
+    pillSet('ri','⚠ Report import failed — see why','err',function(){ pillClear('ri'); riFail(msg); });
   }
   function riFail(msg){
     clearInterval(_riTimer); clearInterval(_riTimer2);
@@ -2503,10 +2532,48 @@ window.DF = (function(){
         }
         if(toInsert.length){ await q(sb.from('market_spaces').insert(toInsert)); inserted=toInsert.length; }
       }
+      // 3) floor plans embedded IN the report PDF: render the pages Claude
+      //    flagged (masking any listing-broker contact box), file under each
+      //    matched building — same pipeline as brochure filing. Best-effort:
+      //    a bad page or missing pdf.js never sinks the import.
+      var planImgs=0, planSkipped=0;
+      if(_ri.file && !_ri.plansDone){
+        var withPlans=included.filter(function(b){ return b.buildingId && b.floorPlanPages && b.floorPlanPages.length; });
+        if(withPlans.length){
+          btn.textContent='Filing floor plans…';
+          try{
+            var pdfjs=await loadPdfjs();
+            var buf=await _ri.file.arrayBuffer();
+            var pdf=await pdfjs.getDocument({data:buf}).promise;
+            for(var w=0;w<withPlans.length;w++){
+              var bb=withPlans[w];
+              var entry={ buildingId:bb.buildingId, catalogName:bb.catalogName, name:bb.name, filename:_ri.filename };
+              var pages=BrochureFile._normalizePages(bb.floorPlanPages);
+              for(var g=0;g<pages.length;g++){
+                var fp=pages[g];
+                if(fp.page>pdf.numPages){ planSkipped++; continue; }
+                try{
+                  var blob=await bfRenderPage(pdf,fp.page,fp.contactBox);
+                  if(!blob){ planSkipped++; continue; }
+                  var fpName=String(_ri.filename).replace(/\.pdf$/i,'')+'_p'+fp.page+'.png';
+                  var fpPath=BrochureFile.storagePath(entry,'floorplan',bfUniq(),fpName);
+                  var fpUp=await sb.storage.from(BF_BUCKET).upload(fpPath, blob, {upsert:false, contentType:'image/png'});
+                  if(fpUp.error){ planSkipped++; continue; }
+                  var fpPub=sb.storage.from(BF_BUCKET).getPublicUrl(fpPath);
+                  await q(sb.from('building_media').insert(BrochureFile.floorplanMediaRow(entry,fp.page,fpPath,fpPub&&fpPub.data?fpPub.data.publicUrl:null)));
+                  planImgs++;
+                }catch(pe){ planSkipped++; }
+              }
+            }
+          }catch(pe){ /* pdf.js unavailable — plans skipped, import still lands */ }
+        }
+        _ri.plansDone=true;
+      }
+      pillClear('ri');                 // the background-job pill has served its purpose
       openDeal(_ri.dealId);            // re-render Buildings behind the sheet (same tab stays active)
       openSheet('<h3>Report imported ✓</h3>'
-        + '<div class="ri-done">'+esc(sum.line)+'</div>'
-        + '<div class="ssub">The buildings are in this deal\'s <b>Market report</b> section. Next: drop the listing brokers\' floor plans &amp; brochures on it, then export the report or build the client survey.</div>'
+        + '<div class="ri-done">'+esc(sum.line)+(planImgs?' · '+planImgs+' floor-plan image'+(planImgs===1?'':'s')+' filed':'')+(planSkipped?' ('+planSkipped+' page'+(planSkipped===1?'':'s')+' couldn\'t render)':'')+'</div>'
+        + '<div class="ssub">The buildings are in this deal\'s <b>Market report</b> section'+(planImgs?' with the report\'s floor plans filed on their dossiers (listing-broker contacts masked)':'')+'. Next: drop any extra brochures on it, then export the report or build the client survey.</div>'
         + '<div class="ssub">Availability tracker: '+inserted+' new space'+(inserted===1?'':'s')+', '+refreshed+' refreshed — source “CoStar report”, internal only. They\'re live in the Market map\'s Spaces drawer.</div>'
         + '<div class="srow"><button class="btn pri" onclick="DF.close()">Done</button></div>');
     }catch(e){
@@ -2550,7 +2617,9 @@ window.DF = (function(){
     $('bf_go').disabled=true; err.textContent='';
     bfLaunch(files);
   }
+  function bfBusy(){ return !!(_bf&&_bf.jobs&&_bf.jobs.some(function(j){ return j.status==='queued'; })); }
   function bfValidate(files){
+    if(bfBusy()) return 'Still reading the previous batch — wait for its Review button at the bottom.';
     if(!files.length) return 'Pick at least one PDF.';
     if(files.length>BF_MAX_FILES) return 'Up to '+BF_MAX_FILES+' files per batch — split the rest into a second run.';
     for(var i=0;i<files.length;i++){
@@ -2561,14 +2630,16 @@ window.DF = (function(){
     return null;
   }
   // Shared launcher: stage every file as a job row, kick the background reader
-  // for each, then show progress + poll. Used by the modal AND the Market
-  // report drop zone.
+  // for each, then poll IN THE BACKGROUND — the sheet closes immediately and
+  // a bottom pill tracks progress. Used by the modal AND the drop zone.
   async function bfLaunch(files){
+    closeSheet();
     try{
       var s=await sb.auth.getSession(); var token=(s&&s.data&&s.data.session)?s.data.session.access_token:null;
       if(!token) throw new Error('Your session expired — please sign in again.');
       for(var k=0;k<files.length;k++){
         var file=files[k], jobId=bfNewJobId();
+        pillSet('bf','Uploading '+(k+1)+' of '+files.length+' — '+esc(file.name),'busy');
         var b64=await fileB64(file);
         await q(sb.from('deal_brochure_extracts').insert({ id:jobId, org_id:ReportImport.ORG_ID, deal_id:_bf.dealId, filename:file.name, pdf_b64:b64 }));
         var res=await fetch('/.netlify/functions/deal-brochure-extract-background',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -2577,8 +2648,9 @@ window.DF = (function(){
         if(res.status>=500) throw new Error('The reader couldn\'t start for "'+file.name+'" (HTTP '+res.status+'). Try again.');
         _bf.jobs.push({ id:jobId, file:file, filename:file.name, status:'queued', result:null, error:null });
       }
+      aiToast('Reading '+files.length+' file'+(files.length===1?'':'s')+' in the background — keep working. A Review button appears at the bottom when they\'re ready.');
       bfProgress(); bfPoll();
-    }catch(e){ bfFail((e&&e.message)||String(e), /brochure_extracts.*(does not exist|relation)/i.test((e&&e.message)||'')?' Run supabase/brochure-filing.sql first.':''); }
+    }catch(e){ bfFailPill((e&&e.message)||String(e), /brochure_extracts.*(does not exist|relation)/i.test((e&&e.message)||'')?' Run supabase/brochure-filing.sql first.':''); }
   }
   /* Market-report drop zone: PDFs dropped (or browsed) go straight into the
    * filing pipeline — no modal, the progress sheet opens immediately. */
@@ -2602,23 +2674,12 @@ window.DF = (function(){
     bfLaunch(files);
   }
   function bfProgress(){
-    var rows=_bf.jobs.map(function(j){
-      var st=j.status==='done'?'<span class="ri-badge hit">✓ read</span>'
-        : j.status==='error'?'<span class="ri-badge new" title="'+esc(j.error||'')+'">failed</span>'
-        : '<span class="ri-badge dup">reading…</span>';
-      return '<div style="display:flex;gap:10px;align-items:center;padding:6px 2px;border-bottom:1px solid var(--line)">'
-        + '<span style="font:500 12.5px Inter;color:var(--ink);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(j.filename)+'</span>'+st+'</div>';
-    }).join('');
     var done=_bf.jobs.filter(function(j){ return j.status!=='queued'; }).length;
-    openSheet('<h3>Reading '+_bf.jobs.length+' file'+(_bf.jobs.length===1?'':'s')+'…</h3>'
-      + '<div class="ri-prog"><div class="ri-spin"></div><div><div class="ri-pt">Claude is identifying each building &amp; its floor plans…</div>'
-      + '<div class="ri-ps"><span id="bf_stat">'+done+' of '+_bf.jobs.length+'</span> finished — each file takes ~15–45s. Leave this open.</div></div></div>'
-      + '<div style="max-height:36vh;overflow-y:auto">'+rows+'</div>');
+    pillSet('bf','Reading '+_bf.jobs.length+' file'+(_bf.jobs.length===1?'':'s')+' — '+done+' done (each ~15–45s)','busy');
   }
   function bfPoll(){
     clearInterval(_bfTimer);
     _bfTimer=setInterval(async function(){
-      if(!$('bf_stat')){ clearInterval(_bfTimer); return; }     // sheet closed — stop polling
       var pending=_bf.jobs.filter(function(j){ return j.status==='queued'; }).map(function(j){ return j.id; });
       if(!pending.length){ clearInterval(_bfTimer); return; }
       try{
@@ -2634,10 +2695,22 @@ window.DF = (function(){
           clearInterval(_bfTimer);
           // consume: job rows are transient — delete them now that we hold the results
           try{ await q(sb.from('deal_brochure_extracts').delete().in('id',_bf.jobs.map(function(j){ return j.id; }))); }catch(e){}
-          bfBuildReview();
+          var readable=_bf.jobs.filter(function(j){ return j.status==='done'&&j.result; }).length;
+          if(!readable){
+            bfFailPill('None of the files could be read.', _bf.jobs.map(function(j){ return j.filename+': '+(j.error||'no result'); }).join(' · '));
+            return;
+          }
+          pillSet('bf','📎 '+readable+' file'+(readable===1?'':'s')+' read — Review &amp; file','ready',function(){ bfBuildReview(); });
+          aiToast('Brochures read ✓ — click the button at the bottom to review & file.');
         } else if(flipped){ bfProgress(); }
       }catch(e){ /* transient — keep polling */ }
     },4000);
+  }
+  // Errors surface on the pill first; clicking opens the full sheet.
+  function bfFailPill(msg, extra){
+    clearInterval(_bfTimer);
+    if(_bf&&_bf.jobs) _bf.jobs.forEach(function(j){ if(j.status==='queued') j.status='error'; });   // unblock bfBusy
+    pillSet('bf','⚠ Brochure filing failed — see why','err',function(){ pillClear('bf'); bfFail(msg, extra); });
   }
   async function bfBuildReview(){
     var cat=await loadPortalBuildings();
@@ -2821,6 +2894,7 @@ window.DF = (function(){
         }
         if(toInsert.length){ await q(sb.from('market_spaces').insert(toInsert)); spacesNew=toInsert.length; }
       }
+      pillClear('bf');                 // the background-job pill has served its purpose
       openDeal(_bf.dealId);
       openSheet('<h3>Brochures filed ✓</h3>'
         + '<div class="ri-done">Filed '+filed+' document'+(filed===1?'':'s')+(planImgs?' · '+planImgs+' floor-plan image'+(planImgs===1?'':'s'):'')+(planSkipped?' ('+planSkipped+' page'+(planSkipped===1?'':'s')+' couldn\'t render)':'')+'</div>'
@@ -3002,11 +3076,23 @@ window.DF = (function(){
      'shortlisted') → a printable report of every building's full info ---------- */
   function reportCard(p, dealId){
     var canView=!!p.building_id;
+    // filed media chips: click a brochure or floor plan to open it right here
+    var media=_dealMedia[p.building_id]||[], chips='';
+    if(media.length){
+      var shown=media.slice(0,4);
+      chips='<div class="mchips">'+shown.map(function(m){
+        var lbl=(m.title||(m.kind==='brochure'?'Brochure':'Floor plan'));
+        return '<a class="mchip" href="'+esc(m.url)+'" target="_blank" rel="noopener" title="'+esc(m.title||'')+'">'+(m.kind==='brochure'?'📄':'🗺')+' '+esc(lbl.length>40?lbl.slice(0,38)+'…':lbl)+'</a>';
+      }).join('')
+      +(media.length>shown.length?'<span class="mchip more" onclick="DF.viewBuilding(\''+esc(p.building_id)+'\',\''+dealId+'\')" title="All media on the building dossier">+'+(media.length-shown.length)+' more</span>':'')
+      +'</div>';
+    }
     return '<div class="pcard"><div class="top">'
       + '<span class="bselwrap"><input type="checkbox" class="rsel" data-id="'+p.id+'" onchange="DF.bulkSync(\'report\')" title="Select to add to the tour"></span>'
       + '<div style="flex:1;min-width:0">'
       + (canView?'<div class="nm nm-link" onclick="DF.viewBuilding(\''+esc(p.building_id)+'\',\''+dealId+'\')" title="See building details">'+esc(p.name||'Building')+' ↗</div>':'<div class="nm">'+esc(p.name||'Building')+'</div>')
-      + (p.address?'<div class="ad">'+esc(p.address)+'</div>':'')+'</div></div>'
+      + (p.address?'<div class="ad">'+esc(p.address)+'</div>':'')
+      + chips + '</div></div>'
       + '<div class="pactions">'
       + (canView?'<button class="miniadd" onclick="DF.viewBuilding(\''+esc(p.building_id)+'\',\''+dealId+'\')">View details</button>':'')
       + '<button class="miniadd" onclick="DF.addToTour(\''+p.id+'\',\''+dealId+'\')">+ Add to tour</button>'
@@ -4143,6 +4229,26 @@ window.DF = (function(){
   }
 
   /* ---------- AI proposal drafting ---------- */
+  /* ---------- background-job pills ----------
+   * Persistent bottom-center status while Claude reads uploads in the
+   * background: spinner while busy, a clickable "Review" button when ready,
+   * a clickable error state on failure. Attached to <body>, so they survive
+   * every deal re-render. */
+  var _pills={};
+  function pillHost(){
+    var h=document.getElementById('jobpills');
+    if(!h){ h=document.createElement('div'); h.id='jobpills'; h.className='jobpills'; document.body.appendChild(h); }
+    return h;
+  }
+  function pillSet(id, html, state, onclick){
+    var p=_pills[id];
+    if(!p){ p=document.createElement('div'); _pills[id]=p; pillHost().appendChild(p); }
+    p.className='jobpill'+(state==='ready'?' ready':(state==='err'?' err':''));
+    p.innerHTML=(state==='busy'?'<span class="jp-spin"></span>':'')+html;
+    p.onclick=onclick||null;
+  }
+  function pillClear(id){ var p=_pills[id]; if(p){ p.remove(); delete _pills[id]; } }
+
   function aiToast(msg){
     var t=document.createElement('div'); t.className='toast'; t.textContent=msg; document.body.appendChild(t);
     setTimeout(function(){ t.classList.add('show'); },10);
@@ -4737,6 +4843,7 @@ window.DF = (function(){
   var _tourMail=null;     // {dealId, items:[{to,name,building,subject,text,sent}]}
   var _savedTour=null;    // deal_tours row for the OPEN deal (set by openDeal)
   var _dealSurveys=[];    // deal_surveys rows for the OPEN deal (set by openDeal)
+  var _dealMedia={};      // building_media (brochure/floorplan) by building_id for the OPEN deal
 
   /* ---------- saved tour: persist the optimizer result (deal_tours) ----------
      The optimize run bills Google, so its result must survive click-out: on

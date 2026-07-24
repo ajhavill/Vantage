@@ -49,7 +49,8 @@ const JSON_SHAPE = JSON.stringify({
       availableDate: "2026-09-01",
       listingBroker: "Jane Doe", listingCompany: "CBRE",
       listingEmail: "jane.doe@cbre.com", listingPhone: "(310) 555-0100"
-    }]
+    }],
+    floorPlanPages: [{ page: 12, contactBox: { x0: 0, y0: 0.9, x1: 1, y1: 1 } }]
   }]
 });
 
@@ -73,10 +74,19 @@ const SYSTEM =
   "- `rba` is the building's rentable building area in SF; `class` like 'A'/'B'/'C' as printed.\n" +
   "- Listing contact fields come from the report's broker/agent columns when present.\n" +
   "- Handle multi-building layouts: page-per-building profiles, table rows, and summary grids all count.\n" +
+  "- `floorPlanPages`: CoStar reports often embed floor plans / site plans in each building's profile. One entry per " +
+  "page whose PRIMARY content is a floor plan / test fit / stacking plan for THIS building (`page` is the 1-based " +
+  "page number in the whole document). A thumbnail plan among photos doesn't count. These page images get shown to " +
+  "the TENANT CLIENT, so for each also return `contactBox`: the bounding region of any listing-broker contact block " +
+  "on the page (names, phones, emails, brokerage branding — usually a header/footer strip). Coordinates are " +
+  "FRACTIONS of the page (0-1), x rightward, y downward, top-left origin. Be GENEROUS — cover the whole strip edge " +
+  "to edge; over-masking beats leaking a phone number. Null only when the page truly has no broker contact info. " +
+  "Never box the plan drawing itself. No floor plans = empty array.\n" +
   "OUTPUT FORMAT: respond with ONLY one JSON object — no markdown fences, no commentary before or after. Use exactly " +
   "the key names and value types of this example (the values here are illustrative, never copy them): " + JSON_SHAPE + " " +
   "`ratePeriod` is mo|yr, `rateBasis` is FSG|NNN|MG, `spaceType` is direct|sublease. Every key must be present on " +
-  "every building and every space — use null for anything the report doesn't state. `spaces` may be an empty array.";
+  "every building and every space — use null for anything the report doesn't state. `spaces` and `floorPlanPages` " +
+  "may be empty arrays.";
 
 // ~30MB of base64 ≈ 22MB PDF — past Anthropic's request ceiling once wrapped in JSON.
 const MAX_B64 = 30 * 1024 * 1024;
