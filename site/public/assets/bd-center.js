@@ -239,7 +239,15 @@
         cfg.hubspot ? (funnel.connected ? total + " contacts tracked · " + (funnel.dueNow || 0) + " due a touch" : "connected") : "not connected — set HUBSPOT_PRIVATE_APP_TOKEN") +
       nodeHtml("Market data", fresh.market_spaces ? "ok" : "warn",
         fresh.market_spaces ? "spaces updated " + ago(fresh.market_spaces) : "no tracked spaces yet") +
-      nodeHtml("Signal watcher", "off", "company news → congrats drafts · Phase 2", true);
+      (function () {
+        // Live once the bd-signal-watch scheduled task starts heartbeating bd_job_runs.
+        var sig = runs["bd-signal-watch"];
+        if (!sig) return nodeHtml("Signal watcher", "off", "daily 7:13 AM — Google Alerts + dates + lists → congrats drafts (first run pending)", true);
+        var c = sig.counts || {};
+        return nodeHtml("Signal watcher", sig.ok ? "ok" : "err",
+          "ran " + ago(sig.ran_at) +
+          (sig.ok ? " · " + (c.drafted || 0) + " drafted, " + (c.negative_flagged || 0) + " flagged" : " · " + esc(sig.note || "failed")));
+      })();
 
     var eng =
       nodeHtml("Cadence engine", cad ? (cad.ok ? "ok" : "err") : "warn",
@@ -355,7 +363,7 @@
 
     el.innerHTML = head + mapHtml(d) + queueCard + funnelHtml(d) +
       '<div class="bdc-cols">' + healthHtml(d) + activityHtml(d) + "</div>" +
-      '<div class="bdc-note">Emails send 1:1 through Resend as real personal mail (no blast headers). Replies pause a contact automatically the moment you mark their status Responded in HubSpot — the engine never touches paused, met, converted, or do-not-contact records. Signal watcher (CEO congrats from company news) and monthly report broadcasts light up as Phases 2–3.</div>';
+      '<div class="bdc-note">Emails send 1:1 through Resend as real personal mail (no blast headers). Replies pause a contact automatically the moment you mark their status Responded in HubSpot — the engine never touches paused, met, converted, or do-not-contact records. The signal watcher runs daily at 7:13 AM (Google Alerts + birthdays + award lists → congrats drafts, capped at one per company per two weeks; negative news is flagged, never drafted). Monthly report broadcasts light up as Phase 3.</div>';
   }
 
   /* ---------------- boot ---------------- */
