@@ -59,15 +59,18 @@ async function dueContacts() {
 }
 
 exports.handler = async (event) => {
-  // Manual trigger requires a valid broker token; the daily schedule has no body.
+  // Two legitimate callers only: Netlify's scheduler (its invocation body always
+  // carries next_run) and a signed-in broker pressing "Run engine now". Anyone
+  // else hitting the public function URL gets a 401 and no engine run.
+  let body = {};
+  if (event && event.body) { try { body = JSON.parse(event.body); } catch (e) { body = {}; } }
   let manual = false;
-  if (event && event.httpMethod === "POST" && event.body) {
-    let body; try { body = JSON.parse(event.body || "{}"); } catch (e) { body = {}; }
-    if (body.run === "now") {
-      const user = await sb.userFromToken(body.token);
-      if (!user) return { statusCode: 401, body: "unauthorized" };
-      manual = true;
-    }
+  if (body.run === "now") {
+    const user = await sb.userFromToken(body.token);
+    if (!user) return { statusCode: 401, body: "unauthorized" };
+    manual = true;
+  } else if (!body.next_run) {
+    return { statusCode: 401, body: "unauthorized" };
   }
 
   const org = await orgId();
