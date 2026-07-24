@@ -82,11 +82,29 @@ exports.handler = async (event) => {
   const orgId = pr.data && pr.data[0] && pr.data[0].org_id;
   if (!orgId) return { statusCode: 403, body: "no org" };
 
+  const action = String(body.action || "");
+
+  // Approve-all: send every pending EMAIL in the org's queue (calls and mail
+  // stay individual — they're physical actions). Batches of 15 per invocation
+  // to stay inside the function time budget; the UI re-calls while remaining>0.
+  if (action === "send_all") {
+    const allR = await sb.rest("bd_queue?org_id=eq." + orgId + "&status=eq.pending&touch_type=eq.email&select=*&order=due_date.asc&limit=100");
+    const all = allR.data || [];
+    const batch = all.slice(0, 15);
+    let sent = 0; const failed = [];
+    for (const r of batch) {
+      const s = await sendEmail(r);
+      if (!s.sent) { await patchQueue(r.id, { status: "failed", error: s.error }); failed.push({ id: r.id, contact: r.contact_name, error: s.error }); continue; }
+      const adv = await advanceHubSpot(r);
+      await patchQueue(r.id, { status: "sent", sent_at: new Date().toISOString(), error: adv.advanced ? null : (adv.why || null) });
+      sent++;
+    }
+    return okJSON({ ok: true, sent: sent, failed: failed, remaining: Math.max(0, all.length - batch.length) });
+  }
+
   const qr = await sb.rest("bd_queue?id=eq." + encodeURIComponent(body.id || "") + "&select=*&limit=1");
   const row = qr.data && qr.data[0];
   if (!row || row.org_id !== orgId) return okJSON({ error: "Queue item not found." });
-
-  const action = String(body.action || "");
 
   if (action === "save") {
     const r = await patchQueue(row.id, { subject: body.subject != null ? String(body.subject) : row.subject, body: body.body != null ? String(body.body) : row.body });
