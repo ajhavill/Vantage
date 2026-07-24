@@ -1473,6 +1473,8 @@ window.DF = (function(){
       var tasks=[]; try{ tasks=await q(sb.from('deal_tasks').select('*').eq('deal_id',id).order('due_date',{ascending:true,nullsFirst:false})); }catch(e){}
       // saved tour (persisted optimizer result) — renders itinerary + map with ZERO Google calls
       _savedTour=null; try{ var stv=await q(sb.from('deal_tours').select('*').eq('deal_id',id).limit(1)); _savedTour=(stv&&stv[0])||null; }catch(e){}
+      // client surveys generated from this deal (ledger of share links)
+      _dealSurveys=[]; try{ _dealSurveys=await q(sb.from('deal_surveys').select('*').eq('deal_id',id).order('created_at',{ascending:false})); }catch(e){}
       try{ syncDealModel(id, proposals, rounds, abstracts[0]||null); }catch(e){}
       renderDeal(d,props,proposals,rounds,docs,tours,abstracts[0]||null,events,steps,tasks);
       if(_savedTour && _activeTab==='touring') initTourMap();
@@ -1526,8 +1528,18 @@ window.DF = (function(){
       + (candidateProps.length?'<button class="miniadd ai" onclick="DF.generateRfp(\''+d.id+'\')" title="Draft a Request for Proposal and send it to the listing brokers">📋 Generate RFP</button>':'')+'</div>';
 
     var reportHtml = reportProps.length ? reportProps.map(function(p){ return reportCard(p, d.id); }).join('') : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No buildings in the market report yet. On a candidate building above, click “→ Add to market report”.</div>';
+    var surveyLinks = _dealSurveys.length ? '<div style="display:flex;flex-direction:column;gap:4px;margin-top:8px">'+_dealSurveys.map(function(s){
+        return '<div style="display:flex;gap:10px;align-items:center;font:500 12px Inter;color:var(--ink-soft)">'
+          + '<span style="color:var(--ink-faint)">🔗</span>'
+          + '<a href="'+esc(s.url)+'" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:340px">Client survey — '+esc(s.client_name||'client')+'</a>'
+          + '<span style="color:var(--ink-faint)">'+(s.building_count||0)+' bldg'+((s.building_count||0)===1?'':'s')+' · '+ago(s.created_at)+'</span>'
+          + '<button class="lk" onclick="DF.copySurveyLink(this,\''+esc(s.url)+'\')" style="font:600 11px Inter;background:none;border:0;color:var(--ink-faint);cursor:pointer">copy link</button>'
+          + '<button class="delx" onclick="DF.deleteSurvey(this,\''+s.id+'\',\''+d.id+'\')" title="Forget this link (the shared page itself keeps working)">delete</button></div>';
+      }).join('')+'</div>' : '';
     var reportSection = (reportProps.length?bulkBar('report',d.id,'+ Add selected to tour'):'') + reportHtml + '<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:4px">'
-      + (reportProps.length?'<button class="share-btn" onclick="DF.generateMarketReport(\''+d.id+'\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/></svg> Generate market report</button>':'')+'</div>';
+      + (reportProps.length?'<button class="share-btn" onclick="DF.generateMarketReport(\''+d.id+'\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/></svg> Generate market report</button>':'')
+      + (reportProps.length?'<button class="share-btn" onclick="DF.clientSurvey(\''+d.id+'\')" title="Build the co-branded client survey — a passcode-protected link with a dossier page per building (floor plans included, listing contacts omitted) plus a print-ready PDF"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> Client survey</button>':'')+'</div>'
+      + surveyLinks;
 
     // group rounds + documents by proposal
     var roundsByProp={}; rounds.forEach(function(r){ (roundsByProp[r.proposal_id]=roundsByProp[r.proposal_id]||[]).push(r); });
@@ -2989,6 +3001,62 @@ window.DF = (function(){
     var w=window.open('','_blank'); if(!w){ alert('Please allow pop-ups to generate the market report.'); return; }
     w.document.write(html); w.document.close(); w.focus(); setTimeout(function(){ try{ w.print(); }catch(e){} }, 350);
   }
+
+  /* ---------- client survey (Phase 3 of requirement→deliverable) ----------
+   * One click → deal-survey-create assembles a co-branded client package
+   * (preset 'survey') SERVER-SIDE from the market-report buildings: dossier
+   * data + brochure-filed floor plans + publishable tracker spaces, with
+   * listing/landlord contacts stripped and CoStar-sourced rows excluded
+   * before anything reaches a browser. The client gets the standard
+   * client.html viewer (passcode gate, dossiers, compare, print PDF). */
+  function clientSurvey(dealId){
+    var d=deals.filter(function(x){return x.id===dealId;})[0]||{};
+    openSheet('<h3>Client survey</h3><div class="ssub">Builds a passcode-protected page for your client from the market-report buildings — a dossier page per building with photos, floor plans and current availability, plus a print-ready PDF. Listing-broker contacts are left off by design: everything routes through you.</div>'
+      + fld('Prepared for','<input id="cs_name" value="'+esc(d.client_name||'')+'" placeholder="Client name">')
+      + fld('Client logo URL <span style="font-weight:400;color:var(--ink-faint)">(optional, for co-branding)</span>','<input id="cs_logo" placeholder="https://…/logo.png">')
+      + fld('Passcode <span style="font-weight:400;color:var(--ink-faint)">(you share this with the client — it isn\'t stored, so note it down)</span>','<input id="cs_pass" placeholder="e.g. acme2026" autocomplete="off">')
+      + '<div class="formerr" id="cs_err"></div>'
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button><button class="btn pri" id="cs_go">Build survey</button></div>');
+    $('cs_go').addEventListener('click',function(){ csBuild(dealId); });
+  }
+  async function csBuild(dealId){
+    var err=$('cs_err'), btn=$('cs_go');
+    var passcode=($('cs_pass').value||'').trim();
+    if(passcode.length<3){ err.textContent='Pick a passcode of at least 3 characters.'; return; }
+    btn.disabled=true; btn.textContent='Building…'; err.textContent='';
+    try{
+      var s=await sb.auth.getSession(); var token=(s&&s.data&&s.data.session)?s.data.session.access_token:null;
+      if(!token) throw new Error('Your session expired — please sign in again.');
+      var res=await fetch('/.netlify/functions/deal-survey-create',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token:token, dealId:dealId, clientName:($('cs_name').value||'').trim(), clientLogoUrl:($('cs_logo').value||'').trim(), passcode:passcode})});
+      var data=null; try{ data=await res.json(); }catch(e){}
+      if(!res.ok) throw new Error((data&&data.error)||('The survey builder failed (HTTP '+res.status+').'));
+      var skippedNote=(data.skipped&&data.skipped.length)?'<div class="ssub" style="color:#7a5a15">Not included (no catalog match): '+esc(data.skipped.join(', '))+' — open each and pick its catalog building, then rebuild.</div>':'';
+      openSheet('<h3>Survey ready ✓</h3>'
+        + '<div class="ri-done">'+data.buildingCount+' building'+(data.buildingCount===1?'':'s')+' packaged for your client</div>'
+        + skippedNote
+        + fld('Share link','<input id="cs_url" value="'+esc(data.url)+'" readonly onclick="this.select()">')
+        + '<div class="ssub">Send the link and the passcode <b>separately</b> (link by email, passcode by text works well). The client sees dossiers, photos, floor plans and a compare view — and can download the PDF. This link stays listed on the deal\'s Market report section.</div>'
+        + '<div class="srow"><button class="btn" onclick="DF.close()">Done</button>'
+        +   '<button class="btn" onclick="window.open(\''+esc(data.url)+'\',\'_blank\')">Open it</button>'
+        +   '<button class="btn pri" onclick="DF.copySurveyLink(this,\''+esc(data.url)+'\')">Copy link</button></div>');
+      openDeal(dealId);   // refresh so the ledger line appears under the report section
+    }catch(e){
+      err.textContent=(e&&e.message)||String(e);
+      btn.disabled=false; btn.textContent='Build survey';
+    }
+  }
+  function copySurveyLink(btn, url){
+    (navigator.clipboard?navigator.clipboard.writeText(url):Promise.reject()).then(function(){
+      var t=btn.textContent; btn.textContent='copied ✓'; setTimeout(function(){ btn.textContent=t; },1400);
+    }).catch(function(){ window.prompt('Copy the survey link:', url); });
+  }
+  async function deleteSurvey(btn, surveyId, dealId){
+    if(!armConfirm(btn,'Forget this link?')) return;
+    try{ await q(sb.from('deal_surveys').delete().eq('id',surveyId)); openDeal(dealId); }
+    catch(e){ alert('Could not delete: '+(e.message||e)); }
+  }
+
   async function buildTourFromTouring(dealId){
     try{
       var props=await q(sb.from('deal_properties').select('id,status').eq('deal_id',dealId));
@@ -4575,6 +4643,7 @@ window.DF = (function(){
   var _route=null;        // {dealId, stops:[...], plan:[...], startAddr, startPt}
   var _tourMail=null;     // {dealId, items:[{to,name,building,subject,text,sent}]}
   var _savedTour=null;    // deal_tours row for the OPEN deal (set by openDeal)
+  var _dealSurveys=[];    // deal_surveys rows for the OPEN deal (set by openDeal)
 
   /* ---------- saved tour: persist the optimizer result (deal_tours) ----------
      The optimize run bills Google, so its result must survive click-out: on
@@ -5021,7 +5090,7 @@ window.DF = (function(){
     deleteDealAsk:deleteDealAsk, deleteDealCancel:deleteDealCancel, deleteDealDo:deleteDealDo,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask, recGo:recGo,
-    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, importReport:importReport, fileBrochures:fileBrochures, bulkSync:bulkSync, bulkAll:bulkAll, bulkMove:bulkMove, bulkDelete:bulkDelete, viewBuilding:viewBuilding, generateMarketReport:generateMarketReport, dealTab:dealTab, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, npMode:npMode, newRound:newRound,
+    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, importReport:importReport, fileBrochures:fileBrochures, bulkSync:bulkSync, bulkAll:bulkAll, bulkMove:bulkMove, bulkDelete:bulkDelete, viewBuilding:viewBuilding, generateMarketReport:generateMarketReport, clientSurvey:clientSurvey, copySurveyLink:copySurveyLink, deleteSurvey:deleteSurvey, dealTab:dealTab, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, npMode:npMode, newRound:newRound,
     generateRfp:generateRfp, copyRfp:copyRfp, downloadRfp:downloadRfp, sendRfpTo:sendRfpTo,
     setStage:setStage, basisChange:basisChange, marketCheck:marketCheck, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
     proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead,

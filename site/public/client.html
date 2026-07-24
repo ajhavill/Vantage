@@ -145,6 +145,11 @@
     .pd-scores{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px}
     .pd-scores .sc{font:600 10.5px 'JetBrains Mono',monospace;color:#1A2230;border:1px solid #E2DDD2;border-radius:6px;padding:2px 7px}
     .pd-read{font:400 11px/1.5 Inter;color:#55606F;margin:0}
+    .pd-av{width:100%;border-collapse:collapse;margin:2px 0 8px}
+    .pd-av th{font:600 8.5px Inter;letter-spacing:.05em;text-transform:uppercase;color:#8A93A0;text-align:left;padding:3px 10px 3px 0;border-bottom:1px solid #D2CCBF}
+    .pd-av td{font:500 10.5px Inter;color:#1A2230;padding:3px 10px 3px 0;border-bottom:1px solid #E2DDD2}
+    .pd-fps{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 8px}
+    .pd-fps img{max-width:47%;max-height:230px;object-fit:contain;border:1px solid #E2DDD2;border-radius:6px}
     .pd-foot{margin-top:8px;font:400 9px Inter;color:#8A93A0;border-top:1px solid #E2DDD2;padding-top:8px}
   }
 
@@ -380,7 +385,9 @@
       '<div class="for"><div class="lbl">Prepared for</div><div class="nm">'+esc(c.name||'you')+'</div></div>';
     VV.setData({buildings:PKG.buildings||[], categories:PKG.categories||[], industries:PKG.industries||[]});
     var n=VV.buildings.length;
-    document.getElementById('landSub').textContent=n+' building'+(n===1?'':'s')+' selected for you across Santa Monica. Open any one for spaces, rents, the neighborhood, and a walkable-amenity map.';
+    document.getElementById('landSub').textContent=(PKG.preset==='survey')
+      ? n+' building'+(n===1?'':'s')+' in your market survey. Open any one for current availability, floor plans, photos, and the neighborhood.'
+      : n+' building'+(n===1?'':'s')+' selected for you across Santa Monica. Open any one for spaces, rents, the neighborhood, and a walkable-amenity map.';
     document.title='Vantage — prepared for '+(c.name||'you');
     // only show the Commute tab if the broker baked a read-only analysis into this package
     var hasCommute=!!(PKG.bakedCommute && PKG.bakedCommute.buildings && PKG.bakedCommute.buildings.length);
@@ -475,13 +482,24 @@
   function rentNum(s){ var m=String(s||'').match(/[\d.]+/); return m?parseFloat(m[0]):null; }
 
   // ---- PDF leave-behind (build a print-only doc, then browser "Save as PDF") ----
-  function downloadPDF(){ buildPrintDoc(); window.print(); }
+  // Floor-plan images have to finish loading before window.print(), or they
+  // come out blank — wait for them (capped so a dead URL can't hang the print).
+  function downloadPDF(){
+    buildPrintDoc();
+    var imgs=Array.prototype.slice.call(document.getElementById('printDoc').querySelectorAll('img'))
+      .filter(function(i){ return !i.complete; });
+    if(!imgs.length){ window.print(); return; }
+    var left=imgs.length, fired=false;
+    function go(){ if(fired) return; fired=true; window.print(); }
+    imgs.forEach(function(i){ i.onload=i.onerror=function(){ if(--left<=0) go(); }; });
+    setTimeout(go, 3000);
+  }
   function buildPrintDoc(){
     var c=PKG.client||{}, bs=VV.buildings.slice().sort(function(a,b){return VV.matchScore(b)-VV.matchScore(a);});
-    var cats=VV.weightedCats();
+    var cats=VV.weightedCats(), survey=(PKG.preset==='survey');
     var dateStr=''; try{ dateStr=new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}); }catch(e){}
     var cover='<div class="pd-cover"><div><div class="logo">Vantage<span class="dot">.</span></div>'+
-      '<div class="by">Office shortlist'+(dateStr?' · '+dateStr:'')+'</div></div>'+
+      '<div class="by">'+(survey?'Market survey':'Office shortlist')+(dateStr?' · '+dateStr:'')+'</div></div>'+
       '<div class="for">'+(c.logoUrl?'<img class="clogo" src="'+esc(c.logoUrl)+'" onerror="this.remove()">':'')+
         '<div class="lbl">Prepared for</div>'+esc(c.name||'you')+'</div></div>';
     var blocks=bs.map(function(b){
@@ -491,9 +509,18 @@
       st('Class',b['class']); st('Built',b.yearBuilt); st('Parking',b.parking);
       var scores=cats.map(function(cat){ var s=(b.cscore&&b.cscore[cat.key]!=null)?b.cscore[cat.key].toFixed(1):null;
         return s?'<span class="sc">'+esc(cat.label)+' '+s+'</span>':''; }).join('');
+      // current availability, one row per suite (capped so a big building can't eat the page)
+      var avails=(b.availabilities||[]).slice(0,10);
+      var avT=avails.length?'<table class="pd-av"><thead><tr><th>Suite</th><th>Floor</th><th>SF</th><th>Asking</th><th>Status</th></tr></thead><tbody>'+
+        avails.map(function(a){ return '<tr><td>'+esc(a.suite||'—')+'</td><td>'+esc(a.floor!=null?a.floor:'—')+'</td><td>'+(a.sf!=null?Number(a.sf).toLocaleString():'—')+'</td><td>'+esc(a.rent||'Undisclosed')+'</td><td>'+esc(a.status||'')+'</td></tr>'; }).join('')+
+        '</tbody></table>'+((b.availabilities||[]).length>10?'<div class="pd-read">+ '+((b.availabilities||[]).length-10)+' more suite(s) — see the online survey.</div>':''):'';
+      // floor-plan IMAGES only (brochure-filed page renders); PDF plan links can't print inline
+      var fpImgs=(b.floorplans||[]).filter(function(p){ return p&&p.url&&/\.(png|jpe?g|webp|gif)(\?|$)/i.test(p.url); }).slice(0,2);
+      var fps=fpImgs.length?'<div class="pd-fps">'+fpImgs.map(function(p){ return '<img src="'+esc(p.url)+'" alt="'+esc(p.label||'Floor plan')+'" onerror="this.remove()">'; }).join('')+'</div>':'';
       return '<div class="pd-bld"><h2>'+esc(b.name)+'</h2><div class="loc">'+esc(b.addr||b.submarket||'')+'</div>'+
         '<div class="pd-stats">'+stats.join('')+'</div>'+
         (scores?'<div class="pd-scores">'+scores+'</div>':'')+
+        avT+fps+
         (b.read?'<p class="pd-read">'+esc(b.read)+'</p>':'')+'</div>';
     }).join('');
     var foot='<div class="pd-foot">Amenity scores reflect live Google Places data near each building. Available suites and asking rents are illustrative — We will confirm current terms.</div>';
