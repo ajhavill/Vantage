@@ -6,10 +6,14 @@
  *                         (planning next month, months ahead queued, sent archive)
  *   Marketing Programs  — the programs we run (10-step cold outreach first; more
  *                         later) + a read-only board of everyone in them; click a
- *                         program to see its full cadence with day gaps
+ *                         program to open the BUILDER — retitle steps, move them
+ *                         to different days, change type, attach collateral,
+ *                         add/remove steps (the program is bd_templates rows,
+ *                         and the engine reads the same rows)
  *   Signals             — manage Google-Alert RSS feeds + review signal history
- *   Templates           — template sets, high-level; click into a program to
- *                         redline each step's copy (engine sends it verbatim)
+ *   Templates           — the asset library: COLLATERAL (brochure, letter, note
+ *                         card — files you upload and attach to a cadence step)
+ *                         and EMAILS (reusable one-off copy outside any cadence)
  *
  * Self-contained: injects its own .bdc- CSS, nav item + sub-menu + <section>,
  * and wraps window.showModule. index.html diff = one <script> tag.
@@ -73,19 +77,59 @@
     return new Date(Number(p[0]), Number(p[1]) - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
   }
 
-  /* ---- the 10-step program, client copy (mirrors functions/_bd.js PLAN) ---- */
-  var PLAN = [
-    { step: 1, day: 1, type: "mail", label: "Brochure + hand-written note" },
-    { step: 2, day: 9, type: "call", label: "Call #1 — reference the brochure (VM ok, bridge email after)" },
-    { step: 3, day: 15, type: "email", label: "Email #1 — submarket snapshot" },
-    { step: 4, day: 22, type: "call", label: "Call #2 — no voicemail" },
-    { step: 5, day: 28, type: "email", label: "Email #2 — building-specific hook" },
-    { step: 6, day: 35, type: "mail", label: "Unique-value letter, hand-signed" },
-    { step: 7, day: 41, type: "call", label: "Call #3 — VM referencing the letter" },
-    { step: 8, day: 48, type: "email", label: "Email #3 — direct meeting ask" },
-    { step: 9, day: 54, type: "call", label: "Call #4 — no voicemail" },
-    { step: 10, day: 61, type: "email", label: "Email #4 — professional breakup" }
+  /* ---- the cadence program, read from bd_templates ---- */
+  // The program is DATA, not code: bd_templates rows carry label + day_offset +
+  // touch type + copy + attached asset (supabase/bd-builder.sql). This mirrors
+  // stepsFrom() in functions/_bd.js — the engine and this builder must agree on
+  // ordering, or the cadence you see isn't the cadence that sends.
+  // DEFAULT_PLAN is only the shape shown before rows load / if none exist.
+  var DEFAULT_PLAN = [
+    { day_offset: 1, touch_type: "mail", label: "Brochure + hand-written note" },
+    { day_offset: 9, touch_type: "call", label: "Call #1 — reference the brochure (VM ok, bridge email after)" },
+    { day_offset: 15, touch_type: "email", label: "Email #1 — submarket snapshot" },
+    { day_offset: 22, touch_type: "call", label: "Call #2 — no voicemail" },
+    { day_offset: 28, touch_type: "email", label: "Email #2 — building-specific hook" },
+    { day_offset: 35, touch_type: "mail", label: "Unique-value letter, hand-signed" },
+    { day_offset: 41, touch_type: "call", label: "Call #3 — VM referencing the letter" },
+    { day_offset: 48, touch_type: "email", label: "Email #3 — direct meeting ask" },
+    { day_offset: 54, touch_type: "call", label: "Call #4 — no voicemail" },
+    { day_offset: 61, touch_type: "email", label: "Email #4 — professional breakup" }
   ];
+
+  // Ordered steps for display. day_offset is the ordering truth (the stored
+  // `step` number lags after edits); `pos` is the position the engine reports.
+  function planSteps() {
+    var rows = (S.templates && S.templates.length) ? S.templates : null;
+    var list = (rows || DEFAULT_PLAN).slice();
+    list.sort(function (a, b) {
+      var da = a.day_offset != null ? a.day_offset : 1000 + (a.step || 0);
+      var db = b.day_offset != null ? b.day_offset : 1000 + (b.step || 0);
+      return da !== db ? da - db : (a.step || 0) - (b.step || 0);
+    });
+    return list.map(function (r, i) {
+      return {
+        pos: i + 1,
+        day: r.day_offset != null ? r.day_offset : (i ? list[i - 1].day_offset + 7 : 1),
+        type: ["email", "call", "mail"].indexOf(r.touch_type) >= 0 ? r.touch_type : "email",
+        label: r.label || ("Step " + (i + 1)),
+        row: rows ? r : null   // null = placeholder default, nothing to edit yet
+      };
+    });
+  }
+  function planDays() { var s = planSteps(); return s.length ? s[s.length - 1].day : 0; }
+
+  var ASSET_CATS = {
+    collateral: [
+      ["brochure", "Brochure"], ["letter", "Letter"], ["note-card", "Note card"],
+      ["case-study", "Case study"], ["one-pager", "One-pager"],
+      ["newsletter-block", "Newsletter block"], ["other", "Other"]
+    ],
+    email: [["deal-email", "Deal email"], ["relationship-email", "Relationship email"], ["other", "Other"]]
+  };
+  function catLabel(kind, c) {
+    var found = (ASSET_CATS[kind] || []).filter(function (p) { return p[0] === c; })[0];
+    return found ? found[1] : (c || "—");
+  }
 
   var VIEWS = { overview: "Command Center", newsletter: "Newsletter", program: "Marketing Programs", signals: "Signals", templates: "Templates" };
   var S = {
@@ -94,7 +138,8 @@
     clips: null, clipsErr: null, issues: null, issue: null,
     feeds: null, sigHist: null, sigErr: null,
     program: null, programErr: null, progDetail: false,
-    templates: null, tplErr: null, tplEditing: null, tplDetail: false
+    templates: null, tplErr: null, tplEditing: null,
+    assets: null, assetErr: null, assetEditing: null, assetKind: "collateral"
   };
 
   /* ---------------- CSS ---------------- */
@@ -145,8 +190,8 @@
     ".bdc-prev .sj{font-weight:600;display:block;margin-bottom:5px}" +
     ".bdc-item-act{display:flex;gap:7px;margin-top:9px;flex-wrap:wrap}" +
     ".bdc-item-act .bdc-btn{padding:5px 11px;font-size:12.5px}" +
-    ".bdc-edit input,.bdc-edit textarea,.bdc-form input,.bdc-form textarea,.bdc-form select{width:100%;box-sizing:border-box;border:1px solid var(--line-2,#D2CCBF);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;background:#fff;color:var(--ink,#1A2230)}" +
-    ".bdc-edit input,.bdc-edit textarea{margin-top:8px}" +
+    ".bdc-edit input,.bdc-edit textarea,.bdc-edit select,.bdc-form input,.bdc-form textarea,.bdc-form select{width:100%;box-sizing:border-box;border:1px solid var(--line-2,#D2CCBF);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;background:#fff;color:var(--ink,#1A2230)}" +
+    ".bdc-edit input,.bdc-edit textarea,.bdc-edit select{margin-top:8px}" +
     ".bdc-edit textarea{min-height:130px;resize:vertical}" +
     ".bdc-form{display:grid;gap:8px}" +
     ".bdc-form-row{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;align-items:start}" +
@@ -198,6 +243,27 @@
     ".bdc-tlgap{display:flex;align-items:center;gap:8px;color:var(--ink-faint,#8A93A0);font-size:11.5px;padding:8px 0 8px 2px;font-style:italic}" +
     ".bdc-tlgap::before{content:\"↓\";font-style:normal;color:var(--line-2,#D2CCBF);font-size:15px}" +
     ".bdc-tlbody{margin-top:7px}" +
+    ".bdc-tlstep.dragging{opacity:.45}" +
+    /* program builder */
+    ".bdc-daybox{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--ink-faint,#8A93A0)}" +
+    ".bdc-daybox input{width:56px;box-sizing:border-box;border:1px solid var(--line-2,#D2CCBF);border-radius:6px;padding:3px 6px;font:inherit;font-size:12px;background:#fff;color:var(--ink,#1A2230)}" +
+    ".bdc-bgrid{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px}" +
+    ".bdc-bgrid select{width:auto;min-width:120px;margin-top:0;padding:7px 9px}" +
+    ".bdc-attach{font-size:11.5px;color:var(--ink-soft,#55606F);margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}" +
+    ".bdc-attach a{color:var(--accent,#2D6E7E);text-decoration:none;cursor:pointer}" +
+    ".bdc-clip-tag{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:1px 7px;border-radius:20px;border:1px solid var(--coffee,#A56B3D);color:var(--coffee,#A56B3D)}" +
+    ".bdc-addstep{margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}" +
+    /* asset library */
+    ".bdc-kinds{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}" +
+    ".bdc-agrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;align-items:start}" +
+    ".bdc-asset{border:1px solid var(--line,#E2DDD2);border-radius:11px;padding:12px 14px;background:var(--paper,#F7F5F0)}" +
+    ".bdc-asset .an{font-weight:700;font-size:14px;color:var(--ink,#1A2230)}" +
+    ".bdc-asset .ac{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint,#8A93A0);margin-top:2px}" +
+    ".bdc-asset .ad{font-size:12.5px;color:var(--ink-soft,#55606F);margin-top:6px;line-height:1.45}" +
+    ".bdc-asset .af{font-size:12px;margin-top:8px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}" +
+    ".bdc-asset .af a{color:var(--accent,#2D6E7E);text-decoration:none;cursor:pointer}" +
+    ".bdc-asset .af .none{color:var(--ink-faint,#8A93A0)}" +
+    ".bdc-file-in{font-size:11.5px;max-width:190px}" +
     /* two-col + tables */
     ".bdc-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}" +
     "@media(max-width:900px){.bdc-cols{grid-template-columns:1fr}.bdc-map{flex-direction:column}.bdc-arrow{transform:rotate(90deg);padding:4px 0}}" +
@@ -233,7 +299,7 @@
       var b = e.target.closest("[data-bsv]");
       if (!b) return;
       S.view = b.getAttribute("data-bsv");
-      S.progDetail = false; S.tplDetail = false;
+      S.progDetail = false; S.tplEditing = null; S.assetEditing = null;
       window.showModule("bd");
     });
 
@@ -484,29 +550,149 @@
   function loadTemplates(force) {
     var sb = getSB(); if (!sb || !sb.from) { S.tplErr = "signin"; render(); return; }
     if (S.templates && !force) { render(); return; }
-    sb.from("bd_templates").select("*").order("step").then(function (r) {
+    sb.from("bd_templates").select("*").order("day_offset", { nullsFirst: false }).order("step").then(function (r) {
       if (r.error) { S.tplErr = sbErr(r.error); } else { S.templates = r.data || []; S.tplErr = null; }
       render();
     });
   }
-  function tplSave(id, btn) {
-    var sj = $("bdcTplSj-" + id), bo = $("bdcTplBo-" + id);
+
+  /* ---- program builder: a step is a bd_templates row ---- */
+  function stepSave(id, btn) {
+    var day = $("bdcTplDay-" + id), lb = $("bdcTplLb-" + id), tt = $("bdcTplTt-" + id);
+    var sj = $("bdcTplSj-" + id), bo = $("bdcTplBo-" + id), as = $("bdcTplAs-" + id);
     var sb = getSB(); if (!sb) return;
+    var d = parseInt(day && day.value, 10);
+    if (!isFinite(d) || d < 1) { alert("Day must be 1 or greater — it's how far into the program the touch fires."); return; }
+    var type = tt ? tt.value : "email";
     btn.disabled = true;
-    sb.from("bd_templates").update({ subject: sj ? (sj.value || null) : null, body: bo ? bo.value : "" }).eq("id", id)
-      .then(function (r) {
-        btn.disabled = false;
-        if (r.error) { alert("Couldn't save: " + sbErr(r.error)); return; }
-        S.tplEditing = null; loadTemplates(true);
+    sb.from("bd_templates").update({
+      day_offset: d,
+      label: (lb && lb.value.trim()) || "Untitled step",
+      touch_type: type,
+      subject: (type === "email" && sj) ? (sj.value || null) : null,
+      body: bo ? bo.value : "",
+      asset_id: (as && as.value) || null
+    }).eq("id", id).then(function (r) {
+      btn.disabled = false;
+      if (r.error) { alert("Couldn't save: " + sbErr(r.error)); return; }
+      S.tplEditing = null; loadTemplates(true);
+    });
+  }
+  function stepAdd(btn) {
+    var sb = getSB(); if (!sb) return;
+    var steps = planSteps();
+    var last = steps.length ? steps[steps.length - 1] : null;
+    btn.disabled = true; btn.textContent = "Adding…";
+    sb.from("bd_templates").insert({
+      step: steps.length + 1,
+      day_offset: last ? last.day + 7 : 1,
+      touch_type: "email",
+      label: "New step",
+      body: "",
+      program: "10-step"
+    }).select().then(function (r) {
+      btn.disabled = false; btn.textContent = "+ Add step";
+      if (r.error) { alert("Couldn't add the step: " + sbErr(r.error)); return; }
+      var row = r.data && r.data[0];
+      S.tplEditing = row ? row.id : null;   // drop straight into editing it
+      loadTemplates(true);
+    });
+  }
+  function stepDelete(id) {
+    var steps = planSteps();
+    if (steps.length <= 1) { alert("A program needs at least one step."); return; }
+    var s = steps.filter(function (x) { return x.row && x.row.id === id; })[0];
+    if (!confirm("Remove " + (s ? "“" + s.label + "”" : "this step") + " from the program?\n\nContacts mid-program keep their position number, so the touch they get next may shift.")) return;
+    var sb = getSB(); if (!sb) return;
+    sb.from("bd_templates").delete().eq("id", id).then(function (r) {
+      if (r.error) { alert("Couldn't remove it: " + sbErr(r.error)); return; }
+      S.tplEditing = null; loadTemplates(true);
+    });
+  }
+
+  /* ---- asset library (bd_assets + the bd-assets bucket) ---- */
+  function loadAssets(force) {
+    var sb = getSB(); if (!sb || !sb.from) { S.assetErr = "signin"; render(); return; }
+    if (S.assets && !force) { render(); return; }
+    sb.from("bd_assets").select("*").order("kind").order("category").order("name").then(function (r) {
+      if (r.error) { S.assetErr = sbErr(r.error); } else { S.assets = r.data || []; S.assetErr = null; }
+      render();
+    });
+  }
+  function assetSave(id, btn) {
+    var nm = $("bdcAsNm-" + id), ct = $("bdcAsCt-" + id), de = $("bdcAsDe-" + id);
+    var sj = $("bdcAsSj-" + id), bo = $("bdcAsBo-" + id);
+    var sb = getSB(); if (!sb) return;
+    var name = nm ? nm.value.trim() : "";
+    if (!name) { alert("Give the asset a name."); return; }
+    var patch = { name: name, category: ct ? ct.value : null, description: de ? (de.value || null) : null };
+    if (sj) patch.subject = sj.value || null;
+    if (bo) patch.body = bo.value || null;
+    btn.disabled = true;
+    sb.from("bd_assets").update(patch).eq("id", id).then(function (r) {
+      btn.disabled = false;
+      if (r.error) { alert("Couldn't save: " + sbErr(r.error)); return; }
+      S.assetEditing = null; loadAssets(true);
+    });
+  }
+  function assetAdd(btn) {
+    var kind = S.assetKind;
+    var sb = getSB(); if (!sb) return;
+    btn.disabled = true; btn.textContent = "Adding…";
+    sb.from("bd_assets").insert({
+      name: kind === "email" ? "New email template" : "New collateral piece",
+      kind: kind,
+      category: kind === "email" ? "deal-email" : "other"
+    }).select().then(function (r) {
+      btn.disabled = false; btn.textContent = kind === "email" ? "+ New email template" : "+ New collateral piece";
+      if (r.error) { alert("Couldn't add it: " + sbErr(r.error)); return; }
+      var row = r.data && r.data[0];
+      S.assetEditing = row ? row.id : null;
+      loadAssets(true);
+    });
+  }
+  function assetDelete(id) {
+    var a = (S.assets || []).filter(function (x) { return x.id === id; })[0];
+    if (!confirm("Delete “" + (a ? a.name : "this asset") + "”? Any cadence step pointing at it loses the attachment.")) return;
+    var sb = getSB(); if (!sb) return;
+    sb.from("bd_assets").delete().eq("id", id).then(function (r) {
+      if (r.error) { alert("Couldn't delete it: " + sbErr(r.error)); return; }
+      S.assetEditing = null; loadAssets(true);
+    });
+  }
+  function assetUpload(input, id) {
+    var f = input.files && input.files[0];
+    if (!f) return;
+    if (f.size > 25 * 1024 * 1024) { alert("Keep collateral under 25 MB."); return; }
+    var sb = getSB(); if (!sb || !sb.storage) return;
+    token(function (t, user) {
+      if (!user) return;
+      sb.from("profiles").select("org_id").eq("id", user.id).single().then(function (pr) {
+        var org = pr && pr.data && pr.data.org_id;
+        if (!org) { alert("No org on your profile."); return; }
+        var path = org + "/" + Date.now() + "-" + f.name.replace(/[^A-Za-z0-9._-]/g, "_");
+        sb.storage.from("bd-assets").upload(path, f).then(function (ur) {
+          if (ur.error) { alert("Upload failed: " + sbErr(ur.error)); return; }
+          sb.from("bd_assets").update({ file_path: path }).eq("id", id).then(function () { loadAssets(true); });
+        });
       });
+    });
+  }
+  function assetOpen(path) {
+    var sb = getSB(); if (!sb || !sb.storage) return;
+    sb.storage.from("bd-assets").createSignedUrl(path, 3600).then(function (r) {
+      var u = r && r.data && (r.data.signedUrl || r.data.signedURL);
+      if (u) window.open(u, "_blank"); else alert("Couldn't open the file.");
+    });
   }
 
   function loadView() {
     if (S.view === "overview") load();
     else if (S.view === "newsletter") loadClips();
     else if (S.view === "signals") loadSignals();
-    else if (S.view === "program") { loadProgram(); loadTemplates(); }
-    else if (S.view === "templates") loadTemplates();
+    else if (S.view === "program") { loadProgram(); loadTemplates(); loadAssets(); }
+    // Templates shows a summary card for each program, so it needs the steps too.
+    else if (S.view === "templates") { loadAssets(); loadTemplates(); }
   }
 
   /* ---------------- globals for onclick ---------------- */
@@ -525,16 +711,22 @@
   window.__bdAddFeed = addFeed; window.__bdFeedActive = feedActive; window.__bdFeedDelete = feedDelete;
   window.__bdTplEdit = function (id) { S.tplEditing = id; render(); };
   window.__bdTplCancel = function () { S.tplEditing = null; render(); };
-  window.__bdTplSave = tplSave;
-  window.__bdProgOpen = function () { S.progDetail = true; loadTemplates(); render(); };
+  window.__bdTplSave = stepSave;
+  window.__bdStepAdd = stepAdd; window.__bdStepDelete = stepDelete;
+  window.__bdProgOpen = function () { S.progDetail = true; loadTemplates(); loadAssets(); render(); };
   window.__bdProgBack = function () { S.progDetail = false; render(); };
-  window.__bdTplOpen = function () { S.tplDetail = true; render(); };
-  window.__bdTplBack = function () { S.tplDetail = false; render(); };
+  // Templates → a program card jumps into the builder, which lives under Marketing Programs.
+  window.__bdProgJump = function () { S.view = "program"; S.progDetail = true; setSubState(true); loadProgram(); loadTemplates(); loadAssets(); render(); };
+  window.__bdAssetKind = function (k) { S.assetKind = k; S.assetEditing = null; render(); };
+  window.__bdAssetEdit = function (id) { S.assetEditing = id; render(); };
+  window.__bdAssetCancel = function () { S.assetEditing = null; render(); };
+  window.__bdAssetSave = assetSave; window.__bdAssetAdd = assetAdd;
+  window.__bdAssetDelete = assetDelete; window.__bdAssetUpload = assetUpload; window.__bdAssetOpen = assetOpen;
   window.__bdReloadForce = function () {
     if (S.view === "newsletter") loadClips(true);
     else if (S.view === "signals") loadSignals(true);
-    else if (S.view === "program") { loadProgram(true); loadTemplates(true); }
-    else if (S.view === "templates") loadTemplates(true);
+    else if (S.view === "program") { loadProgram(true); loadTemplates(true); loadAssets(true); }
+    else if (S.view === "templates") { loadAssets(true); loadTemplates(true); }
     else load();
   };
 
@@ -804,67 +996,103 @@
     return order.filter(function (b) { return by[b] && by[b].length; }).map(function (b) { return { name: b, items: by[b] }; });
   }
 
-  function tplByStep() {
-    var by = {};
-    (S.templates || []).forEach(function (t) { by[t.step] = t; });
-    return by;
+  function assetById(id) {
+    if (!id) return null;
+    return (S.assets || []).filter(function (a) { return a.id === id; })[0] || null;
+  }
+
+  // One cadence step, in read or edit mode. `editable` false = the read-only
+  // cadence (nothing here writes); true = the full builder.
+  function stepHtml(p, editable) {
+    var t = p.row;
+    var body;
+    if (!t) {
+      body = '<div class="bdc-empty">Loading the saved program…</div>';
+    } else if (editable && S.tplEditing === t.id) {
+      var isEmail = p.type === "email";
+      var opts = (S.assets || []).filter(function (a) { return a.kind === "collateral"; })
+        .map(function (a) { return '<option value="' + a.id + '"' + (t.asset_id === a.id ? " selected" : "") + ">" + esc(a.name) + "</option>"; }).join("");
+      body = '<div class="bdc-edit">' +
+        '<div class="bdc-bgrid">' +
+        '<label class="bdc-daybox">Fires on day <input id="bdcTplDay-' + t.id + '" type="number" min="1" value="' + (p.day) + '" /></label>' +
+        '<select id="bdcTplTt-' + t.id + '" onchange="var r=document.getElementById(\'bdcTplSjRow-' + t.id + '\');if(r)r.style.display=this.value===\'email\'?\'\':\'none\'">' +
+        ["email", "call", "mail"].map(function (k) { return '<option value="' + k + '"' + (p.type === k ? " selected" : "") + ">" + k + "</option>"; }).join("") +
+        "</select></div>" +
+        '<input id="bdcTplLb-' + t.id + '" value="' + esc(t.label || p.label) + '" placeholder="Step title — what this touch is" />' +
+        '<div id="bdcTplSjRow-' + t.id + '"' + (isEmail ? "" : ' style="display:none"') + '><input id="bdcTplSj-' + t.id + '" value="' + esc(t.subject || "") + '" placeholder="Subject line" /></div>' +
+        '<textarea id="bdcTplBo-' + t.id + '" placeholder="' + (p.type === "call" ? "Talking points for the call" : p.type === "mail" ? "What gets printed and mailed" : "Email copy") + '">' + esc(t.body || "") + "</textarea>" +
+        '<select id="bdcTplAs-' + t.id + '"><option value="">No attached piece</option>' + opts + "</select>" +
+        '<div class="bdc-item-act">' +
+        '<button class="bdc-btn pri" onclick="__bdTplSave(\'' + t.id + "',this)\">Save step</button>" +
+        '<button class="bdc-btn" onclick="__bdTplCancel()">Cancel</button>' +
+        '<button class="bdc-btn dngr" style="margin-left:auto" onclick="__bdStepDelete(\'' + t.id + "')\">Remove step</button>" +
+        "</div></div>";
+    } else {
+      var a = assetById(t.asset_id);
+      body = '<div class="bdc-prev">' + (t.subject ? '<span class="sj">' + esc(t.subject) + "</span>" : "") + esc(t.body || "") + "</div>" +
+        (a ? '<div class="bdc-attach"><span class="bdc-clip-tag">attached</span>' + esc(a.name) +
+          (a.file_path ? ' · <a onclick="__bdAssetOpen(\'' + esc(a.file_path) + "')\">open</a>" : ' · <span style="color:var(--ink-faint,#8A93A0)">no file uploaded yet</span>') + "</div>" : "") +
+        (editable ? '<div class="bdc-item-act"><button class="bdc-btn" onclick="__bdTplEdit(\'' + t.id + "')\">Edit</button></div>" : "");
+    }
+    return '<div class="bdc-tlstep ' + p.type + '">' +
+      '<div class="bdc-tlhead"><span class="bdc-tlday">Day ' + p.day + '</span><span class="bdc-tt ' + p.type + '">' + p.type + '</span><span class="bdc-tllabel">Step ' + p.pos + " — " + esc(p.label) + "</span></div>" +
+      '<div class="bdc-tlbody">' + body + "</div></div>";
   }
 
   function cadenceHtml(editable) {
-    var by = tplByStep();
+    // No saved rows at all: the timeline would be ten uneditable placeholders,
+    // so offer the one thing that helps instead.
+    if (editable && S.templates && !S.templates.length) {
+      return '<div class="bdc-empty">This program has no steps yet.</div>' +
+        '<div class="bdc-addstep"><button class="bdc-btn pri" onclick="__bdStepAdd(this)">+ Add the first step</button></div>';
+    }
+    var steps = planSteps();
     var out = '<div class="bdc-tl">';
-    PLAN.forEach(function (p, i) {
-      var t = by[p.step];
-      var body = "";
-      if (t) {
-        if (editable && S.tplEditing === t.id) {
-          body = '<div class="bdc-edit">' +
-            (t.touch_type === "email" ? '<input id="bdcTplSj-' + t.id + '" value="' + esc(t.subject || "") + '" placeholder="Subject" />' : "") +
-            '<textarea id="bdcTplBo-' + t.id + '">' + esc(t.body || "") + "</textarea>" +
-            '<div class="bdc-item-act">' +
-            '<button class="bdc-btn pri" onclick="__bdTplSave(\'' + t.id + "',this)\">Save</button>" +
-            '<button class="bdc-btn" onclick="__bdTplCancel()">Cancel</button></div></div>';
-        } else {
-          body = '<div class="bdc-prev">' + (t.subject ? '<span class="sj">' + esc(t.subject) + "</span>" : "") + esc(t.body || "") + "</div>" +
-            (editable ? '<div class="bdc-item-act"><button class="bdc-btn" onclick="__bdTplEdit(\'' + t.id + "')\">Edit</button></div>" : "");
-        }
-      } else {
-        body = '<div class="bdc-empty">No template saved for this step yet.</div>';
-      }
-      out += '<div class="bdc-tlstep ' + p.type + '">' +
-        '<div class="bdc-tlhead"><span class="bdc-tlday">Day ' + p.day + '</span><span class="bdc-tt ' + p.type + '">' + p.type + '</span><span class="bdc-tllabel">Step ' + p.step + " — " + esc(p.label) + "</span></div>" +
-        '<div class="bdc-tlbody">' + body + "</div></div>";
-      if (i < PLAN.length - 1) {
-        var gap = PLAN[i + 1].day - p.day;
-        out += '<div class="bdc-tlgap">wait ' + gap + " day" + (gap === 1 ? "" : "s") + "</div>";
+    steps.forEach(function (p, i) {
+      out += stepHtml(p, editable);
+      if (i < steps.length - 1) {
+        var gap = steps[i + 1].day - p.day;
+        out += '<div class="bdc-tlgap">' + (gap > 0 ? "wait " + gap + " day" + (gap === 1 ? "" : "s") : "same day") + "</div>";
       }
     });
     out += "</div>";
+    if (editable) {
+      out += '<div class="bdc-addstep"><button class="bdc-btn" onclick="__bdStepAdd(this)">+ Add step</button>' +
+        '<span class="bdc-empty" style="padding:0">New steps land a week after the last one — change the day to move a step anywhere in the sequence.</span></div>';
+    }
     return out;
   }
 
   function tenStepCardHtml(open) {
+    var steps = planSteps();
     var counts = { email: 0, call: 0, mail: 0 };
-    PLAN.forEach(function (p) { counts[p.type]++; });
+    steps.forEach(function (p) { counts[p.type]++; });
     var d = S.program;
     var active = 0, total = 0;
     if (d && d.contacts) {
       total = d.contacts.length;
       active = d.contacts.filter(function (c) { return /active/i.test(String(c.status || "")); }).length;
     }
+    function n(c, one, many) { return c ? c + " " + (c === 1 ? one : many) : null; }
+    var parts = [planDays() + " days", n(counts.email, "email", "emails"), n(counts.call, "call", "calls"), n(counts.mail, "mail piece", "mail pieces")]
+      .filter(Boolean).join(" · ");
     return '<div class="bdc-progcard" onclick="' + open + '">' +
       '<div class="pn">10-Step Cold Outreach</div>' +
-      '<div class="pm">61 days · ' + counts.email + " emails · " + counts.call + " calls · " + counts.mail + " mail pieces · brochure-led, one ask: a 15–20 min intro meeting" +
+      '<div class="pm">' + parts + " · brochure-led, one ask: a 15–20 min intro meeting" +
       (total ? "<br>" + active + " active · " + total + " total in program" : "") + "</div>" +
-      '<div class="pv">View cadence →</div></div>';
+      '<div class="pv">Open the builder →</div></div>';
   }
 
   function renderProgram(el) {
     if (S.progDetail) {
-      var headD = viewHead("10-Step Cold Outreach", "The full cadence — every touch, the wait between them, and the exact copy that goes out.",
-        '<button class="bdc-btn" onclick="__bdProgBack()">← All programs</button>');
-      el.innerHTML = headD + '<div class="bdc-card"><h3>Cadence — 61 days, 10 touches</h3>' + cadenceHtml(true) + "</div>" +
-        '<div class="bdc-note">Rules wired into the engine: VM only on steps 2 and 7 (they reference a physical piece) · any reply pauses the program · silence after step 10 → Never responded → nurture pool resurfaces ~9 months before lease expiration. Edits here are the live copy — the engine sends it verbatim on the next run.</div>';
+      var headD = viewHead("10-Step Cold Outreach", "The program itself — retitle a touch, move it to a different day, swap its type, attach a piece, add or remove steps.",
+        '<button class="bdc-btn" onclick="__bdProgBack()">← All programs</button>' +
+        '<button class="bdc-btn" onclick="__bdReloadForce()">⟳ Refresh</button>');
+      if (S.tplErr === "signin") { el.innerHTML = headD + signinCard(); return; }
+      if (S.templates === null) { el.innerHTML = headD + '<div class="bdc-card"><div class="bdc-empty">' + (S.tplErr ? esc(S.tplErr) : "Loading the program…") + "</div></div>"; return; }
+      var st = planSteps();
+      el.innerHTML = headD + '<div class="bdc-card"><h3>Cadence — ' + planDays() + " days, " + st.length + " touch" + (st.length === 1 ? "" : "es") + "</h3>" + cadenceHtml(true) + "</div>" +
+        '<div class="bdc-note">Day numbers are the ordering truth — the engine sorts by them and renumbers the steps, so moving a touch to day 3 makes it step 2. Contacts already mid-program hold their POSITION, so reordering shifts what they get next. Rules still wired into the engine: any reply pauses the program · silence past the last step → Never responded → the nurture pool resurfaces them ~9 months before lease expiration.</div>';
       return;
     }
 
@@ -896,7 +1124,7 @@
                 return '<div class="bdc-pcard">' +
                   '<div class="nm"><a href="' + hsUrl + '" target="_blank" rel="noopener" title="Open in HubSpot">' + esc(c.name) + "</a></div>" +
                   (c.company ? '<div class="co">' + esc(c.company) + (c.title ? " · " + esc(c.title) : "") + "</div>" : "") +
-                  '<div class="st">' + (c.step ? '<span class="bdc-stepchip">step ' + c.step + "/10</span>" : "") +
+                  '<div class="st">' + (c.step ? '<span class="bdc-stepchip">step ' + c.step + "/" + planSteps().length + "</span>" : "") +
                   (c.next_touch_date ? "next touch " + fmtDate(c.next_touch_date) + (c.next_touch_type ? " (" + esc(c.next_touch_type) + ")" : "") : "no touch scheduled") +
                   "</div></div>";
               }).join("") + "</div>";
@@ -952,30 +1180,74 @@
       '<div class="bdc-note">Rules the watcher lives by: existing HubSpot companies only · max one signal email per company per two weeks · negative news is flagged in the morning summary but never drafted · it loosens or tightens its “interesting” bar based on which drafts you skip.</div>';
   }
 
-  /* ---------------- render: templates ---------------- */
-  function renderTemplates(el) {
-    if (S.tplDetail) {
-      var headD = viewHead("10-Step Cold Outreach — templates", "The live copy, laid out on the cadence. What you save is exactly what sends.",
-        '<button class="bdc-btn" onclick="__bdTplBack()">← All template sets</button>' +
-        '<button class="bdc-btn" onclick="__bdReloadForce()">⟳ Refresh</button>');
-      if (S.tplErr === "signin") { el.innerHTML = headD + signinCard(); return; }
-      if (S.templates === null) { el.innerHTML = headD + '<div class="bdc-card"><div class="bdc-empty">' + (S.tplErr ? esc(S.tplErr) : "Loading…") + "</div></div>"; return; }
-      el.innerHTML = headD + '<div class="bdc-card"><h3>Cadence + copy</h3>' + cadenceHtml(true) + "</div>" +
-        '<div class="bdc-note">Merge fields: {{first_name}} {{last_name}} {{company}} {{submarket}} {{title}} — unknown fields render blank, never as braces. Mail steps hold print instructions; call steps hold your talking points. Edits apply from the next engine run (verbatim + merge — your call, no AI rewriting).</div>';
-      return;
+  /* ---------------- render: templates (the asset library) ---------------- */
+  function assetCardHtml(a) {
+    var isEmail = a.kind === "email";
+    if (S.assetEditing === a.id) {
+      var cats = (ASSET_CATS[a.kind] || []).map(function (p) {
+        return '<option value="' + p[0] + '"' + (a.category === p[0] ? " selected" : "") + ">" + esc(p[1]) + "</option>";
+      }).join("");
+      return '<div class="bdc-asset"><div class="bdc-edit" style="margin-top:0">' +
+        '<input id="bdcAsNm-' + a.id + '" value="' + esc(a.name) + '" placeholder="Name" style="margin-top:0" />' +
+        '<select id="bdcAsCt-' + a.id + '" style="width:100%;box-sizing:border-box;border:1px solid var(--line-2,#D2CCBF);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;background:#fff;margin-top:8px">' + cats + "</select>" +
+        '<input id="bdcAsDe-' + a.id + '" value="' + esc(a.description || "") + '" placeholder="What it is / when you send it" />' +
+        (isEmail ? '<input id="bdcAsSj-' + a.id + '" value="' + esc(a.subject || "") + '" placeholder="Subject line" />' +
+          '<textarea id="bdcAsBo-' + a.id + '" placeholder="Copy — merge fields welcome">' + esc(a.body || "") + "</textarea>" : "") +
+        '<div class="bdc-item-act">' +
+        '<button class="bdc-btn pri" onclick="__bdAssetSave(\'' + a.id + "',this)\">Save</button>" +
+        '<button class="bdc-btn" onclick="__bdAssetCancel()">Cancel</button>' +
+        '<button class="bdc-btn dngr" style="margin-left:auto" onclick="__bdAssetDelete(\'' + a.id + "')\">Delete</button>" +
+        "</div></div></div>";
     }
+    var fileLine = isEmail
+      ? (a.subject ? '<div class="af"><span class="sj" style="font-weight:600">' + esc(a.subject) + "</span></div>" : "")
+      : '<div class="af">' + (a.file_path
+        ? '📄 <a onclick="__bdAssetOpen(\'' + esc(a.file_path) + "')\">Open file</a>"
+        : '<span class="none">No file yet</span>') +
+        '<label class="bdc-btn" style="padding:4px 9px;font-size:12px">' + (a.file_path ? "Replace" : "Upload") +
+        '<input type="file" class="bdc-file-in" style="display:none" onchange="__bdAssetUpload(this,\'' + a.id + '\')" /></label></div>';
+    return '<div class="bdc-asset">' +
+      '<div class="an">' + esc(a.name) + "</div>" +
+      '<div class="ac">' + esc(catLabel(a.kind, a.category)) + "</div>" +
+      (a.description ? '<div class="ad">' + esc(a.description) + "</div>" : "") +
+      (isEmail && a.body ? '<div class="bdc-prev" style="max-height:110px">' + esc(a.body) + "</div>" : "") +
+      fileLine +
+      '<div class="bdc-item-act"><button class="bdc-btn" onclick="__bdAssetEdit(\'' + a.id + "')\">Edit</button></div></div>";
+  }
 
-    var head = viewHead("Templates", "Template sets, one per program. Click into a set to see the cadence and edit the copy.",
+  function renderTemplates(el) {
+    var head = viewHead("Templates", "Two kinds: the cadence PROGRAMS (step sequences the engine runs) and the ASSET library — the collateral you mail and the reusable emails you send by hand.",
       '<button class="bdc-btn" onclick="__bdReloadForce()">⟳ Refresh</button>');
-    if (S.tplErr === "signin") { el.innerHTML = head + signinCard(); return; }
+    if (S.assetErr === "signin") { el.innerHTML = head + signinCard(); return; }
 
-    el.innerHTML = head + '<div class="bdc-card"><h3>Template sets</h3><div class="bdc-proggrid">' +
-      tenStepCardHtml("__bdTplOpen()") +
+    var progCard = '<div class="bdc-card"><h3>Cadence programs</h3><div class="bdc-proggrid">' +
+      tenStepCardHtml("__bdProgJump()") +
       '<div class="bdc-progcard" style="opacity:.6;border-style:dashed;cursor:default">' +
-      '<div class="pn">Newsletter blocks (coming)</div>' +
-      '<div class="pm">Reusable sections for the monthly issue — intro, stats block, space-finds block, sign-off — once Phase 3 assembly lands.</div></div>' +
-      "</div></div>" +
-      '<div class="bdc-note">More sets appear here as we add programs (re-engagement, client touches). Each set is the single source of truth its engine sends from.</div>';
+      '<div class="pn">Re-engagement (coming)</div>' +
+      '<div class="pm">For everyone who finishes the 10-step without a meeting — a slower drumbeat. Designed when the first cohort finishes.</div></div>' +
+      "</div></div>";
+
+    var kind = S.assetKind;
+    var kindTabs = '<div class="bdc-kinds">' +
+      [["collateral", "Collateral"], ["email", "Emails"]].map(function (p) {
+        return '<button class="bdc-ichip' + (kind === p[0] ? " on" : "") + '" onclick="__bdAssetKind(\'' + p[0] + "')\">" + p[1] + "</button>";
+      }).join("") + "</div>";
+
+    var libBody;
+    if (S.assets === null) {
+      libBody = '<div class="bdc-empty">' + (S.assetErr ? esc(S.assetErr) : "Loading the library…") + "</div>";
+    } else {
+      var mine = S.assets.filter(function (a) { return a.kind === kind; });
+      libBody = kindTabs + (mine.length
+        ? '<div class="bdc-agrid">' + mine.map(assetCardHtml).join("") + "</div>"
+        : '<div class="bdc-empty">Nothing here yet.</div>') +
+        '<div class="bdc-addstep"><button class="bdc-btn" onclick="__bdAssetAdd(this)">+ ' +
+        (kind === "email" ? "New email template" : "New collateral piece") + "</button></div>";
+    }
+    var libCard = '<div class="bdc-card"><h3>Asset library</h3>' + libBody + "</div>";
+
+    el.innerHTML = head + progCard + libCard +
+      '<div class="bdc-note">Collateral is what physically goes out — upload the print-ready file and attach it to the cadence step that mails it. Emails here are the one-off copy you reach for by hand (tour follow-ups, renewal openers); the cadence steps keep their own copy inside the program. Merge fields: {{first_name}} {{last_name}} {{company}} {{submarket}} {{title}} — unknown fields render blank, never as braces.</div>';
   }
 
   /* ---------------- render: dispatch ---------------- */

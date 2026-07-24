@@ -88,12 +88,13 @@ exports.handler = async (event) => {
     return okJSON({ ok: false, error: String(e.message || e) });
   }
 
-  // templates by step
-  const tr = await sb.rest("bd_templates?org_id=eq." + org + "&select=step,touch_type,subject,body");
-  const byStep = {}; (tr.data || []).forEach((t) => { byStep[t.step] = t; });
+  // The program definition itself now lives in bd_templates (the builder):
+  // label + day_offset + touch type + copy + attachment, ordered by day.
+  const tr = await sb.rest("bd_templates?org_id=eq." + org + "&select=step,touch_type,subject,body,label,day_offset,attachment_path");
+  const steps = bd.stepsFrom(tr.data || []);
 
   const today = new Date(); today.setUTCHours(0, 0, 0, 0);
-  const plan = bd.planTouches(contacts, byStep, today);
+  const plan = bd.planTouches(contacts, steps, today);
 
   let inserted = 0;
   if (plan.rows.length) {
@@ -110,7 +111,7 @@ exports.handler = async (event) => {
     inserted = Array.isArray(ins.data) ? ins.data.length : 0;
   }
 
-  const counts = { contacts_due: contacts.length, drafted: plan.rows.length, new_in_queue: inserted, skipped: plan.skipped.length };
+  const counts = { contacts_due: contacts.length, drafted: plan.rows.length, new_in_queue: inserted, skipped: plan.skipped.length, program_steps: steps.length };
   await logRun(org, true, manual ? "manual run" : "scheduled run", counts);
   return okJSON({ ok: true, counts: counts, skipped: plan.skipped });
 };
