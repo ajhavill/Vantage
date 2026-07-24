@@ -2659,12 +2659,22 @@ window.DF = (function(){
   }
   /* Market-report drop zone: PDFs dropped (or browsed) go straight into the
    * filing pipeline — no modal, the progress sheet opens immediately. */
-  function reportDragOver(ev){ ev.preventDefault(); ev.currentTarget.classList.add('over'); }
+  function reportDragOver(ev){ ev.preventDefault(); ev.stopPropagation(); ev.currentTarget.classList.add('over'); }
   function reportDragLeave(ev){ ev.currentTarget.classList.remove('over'); }
   function reportDrop(ev, dealId){
-    ev.preventDefault(); ev.currentTarget.classList.remove('over');
+    ev.preventDefault(); ev.stopPropagation(); ev.currentTarget.classList.remove('over');
     fileBrochuresDrop(dealId, Array.prototype.slice.call((ev.dataTransfer&&ev.dataTransfer.files)||[]));
   }
+  // Page-level guard: a drop that misses a zone (even by a pixel) must NOT let
+  // the browser open the PDF in a new tab. Real zones stopPropagation, so a
+  // drop reaching document was a miss — swallow it and point at the targets.
+  document.addEventListener('dragover', function(e){ e.preventDefault(); });
+  document.addEventListener('drop', function(e){
+    e.preventDefault();
+    if(e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files.length){
+      aiToast('Drop PDFs on a building card\'s 📎 chip or the dashed “Drop floor plans & brochures” zone (Market report tab).');
+    }
+  });
   function reportBrowse(){ _pdropTarget=null; var inp=$('rfDropInput'); if(inp) inp.click(); }
   function reportDropPick(dealId, inp){
     var files=Array.prototype.slice.call(inp.files||[]); inp.value='';
