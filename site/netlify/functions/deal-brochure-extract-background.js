@@ -61,7 +61,28 @@ const SCHEMA = {
     city: STRN,
     label: { type: "string" },
     spaces: { type: "array", items: SPACE_SCHEMA },
-    floorPlanPages: { type: "array", items: { type: "integer" } },
+    floorPlanPages: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          page: { type: "integer" },
+          contactBox: {
+            anyOf: [
+              {
+                type: "object",
+                additionalProperties: false,
+                properties: { x0: { type: "number" }, y0: { type: "number" }, x1: { type: "number" }, y1: { type: "number" } },
+                required: ["x0", "y0", "x1", "y1"]
+              },
+              { type: "null" }
+            ]
+          }
+        },
+        required: ["page", "contactBox"]
+      }
+    },
     highlights: { type: "array", items: { type: "string" } }
   },
   required: ["docType", "buildingName", "address", "city", "label", "spaces", "floorPlanPages", "highlights"]
@@ -82,8 +103,15 @@ const SYSTEM =
   "Rates: `rate` is the $/SF NUMBER; `ratePeriod` 'mo' ($/SF/MO, common in Los Angeles) or 'yr'; read the printed " +
   "units, never convert. `rateBasis` FSG/NNN/MG when stated. 'Negotiable'/withheld = null rate. `availableDate` as " +
   "'YYYY-MM-DD'; 'Now'/'Immediate' = null. A brochure that advertises no specific suites = empty array.\n" +
-  "- `floorPlanPages`: 1-based page numbers of pages whose PRIMARY content is a floor plan / test fit / stacking " +
-  "plan drawing. A page that merely includes a thumbnail plan among photos does not count.\n" +
+  "- `floorPlanPages`: one entry per page whose PRIMARY content is a floor plan / test fit / stacking plan drawing " +
+  "(`page` is the 1-based page number). A page that merely includes a thumbnail plan among photos does not count. " +
+  "These pages get shown to the TENANT CLIENT, so for each one also return `contactBox`: the bounding region of any " +
+  "listing-broker contact block on the page (broker names, phone numbers, emails, brokerage logo/name, license " +
+  "numbers — usually a header or footer strip). Coordinates are FRACTIONS of the page (0-1), x rightward, y downward, " +
+  "top-left origin: x0,y0 = the block's top-left, x1,y1 = its bottom-right. Be GENEROUS — extend the box to cover the " +
+  "entire contact strip edge-to-edge (a footer strip = x0 0, x1 1) so nothing peeks out; over-masking margin beats " +
+  "leaking a phone number. `contactBox` is null only when the page truly has no broker contact info. Never box the " +
+  "floor plan drawing itself.\n" +
   "- `highlights`: 2-5 SHORT scannable bullets of the building's selling points as marketed (amenities, renovations, " +
   "signage, parking, views). Each bullet is a crisp fragment — never a paragraph. Empty array if none stated.\n" +
   "Respond only with the structured result.";
