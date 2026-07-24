@@ -2303,16 +2303,17 @@ window.DF = (function(){
   async function addToTour(propId, dealId){ await ensureTourStop(propId, dealId); openDeal(dealId); }
 
   /* ---------- CoStar market-report import (Buildings tab) ----------
-   * Upload the survey PDF pulled for this requirement → deal-report-import
-   * (JWT-authed Netlify function) parses every building + available space with
-   * Claude → the broker reviews/edits here → confirm writes deal_properties
+   * Upload the survey PDF pulled for this requirement → staged in a
+   * deal_report_imports job row → deal-report-import-background (JWT-authed)
+   * parses every building + available space with Claude while the browser
+   * polls → the broker reviews/edits here → confirm writes deal_properties
    * candidates and upserts the internal market_spaces availability tracker.
    * The pure mapping (payload shapes, dedup_key, match, summary) lives in
    * assets/report-import.js, shared with tools/report-import-test.js.
    * COMPLIANCE: CoStar-sourced rows are broker-internal — they go ONLY to
    * org-scoped Supabase tables behind this login, never to vantage-data.json
    * or client/portal surfaces (see supabase/market-spaces.sql). */
-  var _ri=null, _riTimer=null;
+  var _ri=null, _riTimer=null, _riTimer2=null;
   function importReport(dealId){
     _ri={dealId:dealId, plan:null, filename:null, open:{}, propsDone:false};
     loadPortalBuildings();                       // warm the catalog for matching
@@ -2345,32 +2346,54 @@ window.DF = (function(){
       .then(function(b64){ return riCall(b64, pasted, f?f.name:null); })
       .catch(function(e){ riFail(e.message||String(e)); });
   }
+  /* Background job pattern (market-reports / brochure filing): a sync function
+   * 504s while Opus reads a full survey, so stage the PDF in a
+   * deal_report_imports row, kick the background reader, poll the row. */
   async function riCall(b64, pasted, filename){
     var started=Date.now();
     openSheet('<h3>Reading report…</h3><div class="ssub">'+esc(_ri.filename)+'</div>'
       + '<div class="ri-prog"><div class="ri-spin"></div><div><div class="ri-pt">Claude is reading every building &amp; available space…</div>'
-      + '<div class="ri-ps">This takes ~30–60s for a full survey. <span id="ri_elapsed">0s</span> elapsed — leave this open.</div></div></div>');
+      + '<div class="ri-ps">This takes ~1–3 minutes for a full survey. <span id="ri_elapsed">0s</span> elapsed — leave this open.</div></div></div>');
     clearInterval(_riTimer);
     _riTimer=setInterval(function(){ var el=$('ri_elapsed'); if(el) el.textContent=Math.round((Date.now()-started)/1000)+'s'; },1000);
     try{
       var s=await sb.auth.getSession(); var token=(s&&s.data&&s.data.session)?s.data.session.access_token:null;
       if(!token) throw new Error('Your session expired — please sign in again.');
-      var res=await fetch('/.netlify/functions/deal-report-import',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({token:token, filename:filename, base64pdf:b64||undefined, text:(!b64&&pasted)?pasted:undefined})});
+      var jobId=bfNewJobId();
+      await q(sb.from('deal_report_imports').insert({ id:jobId, org_id:ReportImport.ORG_ID, deal_id:_ri.dealId, filename:filename,
+        pdf_b64:b64||null, src_text:(!b64&&pasted)?pasted:null }));
+      var res=await fetch('/.netlify/functions/deal-report-import-background',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token:token, jobId:jobId})});
       if(res.status===401) throw new Error('Your session expired — please sign in again.');
-      var data=await res.json().catch(function(){ return null; });
-      if(!res.ok) throw new Error((data&&data.error)||('The reader hit an error (HTTP '+res.status+'). Try again.'));
-      if(!data||data.error) throw new Error((data&&data.error)||'The reader returned nothing.');
-      clearInterval(_riTimer);
-      var cat=await loadPortalBuildings();
-      var existing=[]; try{ existing=await q(sb.from('deal_properties').select('id,building_id,address,name').eq('deal_id',_ri.dealId)); }catch(e){}
-      _ri.plan=ReportImport.buildPlan({reportDate:data.reportDate, buildings:data.buildings}, cat||[], existing, {filename:_ri.filename});
-      if(!_ri.plan.buildings.length) throw new Error('No buildings found in that document — is it a CoStar availability report or survey export?');
-      riReview();
-    }catch(e){ riFail(e.message||String(e)); }
+      if(res.status>=500) throw new Error('The reader couldn\'t start (HTTP '+res.status+'). Try again.');
+      riPoll(jobId);
+    }catch(e){
+      var m=(e&&e.message)||String(e);
+      riFail(m + (/report_imports.*(does not exist|relation)/i.test(m)?' — run supabase/report-import-jobs.sql first.':''));
+    }
+  }
+  function riPoll(jobId){
+    _riTimer2=setInterval(async function(){
+      if(!$('ri_elapsed')){ clearInterval(_riTimer2); clearInterval(_riTimer); return; }   // sheet closed — stop polling
+      try{
+        // never select pdf_b64/src_text — that's the staged multi-MB upload
+        var rows=await q(sb.from('deal_report_imports').select('id,status,result,error').eq('id',jobId).limit(1));
+        var row=rows&&rows[0]; if(!row||row.status==='queued') return;
+        clearInterval(_riTimer2); clearInterval(_riTimer);
+        // consume: job rows are transient — delete now that we hold the result
+        try{ await q(sb.from('deal_report_imports').delete().eq('id',jobId)); }catch(e){}
+        if(row.status==='error'){ riFail(row.error||'The reader failed. Try again.'); return; }
+        var data=row.result||{};
+        var cat=await loadPortalBuildings();
+        var existing=[]; try{ existing=await q(sb.from('deal_properties').select('id,building_id,address,name').eq('deal_id',_ri.dealId)); }catch(e){}
+        _ri.plan=ReportImport.buildPlan({reportDate:data.reportDate, buildings:data.buildings||[]}, cat||[], existing, {filename:_ri.filename});
+        if(!_ri.plan.buildings.length){ riFail('No buildings found in that document — is it a CoStar availability report or survey export?'); return; }
+        riReview();
+      }catch(e){ /* transient — keep polling */ }
+    },4000);
   }
   function riFail(msg){
-    clearInterval(_riTimer);
+    clearInterval(_riTimer); clearInterval(_riTimer2);
     openSheet('<h3>Import CoStar report</h3><div class="ssub">'+esc((_ri&&_ri.filename)||'')+'</div>'
       + '<div class="formerr" style="margin:4px 0 12px">'+esc(msg)+'</div>'
       + '<div class="ssub">Nothing was saved. Fix the file (or paste the report text instead) and try again.</div>'
