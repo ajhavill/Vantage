@@ -1,18 +1,20 @@
 /* Vantage — BD module (self-contained, market-spaces.js pattern).
  *
- * BD is now a full module with a Market-style sub-menu:
- *   Command Center — the landing summary (system map, morning queue, funnel, health)
- *   Newsletter    — the clip bucket: articles/notes/files collected all month;
- *                   the first-week-of-month draft (Phase 3) assembles from it
- *   Program       — read-only board of everyone in the 10-step program (HubSpot
- *                   stays the control panel; cards link to their HubSpot records)
- *   Signals       — manage Google-Alert RSS feeds + review signal history
- *   Templates     — redline the 10-step copy; the cadence engine sends it verbatim
+ * BD is a full module with a Market-style sub-menu:
+ *   Command Center      — landing summary (system map, morning queue, funnel, health)
+ *   Newsletter          — ISSUE PORTAL: clips + a working draft per monthly issue
+ *                         (planning next month, months ahead queued, sent archive)
+ *   Marketing Programs  — the programs we run (10-step cold outreach first; more
+ *                         later) + a read-only board of everyone in them; click a
+ *                         program to see its full cadence with day gaps
+ *   Signals             — manage Google-Alert RSS feeds + review signal history
+ *   Templates           — template sets, high-level; click into a program to
+ *                         redline each step's copy (engine sends it verbatim)
  *
  * Self-contained: injects its own .bdc- CSS, nav item + sub-menu + <section>,
  * and wraps window.showModule. index.html diff = one <script> tag.
  * Data: bd-overview / bd-queue-act / bd-cadence / bd-program functions, plus
- * direct Supabase reads/writes (RLS + stamp triggers) for clips/feeds/templates.
+ * direct Supabase reads/writes (RLS + stamp triggers) for clips/feeds/templates/issues.
  */
 (function () {
   "use strict";
@@ -51,19 +53,48 @@
     var t = new Date(); t.setHours(0, 0, 0, 0);
     return new Date(String(d).slice(0, 10) + "T00:00:00").getTime() < t.getTime();
   }
-  function nextIssueLabel() {
-    var d = new Date(); d.setMonth(d.getMonth() + (d.getDate() <= 7 ? 0 : 1), 1);
-    return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+  /* ---- issue-month helpers ('YYYY-MM') ---- */
+  function ymKey(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); }
+  function nextIssueKey() {
+    var d = new Date();
+    if (d.getDate() > 7) d.setMonth(d.getMonth() + 1);
+    d.setDate(1);
+    return ymKey(d);
+  }
+  function ymAdd(ym, n) {
+    var p = String(ym).split("-");
+    var d = new Date(Number(p[0]), Number(p[1]) - 1 + n, 1);
+    return ymKey(d);
+  }
+  function ymLabel(ym) {
+    var p = String(ym || "").split("-");
+    if (p.length < 2) return String(ym || "");
+    return new Date(Number(p[0]), Number(p[1]) - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
   }
 
-  var VIEWS = { overview: "Command Center", newsletter: "Newsletter", program: "Program", signals: "Signals", templates: "Templates" };
+  /* ---- the 10-step program, client copy (mirrors functions/_bd.js PLAN) ---- */
+  var PLAN = [
+    { step: 1, day: 1, type: "mail", label: "Brochure + hand-written note" },
+    { step: 2, day: 9, type: "call", label: "Call #1 — reference the brochure (VM ok, bridge email after)" },
+    { step: 3, day: 15, type: "email", label: "Email #1 — submarket snapshot" },
+    { step: 4, day: 22, type: "call", label: "Call #2 — no voicemail" },
+    { step: 5, day: 28, type: "email", label: "Email #2 — building-specific hook" },
+    { step: 6, day: 35, type: "mail", label: "Unique-value letter, hand-signed" },
+    { step: 7, day: 41, type: "call", label: "Call #3 — VM referencing the letter" },
+    { step: 8, day: 48, type: "email", label: "Email #3 — direct meeting ask" },
+    { step: 9, day: 54, type: "call", label: "Call #4 — no voicemail" },
+    { step: 10, day: 61, type: "email", label: "Email #4 — professional breakup" }
+  ];
+
+  var VIEWS = { overview: "Command Center", newsletter: "Newsletter", program: "Marketing Programs", signals: "Signals", templates: "Templates" };
   var S = {
     view: "overview",
     data: null, loading: false, err: null, editing: null,
-    clips: null, clipsErr: null,
+    clips: null, clipsErr: null, issues: null, issue: null,
     feeds: null, sigHist: null, sigErr: null,
-    program: null, programErr: null,
-    templates: null, tplErr: null, tplEditing: null
+    program: null, programErr: null, progDetail: false,
+    templates: null, tplErr: null, tplEditing: null, tplDetail: false
   };
 
   /* ---------------- CSS ---------------- */
@@ -102,6 +133,9 @@
     ".bdc-item.email{border-left-color:var(--accent,#2D6E7E)}.bdc-item.call{border-left-color:var(--fitness,#3F8F6B)}.bdc-item.mail{border-left-color:var(--coffee,#A56B3D)}" +
     ".bdc-item-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}" +
     ".bdc-tt{font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;padding:2px 8px;border-radius:20px;background:var(--paper-2,#FCFBF8);border:1px solid var(--line,#E2DDD2);color:var(--ink-soft,#55606F)}" +
+    ".bdc-tt.email{border-color:var(--accent,#2D6E7E);color:var(--accent,#2D6E7E)}" +
+    ".bdc-tt.call{border-color:var(--fitness,#3F8F6B);color:var(--fitness,#3F8F6B)}" +
+    ".bdc-tt.mail{border-color:var(--coffee,#A56B3D);color:var(--coffee,#A56B3D)}" +
     ".bdc-who{font-weight:600;font-size:14px;color:var(--ink,#1A2230)}" +
     ".bdc-co{color:var(--ink-soft,#55606F);font-size:13px}" +
     ".bdc-due{margin-left:auto;font-size:12px;color:var(--ink-soft,#55606F)}" +
@@ -117,6 +151,13 @@
     ".bdc-form{display:grid;gap:8px}" +
     ".bdc-form-row{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;align-items:start}" +
     "@media(max-width:800px){.bdc-form-row{grid-template-columns:1fr}}" +
+    /* issue chips */
+    ".bdc-issues{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}" +
+    ".bdc-ichip{border:1px solid var(--line,#E2DDD2);border-radius:20px;padding:6px 14px;background:var(--paper-2,#FCFBF8);cursor:pointer;font-size:13px;color:var(--ink,#1A2230)}" +
+    ".bdc-ichip:hover{border-color:var(--accent,#2D6E7E)}" +
+    ".bdc-ichip.on{background:var(--accent,#2D6E7E);border-color:var(--accent,#2D6E7E);color:#fff}" +
+    ".bdc-ichip .tag{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;opacity:.75;margin-left:6px}" +
+    ".bdc-idiv{color:var(--ink-faint,#8A93A0);font-size:11px;letter-spacing:.08em;text-transform:uppercase;margin:0 4px}" +
     /* clips */
     ".bdc-clip{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line,#E2DDD2);border-radius:10px;padding:10px 13px;background:var(--paper,#F7F5F0);margin-bottom:8px}" +
     ".bdc-clip.killed{opacity:.5}" +
@@ -125,10 +166,16 @@
     ".bdc-clip .t a{color:var(--accent,#2D6E7E);text-decoration:none}" +
     ".bdc-clip .nt{font-size:12.5px;color:var(--ink-soft,#55606F);margin-top:3px;white-space:pre-wrap}" +
     ".bdc-clip .mt{font-size:11px;color:var(--ink-faint,#8A93A0);margin-top:4px}" +
-    ".bdc-clip .acts{display:flex;gap:6px;flex:0 0 auto}" +
+    ".bdc-clip .acts{display:flex;gap:6px;flex:0 0 auto;flex-wrap:wrap;justify-content:flex-end}" +
     ".bdc-clip .acts .bdc-btn{padding:4px 9px;font-size:12px}" +
     ".bdc-src{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:1px 7px;border-radius:20px;border:1px solid var(--line,#E2DDD2);color:var(--ink-soft,#55606F);background:var(--paper-2,#FCFBF8)}" +
-    /* program board */
+    /* program cards + board */
+    ".bdc-progcard{border:1px solid var(--line,#E2DDD2);border-radius:12px;padding:14px 16px;background:var(--paper,#F7F5F0);cursor:pointer;transition:border-color .12s}" +
+    ".bdc-progcard:hover{border-color:var(--accent,#2D6E7E)}" +
+    ".bdc-progcard .pn{font-weight:700;font-size:15px;color:var(--ink,#1A2230)}" +
+    ".bdc-progcard .pm{font-size:12.5px;color:var(--ink-soft,#55606F);margin-top:4px;line-height:1.4}" +
+    ".bdc-progcard .pv{font-size:12.5px;color:var(--accent,#2D6E7E);margin-top:8px;font-weight:600}" +
+    ".bdc-proggrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}" +
     ".bdc-board{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:12px;align-items:start}" +
     ".bdc-col{background:var(--paper,#F7F5F0);border:1px solid var(--line,#E2DDD2);border-radius:10px;padding:10px}" +
     ".bdc-col h4{margin:0 0 8px;font-size:11.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-soft,#55606F);display:flex;justify-content:space-between}" +
@@ -139,6 +186,18 @@
     ".bdc-pcard .co{font-size:12px;color:var(--ink-soft,#55606F)}" +
     ".bdc-pcard .st{font-size:11px;color:var(--ink-faint,#8A93A0);margin-top:3px}" +
     ".bdc-stepchip{display:inline-block;font-size:10.5px;font-weight:700;border-radius:20px;padding:1px 7px;background:var(--accent,#2D6E7E);color:#fff;margin-right:5px}" +
+    /* cadence timeline */
+    ".bdc-tl{position:relative;margin:6px 0 0 10px;padding-left:26px;border-left:2px solid var(--line-2,#D2CCBF)}" +
+    ".bdc-tlstep{position:relative;padding:0 0 6px}" +
+    ".bdc-tlstep::before{content:\"\";position:absolute;left:-33px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--paper-2,#FCFBF8);border:3px solid var(--accent,#2D6E7E)}" +
+    ".bdc-tlstep.mail::before{border-color:var(--coffee,#A56B3D)}" +
+    ".bdc-tlstep.call::before{border-color:var(--fitness,#3F8F6B)}" +
+    ".bdc-tlhead{display:flex;align-items:center;gap:9px;flex-wrap:wrap}" +
+    ".bdc-tlday{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--ink-faint,#8A93A0);min-width:52px}" +
+    ".bdc-tllabel{font-weight:600;font-size:13.5px;color:var(--ink,#1A2230)}" +
+    ".bdc-tlgap{display:flex;align-items:center;gap:8px;color:var(--ink-faint,#8A93A0);font-size:11.5px;padding:8px 0 8px 2px;font-style:italic}" +
+    ".bdc-tlgap::before{content:\"↓\";font-style:normal;color:var(--line-2,#D2CCBF);font-size:15px}" +
+    ".bdc-tlbody{margin-top:7px}" +
     /* two-col + tables */
     ".bdc-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}" +
     "@media(max-width:900px){.bdc-cols{grid-template-columns:1fr}.bdc-map{flex-direction:column}.bdc-arrow{transform:rotate(90deg);padding:4px 0}}" +
@@ -174,6 +233,7 @@
       var b = e.target.closest("[data-bsv]");
       if (!b) return;
       S.view = b.getAttribute("data-bsv");
+      S.progDetail = false; S.tplDetail = false;
       window.showModule("bd");
     });
 
@@ -276,18 +336,25 @@
     pass();
   }
 
-  /* ---------------- data: clips / feeds / templates / program ---------------- */
+  /* ---------------- data: newsletter (clips + issues) ---------------- */
   function sbErr(e) { return (e && (e.message || e.error_description || e.hint)) || "database error"; }
 
   function loadClips(force) {
     var sb = getSB(); if (!sb || !sb.from) { S.clipsErr = "signin"; render(); return; }
     if (S.clips && !force) { render(); return; }
-    sb.from("bd_clips").select("*").order("created_at", { ascending: false }).limit(200)
+    if (!S.issue) S.issue = nextIssueKey();
+    sb.from("bd_clips").select("*").order("created_at", { ascending: false }).limit(300)
       .then(function (r) {
-        if (r.error) { S.clipsErr = sbErr(r.error); } else { S.clips = r.data || []; S.clipsErr = null; }
-        render();
+        if (r.error) { S.clipsErr = sbErr(r.error); render(); return; }
+        S.clips = r.data || []; S.clipsErr = null;
+        sb.from("bd_newsletters").select("*").order("issue_month", { ascending: false })
+          .then(function (n) { S.issues = (n && n.data) || []; render(); });
       });
   }
+  function issueRow(ym) {
+    return (S.issues || []).find(function (i) { return i.issue_month === ym; }) || null;
+  }
+  function selIssue(ym) { S.issue = ym; render(); }
   function addClip(btn) {
     var url = ($("bdcClipUrl") || {}).value || "", note = ($("bdcClipNote") || {}).value || "";
     url = url.trim(); note = note.trim();
@@ -296,7 +363,7 @@
     btn.disabled = true;
     var title = null;
     try { if (url) title = new URL(url).hostname.replace(/^www\./, ""); } catch (e) { if (url) { note = (note ? note + "\n" : "") + url; url = null; } }
-    sb.from("bd_clips").insert({ url: url || null, title: title, note: note || null, source: "manual" })
+    sb.from("bd_clips").insert({ url: url || null, title: title, note: note || null, source: "manual", issue_month: S.issue })
       .then(function (r) {
         btn.disabled = false;
         if (r.error) { alert("Couldn't save the clip: " + sbErr(r.error)); return; }
@@ -312,6 +379,11 @@
       loadClips(true);
     });
   }
+  function clipPush(id) {
+    var sb = getSB(); if (!sb) return;
+    var target = ymAdd(S.issue || nextIssueKey(), 1);
+    sb.from("bd_clips").update({ issue_month: target }).eq("id", id).then(function () { loadClips(true); });
+  }
   function uploadClip(input) {
     var f = input.files && input.files[0];
     if (!f) return;
@@ -325,7 +397,7 @@
         var path = org + "/" + Date.now() + "-" + f.name.replace(/[^A-Za-z0-9._-]/g, "_");
         sb.storage.from("bd-clips").upload(path, f).then(function (ur) {
           if (ur.error) { alert("Upload failed: " + sbErr(ur.error)); return; }
-          sb.from("bd_clips").insert({ title: f.name, source: "upload", file_path: path }).then(function () { loadClips(true); });
+          sb.from("bd_clips").insert({ title: f.name, source: "upload", file_path: path, issue_month: S.issue }).then(function () { loadClips(true); });
         });
       });
     });
@@ -337,7 +409,32 @@
       if (u) window.open(u, "_blank"); else alert("Couldn't open the file.");
     });
   }
+  function issueSave(btn, markSent) {
+    var sb = getSB(); if (!sb) return;
+    var ym = S.issue;
+    var subject = ($("bdcIssSj") || {}).value || "";
+    var body = ($("bdcIssBo") || {}).value || "";
+    if (markSent && !confirm("Mark the " + ymLabel(ym) + " issue as SENT? It moves to the archive, and its kept clips get stamped as used.")) return;
+    btn.disabled = true;
+    var row = issueRow(ym);
+    var patch = { subject: subject || null, body: body || null };
+    if (markSent) { patch.status = "sent"; patch.sent_at = new Date().toISOString(); }
+    else if (!row || row.status !== "sent") { patch.status = (subject || body) ? "draft" : "planning"; }
+    var op = row
+      ? sb.from("bd_newsletters").update(patch).eq("id", row.id)
+      : sb.from("bd_newsletters").insert(Object.assign({ issue_month: ym }, patch));
+    op.then(function (r) {
+      btn.disabled = false;
+      if (r.error) { alert("Couldn't save the issue: " + sbErr(r.error)); return; }
+      if (markSent) {
+        // stamp this issue's kept clips as shipped
+        sb.from("bd_clips").update({ status: "used", month_used: ym }).eq("issue_month", ym).eq("status", "kept")
+          .then(function () { loadClips(true); });
+      } else loadClips(true);
+    });
+  }
 
+  /* ---------------- data: signals / program / templates ---------------- */
   function loadSignals(force) {
     var sb = getSB(); if (!sb || !sb.from) { S.sigErr = "signin"; render(); return; }
     if (S.feeds && !force) { render(); return; }
@@ -408,7 +505,7 @@
     if (S.view === "overview") load();
     else if (S.view === "newsletter") loadClips();
     else if (S.view === "signals") loadSignals();
-    else if (S.view === "program") loadProgram();
+    else if (S.view === "program") { loadProgram(); loadTemplates(); }
     else if (S.view === "templates") loadTemplates();
   }
 
@@ -420,16 +517,23 @@
     var sj = $("bdcSj-" + id), bo = $("bdcBo-" + id);
     act(id, "save", { subject: sj ? sj.value : null, body: bo ? bo.value : null }, btn);
   };
-  window.__bdAddClip = addClip; window.__bdClipStatus = clipStatus; window.__bdUploadClip = uploadClip; window.__bdOpenClipFile = openClipFile;
+  window.__bdAddClip = addClip; window.__bdClipStatus = clipStatus; window.__bdClipPush = clipPush;
+  window.__bdUploadClip = uploadClip; window.__bdOpenClipFile = openClipFile;
+  window.__bdIssueSel = selIssue;
+  window.__bdIssueSave = function (btn) { issueSave(btn, false); };
+  window.__bdIssueSent = function (btn) { issueSave(btn, true); };
   window.__bdAddFeed = addFeed; window.__bdFeedActive = feedActive; window.__bdFeedDelete = feedDelete;
   window.__bdTplEdit = function (id) { S.tplEditing = id; render(); };
   window.__bdTplCancel = function () { S.tplEditing = null; render(); };
   window.__bdTplSave = tplSave;
-  window.__bdReload = function () { loadView(); };
+  window.__bdProgOpen = function () { S.progDetail = true; loadTemplates(); render(); };
+  window.__bdProgBack = function () { S.progDetail = false; render(); };
+  window.__bdTplOpen = function () { S.tplDetail = true; render(); };
+  window.__bdTplBack = function () { S.tplDetail = false; render(); };
   window.__bdReloadForce = function () {
     if (S.view === "newsletter") loadClips(true);
     else if (S.view === "signals") loadSignals(true);
-    else if (S.view === "program") loadProgram(true);
+    else if (S.view === "program") { loadProgram(true); loadTemplates(true); }
     else if (S.view === "templates") loadTemplates(true);
     else load();
   };
@@ -440,6 +544,10 @@
     return '<div class="bdc-node' + (pending ? " pend" : "") + '"><div class="n">' + dot(state) + esc(name) + '</div><div class="m">' + meta + "</div></div>";
   }
   function signinCard() { return '<div class="bdc-card">Sign in to use the BD module.</div>'; }
+  function viewHead(title, sub, actions) {
+    return '<div class="bdc-head"><div><h1>' + esc(title) + '</h1><div class="sub">' + esc(sub) + "</div></div>" +
+      '<div class="bdc-actions">' + (actions || "") + "</div></div>";
+  }
 
   /* ---------------- render: overview ---------------- */
   function mapHtml(d) {
@@ -576,7 +684,7 @@
       '<div class="bdc-note">Emails send 1:1 through Resend as real personal mail (no blast headers). Replies pause a contact the moment you mark their status Responded in HubSpot — the engine never touches paused, met, converted, or do-not-contact records. The signal watcher runs daily at 7:13 AM (alert feeds + birthdays + award lists → congrats drafts, capped at one per company per two weeks; negative news is flagged, never drafted). The newsletter assembles from your clips the first week of each month (Phase 3).</div>';
   }
 
-  /* ---------------- render: newsletter ---------------- */
+  /* ---------------- render: newsletter (issue portal) ---------------- */
   function clipHtml(c) {
     var srcLabel = { manual: "you", van: "Van", signal: "watcher", upload: "file" }[c.source] || c.source;
     var title = c.title || (c.url ? c.url : "Note");
@@ -585,10 +693,11 @@
     if (c.status === "killed") {
       acts = '<button class="bdc-btn" onclick="__bdClipStatus(\'' + c.id + "','new')\">Restore</button>";
     } else if (c.status === "used") {
-      acts = '<span class="bdc-src">used ' + esc(c.month_used || "") + "</span>";
+      acts = '<span class="bdc-src">shipped ' + esc(ymLabel(c.month_used || "")) + "</span>";
     } else {
-      acts = (c.status === "kept" ? '<span class="bdc-src" style="border-color:var(--fitness,#3F8F6B);color:var(--fitness,#3F8F6B)">in next issue</span>'
+      acts = (c.status === "kept" ? '<span class="bdc-src" style="border-color:var(--fitness,#3F8F6B);color:var(--fitness,#3F8F6B)">in this issue</span>'
               : '<button class="bdc-btn pri" onclick="__bdClipStatus(\'' + c.id + "','kept')\">Keep</button>") +
+        '<button class="bdc-btn" onclick="__bdClipPush(\'' + c.id + "')\" title=\"Move to the following issue\">→ Next issue</button>" +
         '<button class="bdc-btn dngr" onclick="__bdClipStatus(\'' + c.id + "','killed')\">Kill</button>";
     }
     return '<div class="bdc-clip' + (c.status === "killed" ? " killed" : "") + '">' +
@@ -601,38 +710,82 @@
       '<div class="acts">' + acts + "</div></div>";
   }
 
+  function issueChips() {
+    var next = nextIssueKey();
+    var upcoming = [next, ymAdd(next, 1), ymAdd(next, 2)];
+    (S.issues || []).forEach(function (i) {
+      if (i.status !== "sent" && upcoming.indexOf(i.issue_month) < 0 && i.issue_month >= next) upcoming.push(i.issue_month);
+    });
+    (S.clips || []).forEach(function (c) {
+      if (c.issue_month && upcoming.indexOf(c.issue_month) < 0 && c.issue_month >= next) upcoming.push(c.issue_month);
+    });
+    upcoming.sort();
+    var sent = (S.issues || []).filter(function (i) { return i.status === "sent"; }).map(function (i) { return i.issue_month; }).sort().reverse();
+
+    function chip(ym, tag) {
+      var row = issueRow(ym);
+      var t = tag || (row ? row.status : (ym === next ? "planning" : ""));
+      return '<button class="bdc-ichip' + (S.issue === ym ? " on" : "") + '" onclick="__bdIssueSel(\'' + ym + "')\">" + esc(ymLabel(ym)) +
+        (t ? '<span class="tag">' + esc(t === "planning" && ym === next ? "next issue" : t) + "</span>" : "") + "</button>";
+    }
+    return '<div class="bdc-issues">' + upcoming.map(function (y) { return chip(y); }).join("") +
+      (sent.length ? '<span class="bdc-idiv">archive</span>' + sent.map(function (y) { return chip(y, "sent"); }).join("") : "") +
+      "</div>";
+  }
+
   function renderNewsletter(el) {
-    var head = viewHead("Newsletter", "Clip articles, notes, and files all month — the " + nextIssueLabel() + " issue assembles itself from what you keep.",
+    var head = viewHead("Newsletter", "The whole publication lives here — plan issues ahead, build the current one, and keep the archive.",
       '<button class="bdc-btn" onclick="__bdReloadForce()">⟳ Refresh</button>');
     if (S.clipsErr === "signin") { el.innerHTML = head + signinCard(); return; }
+    if (!S.issue) S.issue = nextIssueKey();
 
-    var addCard = '<div class="bdc-card"><h3>Add a clip</h3><div class="bdc-form">' +
-      '<input id="bdcClipUrl" placeholder="Paste an article link (optional)" />' +
-      '<textarea id="bdcClipNote" rows="2" placeholder="Your take — why this belongs in the newsletter (becomes the blurb seed)"></textarea>' +
-      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
-      '<button class="bdc-btn pri" onclick="__bdAddClip(this)">+ Add clip</button>' +
-      '<label class="bdc-btn" style="display:inline-block">Upload file<input type="file" style="display:none" accept=".pdf,.png,.jpg,.jpeg,.webp" onchange="__bdUploadClip(this)" /></label>' +
-      '<span class="bdc-note" style="margin:0">You can also tell Van “add this to the newsletter,” and the signal watcher drops in suggestions it finds.</span>' +
-      "</div></div></div>";
+    var next = nextIssueKey();
+    var sel = S.issue;
+    var row = issueRow(sel);
+    var isSent = row && row.status === "sent";
 
-    var clips = S.clips || [];
+    var clips = (S.clips || []).filter(function (c) {
+      return c.issue_month === sel || (!c.issue_month && sel === next);
+    });
     var live = clips.filter(function (c) { return c.status === "new" || c.status === "kept"; });
     var killed = clips.filter(function (c) { return c.status === "killed"; });
     var used = clips.filter(function (c) { return c.status === "used"; });
 
-    var bucket = '<div class="bdc-card"><h3>Clip bucket — ' + live.length + " for the next issue</h3>" +
-      (live.length ? live.map(clipHtml).join("") : (S.clips === null ? '<div class="bdc-empty">Loading…</div>' : '<div class="bdc-empty">Empty bucket. Paste the first article or note above — future-you writes the newsletter in one click because present-you clipped things.</div>')) +
+    var draftCard = '<div class="bdc-card"><h3>' + esc(ymLabel(sel)) + " issue — " + esc(isSent ? "sent " + (row.sent_at ? fmtDate(row.sent_at) : "") : (row ? row.status : "planning")) + "</h3>" +
+      '<div class="bdc-form">' +
+      '<input id="bdcIssSj" placeholder="Subject line" value="' + esc((row && row.subject) || "") + '"' + (isSent ? " disabled" : "") + " />" +
+      '<textarea id="bdcIssBo" rows="10" placeholder="The working draft. Write it here, or wait for Phase 3 — the first week of the month it assembles itself from the kept clips below + market stats + space finds, ready for your edit."' + (isSent ? " disabled" : "") + ">" + esc((row && row.body) || "") + "</textarea>" +
+      (isSent ? '<div class="bdc-note" style="margin:0">This issue shipped — it lives here as the archive copy.</div>'
+        : '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+          '<button class="bdc-btn pri" onclick="__bdIssueSave(this)">Save draft</button>' +
+          '<button class="bdc-btn" onclick="__bdIssueSent(this)">Mark as sent</button>' +
+          '<span class="bdc-note" style="margin:0">Sending itself (branded HTML via Resend to the warm list) wires up in Phase 3 — until then you send it from your mailbox and mark it here.</span>' +
+          "</div>") +
+      "</div></div>";
+
+    var addCard = isSent ? "" : '<div class="bdc-card"><h3>Add a clip to ' + esc(ymLabel(sel)) + '</h3><div class="bdc-form">' +
+      '<input id="bdcClipUrl" placeholder="Paste an article link (optional)" />' +
+      '<textarea id="bdcClipNote" rows="2" placeholder="Your take — why this belongs in the issue (becomes the blurb seed)"></textarea>' +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+      '<button class="bdc-btn pri" onclick="__bdAddClip(this)">+ Add clip</button>' +
+      '<label class="bdc-btn" style="display:inline-block">Upload file<input type="file" style="display:none" accept=".pdf,.png,.jpg,.jpeg,.webp" onchange="__bdUploadClip(this)" /></label>' +
+      '<span class="bdc-note" style="margin:0">Van files clips too (“add this to the newsletter”), and the signal watcher drops in suggestions — both land on the next issue.</span>' +
+      "</div></div></div>";
+
+    var bucket = '<div class="bdc-card"><h3>Clips for this issue — ' + live.length + "</h3>" +
+      (live.length ? live.map(clipHtml).join("")
+        : (S.clips === null ? '<div class="bdc-empty">Loading…</div>' : '<div class="bdc-empty">Nothing clipped for ' + esc(ymLabel(sel)) + ' yet.</div>')) +
       "</div>";
 
     var restCards = "";
+    if (used.length) restCards += '<div class="bdc-card"><h3>Shipped in this issue</h3>' + used.map(clipHtml).join("") + "</div>";
     if (killed.length) restCards += '<div class="bdc-card"><h3>Killed</h3>' + killed.map(clipHtml).join("") + "</div>";
-    if (used.length) restCards += '<div class="bdc-card"><h3>Shipped in past issues</h3>' + used.map(clipHtml).join("") + "</div>";
 
-    el.innerHTML = head + addCard + bucket + restCards +
-      '<div class="bdc-note">Assembly (Phase 3): first week of each month a full branded-HTML draft is built from kept clips + submarket stats + notable comps + hand-picked space finds + your POV, and lands here for approval before it goes to the warm list (anyone mid-cadence is excluded automatically).</div>';
+    el.innerHTML = head + issueChips() + draftCard + addCard + bucket + restCards +
+      '<div class="bdc-note">Clips without an issue land on the next issue automatically. “→ Next issue” pushes a clip one month out. Marking an issue sent stamps its kept clips as shipped and moves the issue to the archive — the history of everything you\'ve published stays right here.</div>';
   }
 
-  /* ---------------- render: program ---------------- */
+  /* ---------------- render: marketing programs ---------------- */
   function programBuckets(contacts) {
     function bucket(c) {
       var s = String(c.status || "").toLowerCase();
@@ -651,33 +804,108 @@
     return order.filter(function (b) { return by[b] && by[b].length; }).map(function (b) { return { name: b, items: by[b] }; });
   }
 
+  function tplByStep() {
+    var by = {};
+    (S.templates || []).forEach(function (t) { by[t.step] = t; });
+    return by;
+  }
+
+  function cadenceHtml(editable) {
+    var by = tplByStep();
+    var out = '<div class="bdc-tl">';
+    PLAN.forEach(function (p, i) {
+      var t = by[p.step];
+      var body = "";
+      if (t) {
+        if (editable && S.tplEditing === t.id) {
+          body = '<div class="bdc-edit">' +
+            (t.touch_type === "email" ? '<input id="bdcTplSj-' + t.id + '" value="' + esc(t.subject || "") + '" placeholder="Subject" />' : "") +
+            '<textarea id="bdcTplBo-' + t.id + '">' + esc(t.body || "") + "</textarea>" +
+            '<div class="bdc-item-act">' +
+            '<button class="bdc-btn pri" onclick="__bdTplSave(\'' + t.id + "',this)\">Save</button>" +
+            '<button class="bdc-btn" onclick="__bdTplCancel()">Cancel</button></div></div>';
+        } else {
+          body = '<div class="bdc-prev">' + (t.subject ? '<span class="sj">' + esc(t.subject) + "</span>" : "") + esc(t.body || "") + "</div>" +
+            (editable ? '<div class="bdc-item-act"><button class="bdc-btn" onclick="__bdTplEdit(\'' + t.id + "')\">Edit</button></div>" : "");
+        }
+      } else {
+        body = '<div class="bdc-empty">No template saved for this step yet.</div>';
+      }
+      out += '<div class="bdc-tlstep ' + p.type + '">' +
+        '<div class="bdc-tlhead"><span class="bdc-tlday">Day ' + p.day + '</span><span class="bdc-tt ' + p.type + '">' + p.type + '</span><span class="bdc-tllabel">Step ' + p.step + " — " + esc(p.label) + "</span></div>" +
+        '<div class="bdc-tlbody">' + body + "</div></div>";
+      if (i < PLAN.length - 1) {
+        var gap = PLAN[i + 1].day - p.day;
+        out += '<div class="bdc-tlgap">wait ' + gap + " day" + (gap === 1 ? "" : "s") + "</div>";
+      }
+    });
+    out += "</div>";
+    return out;
+  }
+
+  function tenStepCardHtml(open) {
+    var counts = { email: 0, call: 0, mail: 0 };
+    PLAN.forEach(function (p) { counts[p.type]++; });
+    var d = S.program;
+    var active = 0, total = 0;
+    if (d && d.contacts) {
+      total = d.contacts.length;
+      active = d.contacts.filter(function (c) { return /active/i.test(String(c.status || "")); }).length;
+    }
+    return '<div class="bdc-progcard" onclick="' + open + '">' +
+      '<div class="pn">10-Step Cold Outreach</div>' +
+      '<div class="pm">61 days · ' + counts.email + " emails · " + counts.call + " calls · " + counts.mail + " mail pieces · brochure-led, one ask: a 15–20 min intro meeting" +
+      (total ? "<br>" + active + " active · " + total + " total in program" : "") + "</div>" +
+      '<div class="pv">View cadence →</div></div>';
+  }
+
   function renderProgram(el) {
-    var head = viewHead("Program", "Everyone in the 10-step program. HubSpot is the control panel — click a name to change their status there.",
+    if (S.progDetail) {
+      var headD = viewHead("10-Step Cold Outreach", "The full cadence — every touch, the wait between them, and the exact copy that goes out.",
+        '<button class="bdc-btn" onclick="__bdProgBack()">← All programs</button>');
+      el.innerHTML = headD + '<div class="bdc-card"><h3>Cadence — 61 days, 10 touches</h3>' + cadenceHtml(true) + "</div>" +
+        '<div class="bdc-note">Rules wired into the engine: VM only on steps 2 and 7 (they reference a physical piece) · any reply pauses the program · silence after step 10 → Never responded → nurture pool resurfaces ~9 months before lease expiration. Edits here are the live copy — the engine sends it verbatim on the next run.</div>';
+      return;
+    }
+
+    var head = viewHead("Marketing Programs", "The programs we run people through. HubSpot is the control panel — click a name to change their status there.",
       '<button class="bdc-btn" onclick="__bdReloadForce()">⟳ Refresh</button>');
     if (S.programErr === "signin") { el.innerHTML = head + signinCard(); return; }
 
+    var progCard = '<div class="bdc-card"><h3>Programs</h3><div class="bdc-proggrid">' +
+      tenStepCardHtml("__bdProgOpen()") +
+      '<div class="bdc-progcard" style="opacity:.6;border-style:dashed;cursor:default">' +
+      '<div class="pn">Re-engagement (coming)</div>' +
+      '<div class="pm">For everyone who finished the 10-step without a meeting — a slower drumbeat that keeps pounding until they take one. Designed when the first cohort finishes.</div></div>' +
+      "</div></div>";
+
     var d = S.program;
-    if (!d) { el.innerHTML = head + '<div class="bdc-card"><div class="bdc-empty">' + (S.programErr ? esc(S.programErr) : "Loading from HubSpot…") + "</div></div>"; return; }
-    if (!d.connected) { el.innerHTML = head + '<div class="bdc-card"><div class="bdc-empty">HubSpot isn’t connected (HUBSPOT_PRIVATE_APP_TOKEN).</div></div>'; return; }
+    var boardCard;
+    if (!d) {
+      boardCard = '<div class="bdc-card"><div class="bdc-empty">' + (S.programErr ? esc(S.programErr) : "Loading from HubSpot…") + "</div></div>";
+    } else if (!d.connected) {
+      boardCard = '<div class="bdc-card"><div class="bdc-empty">HubSpot isn’t connected (HUBSPOT_PRIVATE_APP_TOKEN).</div></div>';
+    } else {
+      var portal = d.portalId || "245913727";
+      var cols = programBuckets(d.contacts);
+      var board = cols.length
+        ? '<div class="bdc-board">' + cols.map(function (col) {
+            return '<div class="bdc-col"><h4>' + esc(col.name) + "<span>" + col.items.length + "</span></h4>" +
+              col.items.map(function (c) {
+                var hsUrl = "https://app-na2.hubspot.com/contacts/" + portal + "/record/0-1/" + encodeURIComponent(c.id);
+                return '<div class="bdc-pcard">' +
+                  '<div class="nm"><a href="' + hsUrl + '" target="_blank" rel="noopener" title="Open in HubSpot">' + esc(c.name) + "</a></div>" +
+                  (c.company ? '<div class="co">' + esc(c.company) + (c.title ? " · " + esc(c.title) : "") + "</div>" : "") +
+                  '<div class="st">' + (c.step ? '<span class="bdc-stepchip">step ' + c.step + "/10</span>" : "") +
+                  (c.next_touch_date ? "next touch " + fmtDate(c.next_touch_date) + (c.next_touch_type ? " (" + esc(c.next_touch_type) + ")" : "") : "no touch scheduled") +
+                  "</div></div>";
+              }).join("") + "</div>";
+          }).join("") + "</div>"
+        : '<div class="bdc-empty">Nobody carries a program status yet. Import your companies + contacts into HubSpot, set Marketing Program Status on the person you\'re pursuing, and they appear here.</div>';
+      boardCard = '<div class="bdc-card"><h3>' + (d.contacts || []).length + " contact" + ((d.contacts || []).length === 1 ? "" : "s") + " across all programs</h3>" + board + "</div>";
+    }
 
-    var portal = d.portalId || "245913727";
-    var cols = programBuckets(d.contacts);
-    var board = cols.length
-      ? '<div class="bdc-board">' + cols.map(function (col) {
-          return '<div class="bdc-col"><h4>' + esc(col.name) + "<span>" + col.items.length + "</span></h4>" +
-            col.items.map(function (c) {
-              var hsUrl = "https://app-na2.hubspot.com/contacts/" + portal + "/record/0-1/" + encodeURIComponent(c.id);
-              return '<div class="bdc-pcard">' +
-                '<div class="nm"><a href="' + hsUrl + '" target="_blank" rel="noopener" title="Open in HubSpot">' + esc(c.name) + "</a></div>" +
-                (c.company ? '<div class="co">' + esc(c.company) + (c.title ? " · " + esc(c.title) : "") + "</div>" : "") +
-                '<div class="st">' + (c.step ? '<span class="bdc-stepchip">step ' + c.step + "/10</span>" : "") +
-                (c.next_touch_date ? "next touch " + fmtDate(c.next_touch_date) + (c.next_touch_type ? " (" + esc(c.next_touch_type) + ")" : "") : "no touch scheduled") +
-                "</div></div>";
-            }).join("") + "</div>";
-        }).join("") + "</div>"
-      : '<div class="bdc-empty">Nobody carries a program status yet. Import your companies + contacts into HubSpot, set Marketing Program Status on the person you\'re pursuing, and they appear here.</div>';
-
-    el.innerHTML = head + '<div class="bdc-card"><h3>' + (d.contacts || []).length + " contact" + ((d.contacts || []).length === 1 ? "" : "s") + " in the program</h3>" + board + "</div>" +
+    el.innerHTML = head + progCard + boardCard +
       '<div class="bdc-note">Read-only by design (your call): starting, pausing, and status changes happen in HubSpot; the cadence engine reads the state every morning and drafts whatever is due.</div>';
   }
 
@@ -726,44 +954,31 @@
 
   /* ---------------- render: templates ---------------- */
   function renderTemplates(el) {
-    var head = viewHead("Templates", "The 10-step program copy. What you save here is exactly what the engine sends — merge fields fill per contact.",
+    if (S.tplDetail) {
+      var headD = viewHead("10-Step Cold Outreach — templates", "The live copy, laid out on the cadence. What you save is exactly what sends.",
+        '<button class="bdc-btn" onclick="__bdTplBack()">← All template sets</button>' +
+        '<button class="bdc-btn" onclick="__bdReloadForce()">⟳ Refresh</button>');
+      if (S.tplErr === "signin") { el.innerHTML = headD + signinCard(); return; }
+      if (S.templates === null) { el.innerHTML = headD + '<div class="bdc-card"><div class="bdc-empty">' + (S.tplErr ? esc(S.tplErr) : "Loading…") + "</div></div>"; return; }
+      el.innerHTML = headD + '<div class="bdc-card"><h3>Cadence + copy</h3>' + cadenceHtml(true) + "</div>" +
+        '<div class="bdc-note">Merge fields: {{first_name}} {{last_name}} {{company}} {{submarket}} {{title}} — unknown fields render blank, never as braces. Mail steps hold print instructions; call steps hold your talking points. Edits apply from the next engine run (verbatim + merge — your call, no AI rewriting).</div>';
+      return;
+    }
+
+    var head = viewHead("Templates", "Template sets, one per program. Click into a set to see the cadence and edit the copy.",
       '<button class="bdc-btn" onclick="__bdReloadForce()">⟳ Refresh</button>');
     if (S.tplErr === "signin") { el.innerHTML = head + signinCard(); return; }
 
-    var tpls = S.templates;
-    if (tpls === null) { el.innerHTML = head + '<div class="bdc-card"><div class="bdc-empty">' + (S.tplErr ? esc(S.tplErr) : "Loading…") + "</div></div>"; return; }
-
-    var cards = (tpls || []).map(function (t) {
-      var editing = S.tplEditing === t.id;
-      var body;
-      if (editing) {
-        body = '<div class="bdc-edit">' +
-          (t.touch_type === "email" ? '<input id="bdcTplSj-' + t.id + '" value="' + esc(t.subject || "") + '" placeholder="Subject" />' : "") +
-          '<textarea id="bdcTplBo-' + t.id + '">' + esc(t.body || "") + "</textarea>" +
-          '<div class="bdc-item-act">' +
-          '<button class="bdc-btn pri" onclick="__bdTplSave(\'' + t.id + "',this)\">Save</button>" +
-          '<button class="bdc-btn" onclick="__bdTplCancel()">Cancel</button></div></div>';
-      } else {
-        body = '<div class="bdc-prev">' + (t.subject ? '<span class="sj">' + esc(t.subject) + "</span>" : "") + esc(t.body || "") + "</div>" +
-          '<div class="bdc-item-act"><button class="bdc-btn" onclick="__bdTplEdit(\'' + t.id + "')\">Edit</button></div>";
-      }
-      return '<div class="bdc-item ' + esc(t.touch_type) + '">' +
-        '<div class="bdc-item-top"><span class="bdc-tt">' + esc(t.touch_type) + '</span><span class="bdc-who">Step ' + t.step + "</span></div>" + body + "</div>";
-    }).join("");
-
-    el.innerHTML = head +
-      '<div class="bdc-card"><h3>Program copy — steps 1–10</h3>' +
-      (cards ? '<div class="bdc-q">' + cards + "</div>" : '<div class="bdc-empty">No templates found — run supabase/bd-center.sql to seed them.</div>') +
-      "</div>" +
-      '<div class="bdc-note">Merge fields: {{first_name}} {{last_name}} {{company}} {{submarket}} {{title}} — unknown fields render blank, never as braces. Mail steps hold print instructions; call steps hold your talking points. Edits apply from the next engine run (verbatim + merge — your call, no AI rewriting).</div>';
+    el.innerHTML = head + '<div class="bdc-card"><h3>Template sets</h3><div class="bdc-proggrid">' +
+      tenStepCardHtml("__bdTplOpen()") +
+      '<div class="bdc-progcard" style="opacity:.6;border-style:dashed;cursor:default">' +
+      '<div class="pn">Newsletter blocks (coming)</div>' +
+      '<div class="pm">Reusable sections for the monthly issue — intro, stats block, space-finds block, sign-off — once Phase 3 assembly lands.</div></div>' +
+      "</div></div>" +
+      '<div class="bdc-note">More sets appear here as we add programs (re-engagement, client touches). Each set is the single source of truth its engine sends from.</div>';
   }
 
   /* ---------------- render: dispatch ---------------- */
-  function viewHead(title, sub, actions) {
-    return '<div class="bdc-head"><div><h1>' + esc(title) + '</h1><div class="sub">' + esc(sub) + "</div></div>" +
-      '<div class="bdc-actions">' + (actions || "") + "</div></div>";
-  }
-
   function render() {
     var el = $("bdView"); if (!el) return;
     if (S.err === "signin" && S.view === "overview") { el.innerHTML = signinCard(); return; }
