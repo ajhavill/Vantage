@@ -198,12 +198,14 @@
   .pdrop.off{opacity:.4;cursor:not-allowed}
   .pdrop.off:hover{border-color:var(--line-2);color:var(--ink-faint);background:none}
   .mchips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
-  .mchip{display:inline-flex;align-items:center;gap:4px;font:600 11px Inter;color:var(--ink-soft);background:var(--paper);border:1px solid var(--line-2);border-radius:999px;padding:3px 10px;text-decoration:none;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+  /* the label truncates INSIDE .mchip-t — never the chip itself, or the ✕
+     delete control gets clipped off the end and looks like it doesn't exist */
+  .mchip{display:inline-flex;align-items:center;gap:4px;font:600 11px Inter;color:var(--ink-soft);background:var(--paper);border:1px solid var(--line-2);border-radius:999px;padding:3px 8px 3px 10px;text-decoration:none;max-width:230px;cursor:pointer}
+  .mchip .mchip-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
   .mchip:hover{border-color:var(--accent);color:var(--accent)}
-  .mchip .mchip-x{display:none;margin-left:2px;color:var(--ink-faint);font-size:10px;padding:0 2px;border-radius:4px}
-  .mchip:hover .mchip-x{display:inline}
-  .mchip .mchip-x:hover{color:#c0392b;background:rgba(192,57,43,.08)}
-  .mchip .mchip-x.armed{display:inline;color:#fff;background:#c0392b;font-weight:700}
+  .mchip .mchip-x{flex:none;margin-left:2px;color:var(--ink-faint);font-size:10px;line-height:1;padding:2px 4px;border-radius:6px}
+  .mchip .mchip-x:hover{color:#c0392b;background:rgba(192,57,43,.1)}
+  .mchip .mchip-x.armed{color:#fff;background:#c0392b;font-weight:700}
   .ri-drop{display:flex;gap:12px;align-items:center;margin-top:12px;padding:14px 16px;border:1.5px dashed var(--line-2);border-radius:12px;cursor:pointer;color:var(--ink-soft);font:500 12.5px Inter;transition:border-color .15s,background .15s}
   .ri-drop:hover,.ri-drop.over{border-color:var(--accent);background:rgba(45,110,126,.05)}
   .ri-drop .ri-drop-ic{font-size:20px;flex:none}
@@ -3274,10 +3276,11 @@ window.DF = (function(){
     var media=_dealMedia[mkey]||[], chips='';
     if(media.length){
       // first 6 visible; the rest expand in place ("+n more") so every filed
-      // file stays clickable AND deletable (hover a chip → ✕, click twice)
+      // file stays clickable AND deletable (always-visible ✕, click twice)
       var chipHtml=function(m){
         var lbl=(m.title||(m.kind==='brochure'?'Brochure':'Floor plan'));
-        return '<a class="mchip" href="'+esc(m.url)+'" target="_blank" rel="noopener" title="'+esc(m.title||'')+'">'+(m.kind==='brochure'?'📄':'🗺')+' '+esc(lbl.length>40?lbl.slice(0,38)+'…':lbl)
+        return '<a class="mchip" href="'+esc(m.url)+'" target="_blank" rel="noopener" title="'+esc(m.title||'')+'">'
+          +'<span class="mchip-t">'+(m.kind==='brochure'?'📄':'🗺')+' '+esc(lbl.length>40?lbl.slice(0,38)+'…':lbl)+'</span>'
           +'<span class="mchip-x" onclick="DF.deleteMediaChip(event,this,\''+m.id+'\',\''+esc(m.storage_path||'')+'\',\''+dealId+'\')" title="Remove this file from the building">✕</span></a>';
       };
       var shown=media.slice(0,6), rest=media.slice(6);
