@@ -7,13 +7,19 @@
 // browser writes deal_properties candidates + market_spaces rows itself (RLS-
 // scoped) — this function only parses, it never writes.
 //
-// Mirrors deal-ai-extract-background.js exactly (auth via sb.userFromToken,
-// direct fetch to the Anthropic Messages API — no SDK, claude-opus-4-8 with
-// adaptive thinking + json_schema structured output, base64 document block).
-// Differences: the PDF arrives inline as base64 (it isn't a deal document worth
-// storing), and the response is synchronous JSON because the broker reviews it
-// immediately. Handled failures return 200 + {error} (deal-ai-assist pattern)
-// so the UI can show a clear message.
+// Auth via sb.userFromToken, direct fetch to the Anthropic Messages API — no
+// SDK, claude-opus-4-8 with adaptive thinking, base64 document block. The PDF
+// arrives inline as base64 (it isn't a deal document worth storing), and the
+// response is synchronous JSON because the broker reviews it immediately.
+// Handled failures return 200 + {error} (deal-ai-assist pattern) so the UI can
+// show a clear message.
+//
+// PROMPTED JSON, not structured outputs: this extraction needs 19 nullable
+// fields, and the structured-outputs compiler rejects schemas with more than
+// 16 union-typed parameters (the same limit that burned market-report-extract
+// — see PR #44, whose prompt-and-parse pattern this mirrors). normalizeSpace()
+// in assets/report-import.js already coerces every field browser-side, so the
+// server only has to find and parse the object.
 //
 // COMPLIANCE (see supabase/market-spaces.sql header): CoStar-sourced data is
 // broker-internal. JWT required — unauthenticated calls are rejected — and the
@@ -24,52 +30,26 @@
 
 const sb = require("./_sb");
 
-const NUMN = { anyOf: [{ type: "number" }, { type: "null" }] };
-const INTN = { anyOf: [{ type: "integer" }, { type: "null" }] };
-const STRN = { anyOf: [{ type: "string" }, { type: "null" }] };
-function ENUMN(vals) { return { anyOf: [{ type: "string", enum: vals }, { type: "null" }] }; }
-
-const SPACE_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    suite: STRN, floor: STRN,
-    sf: INTN, contiguousSf: INTN,
-    rate: NUMN,
-    ratePeriod: ENUMN(["mo", "yr"]),
-    rateBasis: ENUMN(["FSG", "NNN", "MG"]),
-    spaceType: ENUMN(["direct", "sublease"]),
-    availableDate: STRN,
-    listingBroker: STRN, listingCompany: STRN, listingEmail: STRN, listingPhone: STRN
-  },
-  required: ["suite", "floor", "sf", "contiguousSf", "rate", "ratePeriod", "rateBasis", "spaceType",
-    "availableDate", "listingBroker", "listingCompany", "listingEmail", "listingPhone"]
-};
-const SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    reportDate: STRN,                      // 'YYYY-MM-DD' when the report states one
-    buildings: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          name: STRN,
-          address: { type: "string" },
-          city: STRN,
-          class: STRN,
-          rba: INTN,
-          yearBuilt: INTN,
-          spaces: { type: "array", items: SPACE_SCHEMA }
-        },
-        required: ["name", "address", "city", "class", "rba", "yearBuilt", "spaces"]
-      }
-    }
-  },
-  required: ["reportDate", "buildings"]
-};
+// Example object for the prompt (values illustrative). Every field of the old
+// json_schema appears here so the shape stays identical for the browser.
+const JSON_SHAPE = JSON.stringify({
+  reportDate: "2026-07-22",
+  buildings: [{
+    name: "The Water Garden",
+    address: "1620 26th St",
+    city: "Santa Monica",
+    class: "A",
+    rba: 1270000,
+    yearBuilt: 1992,
+    spaces: [{
+      suite: "500", floor: "5", sf: 11450, contiguousSf: 23000,
+      rate: 5.5, ratePeriod: "mo", rateBasis: "FSG", spaceType: "direct",
+      availableDate: "2026-09-01",
+      listingBroker: "Jane Doe", listingCompany: "CBRE",
+      listingEmail: "jane.doe@cbre.com", listingPhone: "(310) 555-0100"
+    }]
+  }]
+});
 
 const SYSTEM =
   "You are an expert commercial real estate tenant-rep analyst at Havill & Co. You read a CoStar market report " +
@@ -91,7 +71,10 @@ const SYSTEM =
   "- `rba` is the building's rentable building area in SF; `class` like 'A'/'B'/'C' as printed.\n" +
   "- Listing contact fields come from the report's broker/agent columns when present.\n" +
   "- Handle multi-building layouts: page-per-building profiles, table rows, and summary grids all count.\n" +
-  "Respond only with the structured result.";
+  "OUTPUT FORMAT: respond with ONLY one JSON object — no markdown fences, no commentary before or after. Use exactly " +
+  "the key names and value types of this example (the values here are illustrative, never copy them): " + JSON_SHAPE + " " +
+  "`ratePeriod` is mo|yr, `rateBasis` is FSG|NNN|MG, `spaceType` is direct|sublease. Every key must be present on " +
+  "every building and every space — use null for anything the report doesn't state. `spaces` may be an empty array.";
 
 // ~30MB of base64 ≈ 22MB PDF — past Anthropic's request ceiling once wrapped in JSON.
 const MAX_B64 = 30 * 1024 * 1024;
@@ -128,7 +111,7 @@ async function extractWithClaude(input) {
       model: "claude-opus-4-8",
       max_tokens: 16000,                                    // multi-building reports produce a lot of rows
       thinking: { type: "adaptive" },
-      output_config: { effort: "high", format: { type: "json_schema", schema: SCHEMA } },
+      output_config: { effort: "high" },
       system: SYSTEM,
       messages: [{ role: "user", content: content }]
     })
@@ -142,7 +125,19 @@ async function extractWithClaude(input) {
   if (data.stop_reason === "refusal") throw new Error("The model's safety system declined this request.");
   const textBlock = (data.content || []).filter((b) => b.type === "text")[0];
   if (!textBlock || !textBlock.text) throw new Error("No extraction returned.");
-  return JSON.parse(textBlock.text);
+  return parseJSONLoose(textBlock.text);
+}
+
+// Prompted JSON instead of structured outputs — tolerate the usual wrappers:
+// markdown fences, a sentence before/after the object. normalizeSpace() in
+// the browser does the per-field coercion; this only has to find the object.
+function parseJSONLoose(text) {
+  let t = String(text || "").trim();
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) t = fence[1].trim();
+  const a = t.indexOf("{"), b = t.lastIndexOf("}");
+  if (a < 0 || b <= a) throw new Error("No JSON object in the reply.");
+  return JSON.parse(t.slice(a, b + 1));
 }
 
 exports.handler = async (event) => {
