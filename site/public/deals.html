@@ -1494,10 +1494,13 @@ window.DF = (function(){
       _savedTour=null; try{ var stv=await q(sb.from('deal_tours').select('*').eq('deal_id',id).limit(1)); _savedTour=(stv&&stv[0])||null; }catch(e){}
       // client surveys generated from this deal (ledger of share links)
       _dealSurveys=[]; try{ _dealSurveys=await q(sb.from('deal_surveys').select('*').eq('deal_id',id).order('created_at',{ascending:false})); }catch(e){}
-      // filed media (brochures + floor plans) for this deal's buildings — clickable chips on the report cards
+      // filed media (brochures + floor plans) for this deal's buildings — clickable chips on the report cards.
+      // Off-catalog buildings (no vantage-data.json match — most non-Santa-Monica
+      // deals) file media under the synthetic key 'prop_<deal_property_id>'.
+      _dealProps=props||[];
       _dealMedia={};
       try{
-        var mIds=(props||[]).map(function(pp){ return pp.building_id; }).filter(Boolean);
+        var mIds=(props||[]).map(propMediaKey).filter(Boolean);
         if(mIds.length){
           var mrows=await q(sb.from('building_media').select('building_id,kind,url,title').in('building_id',mIds).order('sort_order'));
           (mrows||[]).forEach(function(m){ if(m.url&&(m.kind==='brochure'||m.kind==='floorplan')){ (_dealMedia[m.building_id]=_dealMedia[m.building_id]||[]).push(m); } });
@@ -2543,16 +2546,27 @@ window.DF = (function(){
       //    a bad page or missing pdf.js never sinks the import.
       var planImgs=0, planSkipped=0;
       if(_ri.file && !_ri.plansDone){
-        var withPlans=included.filter(function(b){ return b.buildingId && b.floorPlanPages && b.floorPlanPages.length; });
+        var withPlans=included.filter(function(b){ return b.floorPlanPages && b.floorPlanPages.length; });
         if(withPlans.length){
           btn.textContent='Filing floor plans…';
+          // off-catalog buildings file under 'prop_<deal_property_id>' — fetch
+          // the deal rows (just inserted above) to resolve those keys
+          var propRows=[]; try{ propRows=await q(sb.from('deal_properties').select('id,building_id,name,address').eq('deal_id',_ri.dealId)); }catch(e){}
+          function mediaKeyFor(b){
+            if(b.buildingId) return b.buildingId;
+            var norm=function(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); };
+            var hit=(propRows||[]).filter(function(x){ return !x.building_id && ((b.address&&norm(x.address)===norm(b.address)) || (b.name&&norm(x.name)===norm(b.name))); })[0];
+            return hit?('prop_'+hit.id):null;
+          }
           try{
             var pdfjs=await loadPdfjs();
             var buf=await _ri.file.arrayBuffer();
             var pdf=await pdfjs.getDocument({data:buf}).promise;
             for(var w=0;w<withPlans.length;w++){
               var bb=withPlans[w];
-              var entry={ buildingId:bb.buildingId, catalogName:bb.catalogName, name:bb.name, filename:_ri.filename };
+              var mk=mediaKeyFor(bb);
+              if(!mk){ planSkipped+=bb.floorPlanPages.length; continue; }
+              var entry={ buildingId:mk, catalogName:bb.catalogName, name:bb.name, filename:_ri.filename };
               var pages=BrochureFile._normalizePages(bb.floorPlanPages);
               for(var g=0;g<pages.length;g++){
                 var fp=pages[g];
@@ -2701,7 +2715,11 @@ window.DF = (function(){
     _pdropTarget=buildingId; var inp=$('rfDropInput'); if(inp) inp.click();
   }
   function fileBrochuresDrop(dealId, files, targetBuildingId){
-    if(!files.length) return;
+    if(!files.length){
+      // e.g. OneDrive cloud-placeholder drops can arrive with zero readable files
+      aiToast('No readable file arrived in that drop. If it lives in OneDrive, right-click it → “Always keep on this device”, or click the 📎 chip to browse instead.');
+      return;
+    }
     var v=bfValidate(files);
     if(v){ aiToast(v); return; }
     _bf={dealId:dealId, jobs:[], plan:null, open:{}, target:targetBuildingId||null};
@@ -2754,12 +2772,21 @@ window.DF = (function(){
       bfFail('None of the files could be read.', _bf.jobs.map(function(j){ return j.filename+': '+(j.error||'no result'); }).join(' · '));
       return;
     }
-    _bf.plan=BrochureFile.buildPlan(readable.map(function(j){ return {filename:j.filename, result:j.result}; }), cat||[], {});
+    // Matchable buildings = the catalog PLUS this deal's own off-catalog rows
+    // (as 'prop_<id>' pseudo-entries) — so the AI's address match lands on
+    // Crenshaw buildings too, not just Santa Monica catalog entries.
+    var pickables=(cat||[]).concat(_dealProps.filter(function(x){ return !x.building_id; })
+      .map(function(x){ return { id:'prop_'+x.id, name:x.name||x.address||'Untitled', addr:x.address||'' }; }));
+    _bf.plan=BrochureFile.buildPlan(readable.map(function(j){ return {filename:j.filename, result:j.result}; }), pickables, {});
     // re-attach the original File objects (same order buildPlan preserves)
     _bf.plan.entries.forEach(function(e,i){ e._file=readable[i]?readable[i].file:null; });
     // dropped on a specific building's card → that building wins over the AI's match
     if(_bf.target){
-      var tb=(cat||[]).filter(function(b){ return b.id===_bf.target; })[0];
+      var tb=pickables.filter(function(b){ return b.id===_bf.target; })[0];
+      if(!tb&&/^prop_/.test(_bf.target)){
+        var pr=_dealProps.filter(function(x){ return 'prop_'+x.id===_bf.target; })[0];
+        tb={ id:_bf.target, name:(pr&&(pr.name||pr.address))||'this building' };
+      }
       if(tb) _bf.plan.entries.forEach(function(e){ BrochureFile.assignBuilding(e, tb); });
     }
     _bf.failed=_bf.jobs.filter(function(j){ return j.status==='error'; });
@@ -2775,7 +2802,12 @@ window.DF = (function(){
   function bfCatValue(b){ return (b.name||'Untitled')+' — '+(b.addr||''); }
   function bfFootLine(){ return BrochureFile.summarize(_bf.plan).line; }
   function bfReview(){
-    var p=_bf.plan, cat=_portalBuildings||[];
+    var p=_bf.plan;
+    // pickable buildings = the catalog PLUS this deal's own off-catalog rows
+    // ('prop_' keys) — a Crenshaw deal has zero catalog matches, and its
+    // buildings still need somewhere to file.
+    var cat=(_portalBuildings||[]).concat(_dealProps.filter(function(x){ return !x.building_id; })
+      .map(function(x){ return { id:'prop_'+x.id, name:x.name||x.address||'Untitled', addr:x.address||'' }; }));
     var dl='<datalist id="bf_dl">'+cat.map(function(b){ return '<option value="'+esc(bfCatValue(b))+'"></option>'; }).join('')+'</datalist>';
     var rows=p.entries.map(function(e,i){
       var open=!!_bf.open[i];
@@ -2920,8 +2952,11 @@ window.DF = (function(){
         }
       }
       // 3) tracker refresh: upsert on (org_id, dedup_key) — flyers fill, never
-      //    blank, and never demote listing-broker-confirmed rows (spacePatch)
+      //    blank, and never demote listing-broker-confirmed rows (spacePatch).
+      //    Synthetic 'prop_' media keys are NOT catalog ids — the tracker keys
+      //    those rows by address alone.
       var rows=BrochureFile.spacePayloads(p);
+      rows.forEach(function(r){ if(/^prop_/.test(r.building_id||'')) r.building_id=null; });
       if(rows.length){
         var keys=rows.map(function(r){ return r.dedup_key; });
         var hits=await q(sb.from('market_spaces').select('id,dedup_key,source,listing_broker,listing_company,listing_email,listing_phone').eq('org_id',ReportImport.ORG_ID).in('dedup_key',keys));
@@ -3116,15 +3151,20 @@ window.DF = (function(){
      'shortlisted') → a printable report of every building's full info ---------- */
   function reportCard(p, dealId){
     var canView=!!p.building_id;
+    var mkey=propMediaKey(p);   // catalog id, or 'prop_<id>' for off-catalog buildings
     // filed media chips: click a brochure or floor plan to open it right here
-    var media=_dealMedia[p.building_id]||[], chips='';
+    var media=_dealMedia[mkey]||[], chips='';
     if(media.length){
-      var shown=media.slice(0,4);
+      var shown=media.slice(0,canView?4:6);
       chips='<div class="mchips">'+shown.map(function(m){
         var lbl=(m.title||(m.kind==='brochure'?'Brochure':'Floor plan'));
         return '<a class="mchip" href="'+esc(m.url)+'" target="_blank" rel="noopener" title="'+esc(m.title||'')+'">'+(m.kind==='brochure'?'📄':'🗺')+' '+esc(lbl.length>40?lbl.slice(0,38)+'…':lbl)+'</a>';
       }).join('')
-      +(media.length>shown.length?'<span class="mchip more" onclick="DF.viewBuilding(\''+esc(p.building_id)+'\',\''+dealId+'\')" title="All media on the building dossier">+'+(media.length-shown.length)+' more</span>':'')
+      +(media.length>shown.length
+          ?(canView
+              ?'<span class="mchip more" onclick="DF.viewBuilding(\''+esc(p.building_id)+'\',\''+dealId+'\')" title="All media on the building dossier">+'+(media.length-shown.length)+' more</span>'
+              :'<span class="mchip more" title="'+(media.length-shown.length)+' more file(s) on this building">+'+(media.length-shown.length)+' more</span>')
+          :'')
       +'</div>';
     }
     return '<div class="pcard"><div class="top">'
@@ -3134,12 +3174,11 @@ window.DF = (function(){
       + (p.address?'<div class="ad">'+esc(p.address)+'</div>':'')
       + chips + '</div>'
       // per-building drop target — a PDF dropped here files under THIS building
-      + (canView
-          ? '<div class="pdrop" title="Drop this building\'s floor plans or brochure here (or click to browse) — it files under '+esc(p.name||'this building')+', no matching needed"'
-            + ' ondragenter="DF.reportDragOver(event)" ondragover="DF.reportDragOver(event)" ondragleave="DF.reportDragLeave(event)"'
-            + ' ondrop="DF.propDrop(event,\''+dealId+'\',\''+esc(p.building_id)+'\')"'
-            + ' onclick="DF.propBrowse(\''+dealId+'\',\''+esc(p.building_id)+'\')">📎<span>Drop PDF</span></div>'
-          : '<div class="pdrop off" title="Link this building to the catalog first (open it and pick its catalog match) — then plans &amp; brochures can file here">📎<span>Drop PDF</span></div>')
+      // (works for every card: off-catalog buildings file under 'prop_<id>')
+      + '<div class="pdrop" title="Drop this building\'s floor plans or brochure here (or click to browse) — it files under '+esc(p.name||'this building')+', no matching needed"'
+        + ' ondragenter="DF.reportDragOver(event)" ondragover="DF.reportDragOver(event)" ondragleave="DF.reportDragLeave(event)"'
+        + ' ondrop="DF.propDrop(event,\''+dealId+'\',\''+esc(mkey)+'\')"'
+        + ' onclick="DF.propBrowse(\''+dealId+'\',\''+esc(mkey)+'\')">📎<span>Drop PDF</span></div>'
       + '</div>'
       + '<div class="pactions">'
       + (canView?'<button class="miniadd" onclick="DF.viewBuilding(\''+esc(p.building_id)+'\',\''+dealId+'\')">View details</button>':'')
@@ -3154,10 +3193,11 @@ window.DF = (function(){
     try{ reportProps=await q(sb.from('deal_properties').select('*').eq('deal_id',dealId).eq('status','shortlisted')); }catch(e){}
     if(!reportProps.length){ alert('Add buildings to the market report first.'); return; }
     await loadPortalBuildings();
-    // filed floor-plan images (brochure filer output — already contact-scrubbed)
+    // filed floor-plan images (brochure filer output — already contact-scrubbed);
+    // off-catalog buildings file under 'prop_<id>' keys
     var plansByBld={};
     try{
-      var mIds=reportProps.map(function(p){ return p.building_id; }).filter(Boolean);
+      var mIds=reportProps.map(propMediaKey).filter(Boolean);
       if(mIds.length){
         var med=await q(sb.from('building_media').select('building_id,kind,url,title').in('building_id',mIds).eq('kind','floorplan').order('sort_order'));
         (med||[]).forEach(function(m){ if(m.url&&/\.(png|jpe?g|webp|gif)(\?|$)/i.test(m.url)){ (plansByBld[m.building_id]=plansByBld[m.building_id]||[]).push(m); } });
@@ -3167,7 +3207,9 @@ window.DF = (function(){
     var sections=reportProps.map(function(p,i){
       var b=(_portalBuildings||[]).filter(function(x){return x.id===p.building_id;})[0];
       var name=p.name||(b&&b.name)||'Building', addr=p.address||(b&&b.addr)||'';
-      if(!b){ return '<div class="mr-b"><div class="mr-bn">'+(i+1)+'. '+esc(name)+'</div>'+(addr?'<div class="mr-ba">'+esc(addr)+'</div>':'')+'<div class="mr-p" style="color:#888">Detailed specs unavailable for this building.</div></div>'; }
+      var plansHtml=(function(){ var pls=(plansByBld[propMediaKey(p)]||[]).slice(0,4);
+        return pls.length?'<div class="mr-sub">Floor plans</div><div class="mr-plans">'+pls.map(function(m){ return '<img src="'+esc(m.url)+'" alt="'+esc(m.title||'Floor plan')+'">'; }).join('')+'</div>':''; })();
+      if(!b){ return '<div class="mr-b"><div class="mr-bn">'+(i+1)+'. '+esc(name)+'</div>'+(addr?'<div class="mr-ba">'+esc(addr)+'</div>':'')+plansHtml+(plansHtml?'':'<div class="mr-p" style="color:#888">Detailed specs unavailable for this building.</div>')+'</div>'; }
       var cs=_cscore(b);
       var specs=[['Class',b.class],['Size',b.size?b.size+' SF':''],['Built',b.yearBuilt],['Floors',b.floors],['Parking',b.parking]].filter(function(x){return x[1];}).map(function(x){return '<span class="mr-spec"><b>'+esc(x[1])+'</b> '+x[0]+'</span>';}).join('');
       var avail=(b.availabilities&&b.availabilities.length)
@@ -3180,8 +3222,7 @@ window.DF = (function(){
         + (specs?'<div class="mr-specs">'+specs+'</div>':'')
         + (avail?'<div class="mr-sub">Availability</div>'+avail:'')
         + '<div class="mr-sub">Walkable amenities <span class="mr-note">(0–10)</span></div><div class="mr-chips">'+amen+'</div>'
-        + (function(){ var pls=(plansByBld[p.building_id]||[]).slice(0,4);
-            return pls.length?'<div class="mr-sub">Floor plans</div><div class="mr-plans">'+pls.map(function(m){ return '<img src="'+esc(m.url)+'" alt="'+esc(m.title||'Floor plan')+'">'; }).join('')+'</div>':''; })()
+        + plansHtml
         + (b.read?'<div class="mr-sub">The neighborhood</div><div class="mr-p">'+esc(b.read)+'</div>':'')
         + (b.features&&b.features.length?'<div class="mr-p"><b>Features:</b> '+esc(b.features.join(', '))+'</div>':'')
         + (c?'<div class="mr-p"><b>Listing contact:</b> '+esc(c.name||'')+(c.company?', '+esc(c.company):'')+(c.phone?' · '+esc(c.phone):'')+(c.email?' · '+esc(c.email):'')+'</div>':'')
@@ -4891,7 +4932,12 @@ window.DF = (function(){
   var _tourMail=null;     // {dealId, items:[{to,name,building,subject,text,sent}]}
   var _savedTour=null;    // deal_tours row for the OPEN deal (set by openDeal)
   var _dealSurveys=[];    // deal_surveys rows for the OPEN deal (set by openDeal)
-  var _dealMedia={};      // building_media (brochure/floorplan) by building_id for the OPEN deal
+  var _dealMedia={};      // building_media (brochure/floorplan) by media key for the OPEN deal
+  var _dealProps=[];      // deal_properties rows for the OPEN deal (set by openDeal)
+  // Media key: catalog id when the building is linked, else 'prop_<row id>' —
+  // so brochures & floor plans file against ANY building on the deal, not just
+  // Santa Monica catalog matches (the whole Crenshaw survey had zero matches).
+  function propMediaKey(p){ return p.building_id || ('prop_'+p.id); }
 
   /* ---------- saved tour: persist the optimizer result (deal_tours) ----------
      The optimize run bills Google, so its result must survive click-out: on
