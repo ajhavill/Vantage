@@ -1,4 +1,4 @@
-// Vantage — deal-report-import (synchronous Netlify function).
+// Vantage — deal-report-import (Netlify BACKGROUND function).
 //
 // The front door of the requirement→deliverable workflow: the broker uploads
 // the CoStar market survey / availability report PDF they pulled for a client
@@ -7,12 +7,14 @@
 // browser writes deal_properties candidates + market_spaces rows itself (RLS-
 // scoped) — this function only parses, it never writes.
 //
-// Auth via sb.userFromToken, direct fetch to the Anthropic Messages API — no
-// SDK, claude-opus-4-8 with adaptive thinking, base64 document block. The PDF
-// arrives inline as base64 (it isn't a deal document worth storing), and the
-// response is synchronous JSON because the broker reviews it immediately.
-// Handled failures return 200 + {error} (deal-ai-assist pattern) so the UI can
-// show a clear message.
+// BACKGROUND function (pattern of market-report-extract-background and
+// deal-brochure-extract-background): the synchronous version 504'd on real
+// CoStar surveys — Opus takes longer than Netlify's ~26s sync ceiling to read
+// a multi-building PDF. Background invocations can't carry a multi-MB payload,
+// so the browser stages the PDF (or pasted text) in a deal_report_imports job
+// row (supabase/report-import-jobs.sql), invokes this with just {token, jobId},
+// and polls the row. This fn reads the row (service_role), extracts, writes
+// status/result back (clearing the staged upload).
 //
 // PROMPTED JSON, not structured outputs: this extraction needs 19 nullable
 // fields, and the structured-outputs compiler rejects schemas with more than
@@ -79,8 +81,6 @@ const SYSTEM =
 // ~30MB of base64 ≈ 22MB PDF — past Anthropic's request ceiling once wrapped in JSON.
 const MAX_B64 = 30 * 1024 * 1024;
 
-function okJSON(obj) { return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) }; }
-
 function friendlyAnthropicError(msg, status) {
   const m = String(msg || "");
   if (/page.?limit|too many pages|maximum.*pages|exceeds.*pages/i.test(m))
@@ -140,31 +140,69 @@ function parseJSONLoose(text) {
   return JSON.parse(t.slice(a, b + 1));
 }
 
+// Write the job's outcome back to the row (service_role). Always clears the
+// staged upload so multi-MB blobs don't linger. The browser polls this row.
+async function finishJob(jobId, patch) {
+  await sb.rest("deal_report_imports?id=eq." + encodeURIComponent(jobId), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify(Object.assign({ pdf_b64: null, src_text: null }, patch))
+  });
+}
+
+// Background function: Netlify replies 202 to the caller before this runs, so
+// return values never reach the browser — every outcome (including auth-ish
+// failures after the row exists) must land on the job row instead.
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") return { statusCode: 405, body: "Use POST." };
   let body; try { body = JSON.parse(event.body || "{}"); } catch (e) { return { statusCode: 400, body: "bad body" }; }
 
   const user = await sb.userFromToken(body.token);   // broker must be signed in — CoStar data is internal-only
   if (!user) { console.log("report-import: unauthorized"); return { statusCode: 401, body: "unauthorized" }; }
-  if (!process.env.ANTHROPIC_API_KEY) { console.log("report-import: ANTHROPIC_API_KEY not set"); return okJSON({ error: "AI isn't configured yet (missing API key)." }); }
 
-  const pdfB64 = typeof body.base64pdf === "string" ? body.base64pdf.replace(/^data:[^,]*,/, "") : "";
-  const text = (body.text || "").toString().trim();
-  if (!pdfB64 && !text) return okJSON({ error: "Attach the CoStar report PDF (or paste its text) first." });
-  if (pdfB64 && pdfB64.length > MAX_B64) return okJSON({ error: friendlyAnthropicError("request too large", 413) });
+  const jobId = String(body.jobId || "");
+  if (!/^[0-9a-f-]{36}$/i.test(jobId)) { console.log("report-import: bad jobId"); return { statusCode: 400, body: "bad jobId" }; }
+
+  // Load the staged job row (service_role bypasses RLS, so verify ownership:
+  // the row's org must be the caller's org — same defense-in-depth as deal fns).
+  let job = null, profile = null;
+  try {
+    const r = await sb.rest("deal_report_imports?id=eq." + encodeURIComponent(jobId) + "&select=id,org_id,filename,pdf_b64,src_text,status&limit=1");
+    job = r.data && r.data[0];
+    const p = await sb.rest("profiles?id=eq." + user.id + "&select=org_id&limit=1");
+    profile = p.data && p.data[0];
+  } catch (e) { /* handled below */ }
+  if (!job) { console.log("report-import: job not found", jobId); return { statusCode: 404, body: "no job" }; }
+  if (!profile || !profile.org_id || profile.org_id !== job.org_id) {
+    console.log("report-import: job/org mismatch");
+    return { statusCode: 403, body: "forbidden" };
+  }
+  if (job.status !== "queued") { console.log("report-import: job already", job.status); return { statusCode: 200, body: "done" }; }
+
+  if (!process.env.ANTHROPIC_API_KEY) { await finishJob(jobId, { status: "error", error: "AI isn't configured yet (missing API key)." }); return { statusCode: 200, body: "no key" }; }
+
+  const pdfB64 = typeof job.pdf_b64 === "string" ? job.pdf_b64.replace(/^data:[^,]*,/, "") : "";
+  const text = (job.src_text || "").toString().trim();
+  if (!pdfB64 && !text) { await finishJob(jobId, { status: "error", error: "No report was staged for this job — try the upload again." }); return { statusCode: 200, body: "empty" }; }
+  if (pdfB64 && pdfB64.length > MAX_B64) { await finishJob(jobId, { status: "error", error: friendlyAnthropicError("request too large", 413) }); return { statusCode: 200, body: "too big" }; }
 
   let result;
   try {
-    result = await extractWithClaude({ pdfB64: pdfB64 || null, text: text || null, filename: body.filename });
+    result = await extractWithClaude({ pdfB64: pdfB64 || null, text: text || null, filename: job.filename });
   } catch (e) {
     console.log("report-import: extraction failed:", e.message);
-    return okJSON({ error: friendlyAnthropicError(e.message, e.status) });
+    await finishJob(jobId, { status: "error", error: friendlyAnthropicError(e.message, e.status) });
+    return { statusCode: 200, body: "extract failed" };
   }
 
-  const buildings = Array.isArray(result.buildings) ? result.buildings : [];
-  if (!buildings.length) return okJSON({ error: "No buildings found in that document — is it a CoStar availability report / survey export?" });
+  const buildings = Array.isArray(result && result.buildings) ? result.buildings : [];
+  if (!buildings.length) {
+    await finishJob(jobId, { status: "error", error: "No buildings found in that document — is it a CoStar availability report / survey export?" });
+    return { statusCode: 200, body: "no buildings" };
+  }
 
   const spaces = buildings.reduce((n, b) => n + ((b.spaces && b.spaces.length) || 0), 0);
-  console.log("report-import: parsed", buildings.length, "buildings /", spaces, "spaces from", body.filename || "(pasted text)");
-  return okJSON({ ok: true, reportDate: result.reportDate || null, buildings: buildings });
+  console.log("report-import: parsed", buildings.length, "buildings /", spaces, "spaces from", job.filename || "(pasted text)");
+  await finishJob(jobId, { status: "done", result: { reportDate: result.reportDate || null, buildings: buildings } });
+  return { statusCode: 200, body: "ok" };
 };
