@@ -192,6 +192,11 @@
   .srow{display:flex;gap:10px;justify-content:flex-end;margin-top:8px}
   /* CoStar report import — wide review sheet */
   .sheet.wide{width:min(960px,100%)}
+  .pdrop{flex:none;align-self:stretch;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:74px;margin-left:10px;padding:6px 10px;border:1.5px dashed var(--line-2);border-radius:10px;cursor:pointer;color:var(--ink-faint);font-size:15px;transition:border-color .15s,background .15s,color .15s}
+  .pdrop span{font:600 10px Inter;letter-spacing:.02em}
+  .pdrop:hover,.pdrop.over{border-color:var(--accent);color:var(--accent);background:rgba(45,110,126,.05)}
+  .pdrop.off{opacity:.4;cursor:not-allowed}
+  .pdrop.off:hover{border-color:var(--line-2);color:var(--ink-faint);background:none}
   .mchips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
   .mchip{display:inline-flex;align-items:center;gap:4px;font:600 11px Inter;color:var(--ink-soft);background:var(--paper);border:1px solid var(--line-2);border-radius:999px;padding:3px 10px;text-decoration:none;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
   .mchip:hover{border-color:var(--accent);color:var(--accent)}
@@ -2660,16 +2665,28 @@ window.DF = (function(){
     ev.preventDefault(); ev.currentTarget.classList.remove('over');
     fileBrochuresDrop(dealId, Array.prototype.slice.call((ev.dataTransfer&&ev.dataTransfer.files)||[]));
   }
-  function reportBrowse(){ var inp=$('rfDropInput'); if(inp) inp.click(); }
+  function reportBrowse(){ _pdropTarget=null; var inp=$('rfDropInput'); if(inp) inp.click(); }
   function reportDropPick(dealId, inp){
     var files=Array.prototype.slice.call(inp.files||[]); inp.value='';
-    fileBrochuresDrop(dealId, files);
+    var target=_pdropTarget; _pdropTarget=null;
+    fileBrochuresDrop(dealId, files, target);
   }
-  function fileBrochuresDrop(dealId, files){
+  /* Per-building drop chip on each Market report card: the file goes to THAT
+   * building — Claude still reads spaces/floor plans, but the building
+   * assignment is locked to the card it was dropped on. */
+  var _pdropTarget=null;
+  function propDrop(ev, dealId, buildingId){
+    ev.preventDefault(); ev.stopPropagation(); ev.currentTarget.classList.remove('over');
+    fileBrochuresDrop(dealId, Array.prototype.slice.call((ev.dataTransfer&&ev.dataTransfer.files)||[]), buildingId);
+  }
+  function propBrowse(dealId, buildingId){
+    _pdropTarget=buildingId; var inp=$('rfDropInput'); if(inp) inp.click();
+  }
+  function fileBrochuresDrop(dealId, files, targetBuildingId){
     if(!files.length) return;
     var v=bfValidate(files);
     if(v){ aiToast(v); return; }
-    _bf={dealId:dealId, jobs:[], plan:null, open:{}};
+    _bf={dealId:dealId, jobs:[], plan:null, open:{}, target:targetBuildingId||null};
     loadPortalBuildings();
     bfLaunch(files);
   }
@@ -2722,6 +2739,11 @@ window.DF = (function(){
     _bf.plan=BrochureFile.buildPlan(readable.map(function(j){ return {filename:j.filename, result:j.result}; }), cat||[], {});
     // re-attach the original File objects (same order buildPlan preserves)
     _bf.plan.entries.forEach(function(e,i){ e._file=readable[i]?readable[i].file:null; });
+    // dropped on a specific building's card → that building wins over the AI's match
+    if(_bf.target){
+      var tb=(cat||[]).filter(function(b){ return b.id===_bf.target; })[0];
+      if(tb) _bf.plan.entries.forEach(function(e){ BrochureFile.assignBuilding(e, tb); });
+    }
     _bf.failed=_bf.jobs.filter(function(j){ return j.status==='error'; });
     bfReview();
   }
@@ -3092,7 +3114,15 @@ window.DF = (function(){
       + '<div style="flex:1;min-width:0">'
       + (canView?'<div class="nm nm-link" onclick="DF.viewBuilding(\''+esc(p.building_id)+'\',\''+dealId+'\')" title="See building details">'+esc(p.name||'Building')+' ↗</div>':'<div class="nm">'+esc(p.name||'Building')+'</div>')
       + (p.address?'<div class="ad">'+esc(p.address)+'</div>':'')
-      + chips + '</div></div>'
+      + chips + '</div>'
+      // per-building drop target — a PDF dropped here files under THIS building
+      + (canView
+          ? '<div class="pdrop" title="Drop this building\'s floor plans or brochure here (or click to browse) — it files under '+esc(p.name||'this building')+', no matching needed"'
+            + ' ondragover="DF.reportDragOver(event)" ondragleave="DF.reportDragLeave(event)"'
+            + ' ondrop="DF.propDrop(event,\''+dealId+'\',\''+esc(p.building_id)+'\')"'
+            + ' onclick="DF.propBrowse(\''+dealId+'\',\''+esc(p.building_id)+'\')">📎<span>Drop PDF</span></div>'
+          : '<div class="pdrop off" title="Link this building to the catalog first (open it and pick its catalog match) — then plans &amp; brochures can file here">📎<span>Drop PDF</span></div>')
+      + '</div>'
       + '<div class="pactions">'
       + (canView?'<button class="miniadd" onclick="DF.viewBuilding(\''+esc(p.building_id)+'\',\''+dealId+'\')">View details</button>':'')
       + '<button class="miniadd" onclick="DF.addToTour(\''+p.id+'\',\''+dealId+'\')">+ Add to tour</button>'
@@ -5290,7 +5320,7 @@ window.DF = (function(){
     deleteDealAsk:deleteDealAsk, deleteDealCancel:deleteDealCancel, deleteDealDo:deleteDealDo,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask, recGo:recGo,
-    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, importReport:importReport, fileBrochures:fileBrochures, reportDragOver:reportDragOver, reportDragLeave:reportDragLeave, reportDrop:reportDrop, reportBrowse:reportBrowse, reportDropPick:reportDropPick, bulkSync:bulkSync, bulkAll:bulkAll, bulkMove:bulkMove, bulkDelete:bulkDelete, viewBuilding:viewBuilding, generateMarketReport:generateMarketReport, clientSurvey:clientSurvey, copySurveyLink:copySurveyLink, deleteSurvey:deleteSurvey, dealTab:dealTab, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, npMode:npMode, newRound:newRound,
+    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, importReport:importReport, fileBrochures:fileBrochures, reportDragOver:reportDragOver, reportDragLeave:reportDragLeave, reportDrop:reportDrop, reportBrowse:reportBrowse, reportDropPick:reportDropPick, propDrop:propDrop, propBrowse:propBrowse, bulkSync:bulkSync, bulkAll:bulkAll, bulkMove:bulkMove, bulkDelete:bulkDelete, viewBuilding:viewBuilding, generateMarketReport:generateMarketReport, clientSurvey:clientSurvey, copySurveyLink:copySurveyLink, deleteSurvey:deleteSurvey, dealTab:dealTab, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, npMode:npMode, newRound:newRound,
     generateRfp:generateRfp, copyRfp:copyRfp, downloadRfp:downloadRfp, sendRfpTo:sendRfpTo,
     setStage:setStage, basisChange:basisChange, marketCheck:marketCheck, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
     proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead,
