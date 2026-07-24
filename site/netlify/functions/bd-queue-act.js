@@ -31,13 +31,21 @@ async function patchQueue(id, patch) {
   });
 }
 
+// The program definition now lives in bd_templates (builder). Load the org's
+// steps once per invocation; falls back to the built-in default program.
+async function loadSteps(orgId) {
+  const tr = await sb.rest("bd_templates?org_id=eq." + orgId + "&select=step,touch_type,subject,body,label,day_offset,attachment_path");
+  return bd.stepsFrom(tr.data || []);
+}
+
 // Advance the HubSpot contact after a cadence touch completes. Best-effort: a
 // 4xx (e.g. unknown option value on next_touch_type) retries without that field
 // so the date/step always land.
-async function advanceHubSpot(row) {
+async function advanceHubSpot(row, steps) {
   if (!hub.configured() || !row.step || row.source !== "cadence") return { advanced: false, why: "not a cadence touch or HubSpot off" };
+  if (!steps) steps = await loadSteps(row.org_id);
   const today = new Date(); today.setUTCHours(0, 0, 0, 0);
-  const adv = bd.advance(row.step, today);
+  const adv = bd.advance(row.step, steps, today);
   const props = { marketing_program_step: String(adv.step) };
   if (adv.next_touch_date) props.next_touch_date = adv.next_touch_date;
   if (adv.next_touch_type) props.next_touch_type = adv.next_touch_type;
@@ -91,11 +99,12 @@ exports.handler = async (event) => {
     const allR = await sb.rest("bd_queue?org_id=eq." + orgId + "&status=eq.pending&touch_type=eq.email&select=*&order=due_date.asc&limit=100");
     const all = allR.data || [];
     const batch = all.slice(0, 15);
+    const steps = batch.length ? await loadSteps(orgId) : null;
     let sent = 0; const failed = [];
     for (const r of batch) {
       const s = await sendEmail(r);
       if (!s.sent) { await patchQueue(r.id, { status: "failed", error: s.error }); failed.push({ id: r.id, contact: r.contact_name, error: s.error }); continue; }
-      const adv = await advanceHubSpot(r);
+      const adv = await advanceHubSpot(r, steps);
       await patchQueue(r.id, { status: "sent", sent_at: new Date().toISOString(), error: adv.advanced ? null : (adv.why || null) });
       sent++;
     }
