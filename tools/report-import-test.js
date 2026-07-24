@@ -82,8 +82,8 @@ ok("as_of falls back to today when no report date", planNoDate.asOf === "2026-07
 /* ---------------- deal_properties payload ---------------- */
 console.log("\n== deal_properties insert shape ==");
 const dp1 = RI.dealPropertyRow(plan.buildings[0], "deal-1");
-ok("matched: carries building_id + catalog name",
-  dp1.deal_id === "deal-1" && dp1.building_id === "watergarden" && dp1.name === "The Water Garden" && dp1.status === "considering", dp1);
+ok("matched: carries building_id + catalog name, lands in the market report",
+  dp1.deal_id === "deal-1" && dp1.building_id === "watergarden" && dp1.name === "The Water Garden" && dp1.status === "shortlisted", dp1);
 const dp2 = RI.dealPropertyRow(plan.buildings[1], "deal-1");
 ok("new: address-only candidate (building_id null)", dp2.building_id === null && dp2.address === "731 Arizona Ave" && dp2.name === "Arizona Court", dp2);
 

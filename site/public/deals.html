@@ -192,6 +192,10 @@
   .srow{display:flex;gap:10px;justify-content:flex-end;margin-top:8px}
   /* CoStar report import — wide review sheet */
   .sheet.wide{width:min(960px,100%)}
+  .ri-drop{display:flex;gap:12px;align-items:center;margin-top:12px;padding:14px 16px;border:1.5px dashed var(--line-2);border-radius:12px;cursor:pointer;color:var(--ink-soft);font:500 12.5px Inter;transition:border-color .15s,background .15s}
+  .ri-drop:hover,.ri-drop.over{border-color:var(--accent);background:rgba(45,110,126,.05)}
+  .ri-drop .ri-drop-ic{font-size:20px;flex:none}
+  .ri-drop span{color:var(--ink-faint);font-size:11.5px}
   .ri-prog{display:flex;gap:14px;align-items:center;padding:18px 4px}
   .ri-spin{width:26px;height:26px;border:3px solid var(--line-2);border-top-color:var(--accent);border-radius:50%;animation:rispin .8s linear infinite;flex:none}
   @keyframes rispin{to{transform:rotate(360deg)}}
@@ -1527,7 +1531,7 @@ window.DF = (function(){
       + '<button class="miniadd ai" onclick="DF.fileBrochures(\''+d.id+'\')" title="Drop the listing brokers’ marketing PDFs — Claude identifies each building, files the brochure &amp; floor plans under it, and refreshes the availability tracker">📎 File brochures</button>'
       + (candidateProps.length?'<button class="miniadd ai" onclick="DF.generateRfp(\''+d.id+'\')" title="Draft a Request for Proposal and send it to the listing brokers">📋 Generate RFP</button>':'')+'</div>';
 
-    var reportHtml = reportProps.length ? reportProps.map(function(p){ return reportCard(p, d.id); }).join('') : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No buildings in the market report yet. On a candidate building above, click “→ Add to market report”.</div>';
+    var reportHtml = reportProps.length ? reportProps.map(function(p){ return reportCard(p, d.id); }).join('') : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No buildings in the market report yet. Import the CoStar report above — imported buildings land here — or click “→ Add to market report” on a candidate.</div>';
     var surveyLinks = _dealSurveys.length ? '<div style="display:flex;flex-direction:column;gap:4px;margin-top:8px">'+_dealSurveys.map(function(s){
         return '<div style="display:flex;gap:10px;align-items:center;font:500 12px Inter;color:var(--ink-soft)">'
           + '<span style="color:var(--ink-faint)">🔗</span>'
@@ -1536,9 +1540,12 @@ window.DF = (function(){
           + '<button class="lk" onclick="DF.copySurveyLink(this,\''+esc(s.url)+'\')" style="font:600 11px Inter;background:none;border:0;color:var(--ink-faint);cursor:pointer">copy link</button>'
           + '<button class="delx" onclick="DF.deleteSurvey(this,\''+s.id+'\',\''+d.id+'\')" title="Forget this link (the shared page itself keeps working)">delete</button></div>';
       }).join('')+'</div>' : '';
-    var reportSection = (reportProps.length?bulkBar('report',d.id,'+ Add selected to tour'):'') + reportHtml + '<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:4px">'
-      + (reportProps.length?'<button class="share-btn" onclick="DF.generateMarketReport(\''+d.id+'\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/></svg> Generate market report</button>':'')
-      + (reportProps.length?'<button class="share-btn" onclick="DF.clientSurvey(\''+d.id+'\')" title="Build the co-branded client survey — a passcode-protected link with a dossier page per building (floor plans included, listing contacts omitted) plus a print-ready PDF"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> Client survey</button>':'')+'</div>'
+    var dropZone = '<div class="ri-drop" ondragover="DF.reportDragOver(event)" ondragleave="DF.reportDragLeave(event)" ondrop="DF.reportDrop(event,\''+d.id+'\')" onclick="DF.reportBrowse()">'
+      + '<div class="ri-drop-ic">📎</div><div><b>Drop floor plans &amp; brochures here</b> — or click to browse.<br><span>Claude files each PDF under its building, masks listing-broker contacts off floor plans, and refreshes availability. You review before anything saves.</span></div></div>'
+      + '<input type="file" id="rfDropInput" accept=".pdf,application/pdf" multiple style="display:none" onchange="DF.reportDropPick(\''+d.id+'\',this)">';
+    var reportSection = (reportProps.length?bulkBar('report',d.id,'+ Add selected to tour'):'') + reportHtml + dropZone + '<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:10px">'
+      + (reportProps.length?'<button class="share-btn" onclick="DF.generateMarketReport(\''+d.id+'\')" title="Print-ready market report — specs, availability, filed floor plans — for your own review or a working session"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/></svg> ⬇ Export market report</button>':'')
+      + (reportProps.length?'<button class="share-btn" onclick="DF.clientSurvey(\''+d.id+'\')" title="Build the co-branded client survey — a passcode-protected link with a dossier page per building (floor plans included, listing contacts omitted) plus a print-ready PDF"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> Client survey link</button>':'')+'</div>'
       + surveyLinks;
 
     // group rounds + documents by proposal
@@ -2499,6 +2506,7 @@ window.DF = (function(){
       openDeal(_ri.dealId);            // re-render Buildings behind the sheet (same tab stays active)
       openSheet('<h3>Report imported ✓</h3>'
         + '<div class="ri-done">'+esc(sum.line)+'</div>'
+        + '<div class="ssub">The buildings are in this deal\'s <b>Market report</b> section. Next: drop the listing brokers\' floor plans &amp; brochures on it, then export the report or build the client survey.</div>'
         + '<div class="ssub">Availability tracker: '+inserted+' new space'+(inserted===1?'':'s')+', '+refreshed+' refreshed — source “CoStar report”, internal only. They\'re live in the Market map\'s Spaces drawer.</div>'
         + '<div class="srow"><button class="btn pri" onclick="DF.close()">Done</button></div>');
     }catch(e){
@@ -2537,18 +2545,28 @@ window.DF = (function(){
   async function bfStart(){
     var files=Array.prototype.slice.call(($('bf_files').files)||[]);
     var err=$('bf_err');
-    if(!files.length){ err.textContent='Pick at least one PDF.'; return; }
-    if(files.length>BF_MAX_FILES){ err.textContent='Up to '+BF_MAX_FILES+' files per batch — split the rest into a second run.'; return; }
+    var v=bfValidate(files);
+    if(v){ err.textContent=v; return; }
+    $('bf_go').disabled=true; err.textContent='';
+    bfLaunch(files);
+  }
+  function bfValidate(files){
+    if(!files.length) return 'Pick at least one PDF.';
+    if(files.length>BF_MAX_FILES) return 'Up to '+BF_MAX_FILES+' files per batch — split the rest into a second run.';
     for(var i=0;i<files.length;i++){
       var f=files[i];
-      if(!/pdf$/i.test(f.name)&&f.type!=='application/pdf'){ err.textContent='"'+f.name+'" isn\'t a PDF.'; return; }
-      if(f.size>20*1024*1024){ err.textContent='"'+f.name+'" is over 20MB — export a lighter version.'; return; }
+      if(!/pdf$/i.test(f.name)&&f.type!=='application/pdf') return '"'+f.name+'" isn\'t a PDF.';
+      if(f.size>20*1024*1024) return '"'+f.name+'" is over 20MB — export a lighter version.';
     }
-    $('bf_go').disabled=true; err.textContent='';
+    return null;
+  }
+  // Shared launcher: stage every file as a job row, kick the background reader
+  // for each, then show progress + poll. Used by the modal AND the Market
+  // report drop zone.
+  async function bfLaunch(files){
     try{
       var s=await sb.auth.getSession(); var token=(s&&s.data&&s.data.session)?s.data.session.access_token:null;
       if(!token) throw new Error('Your session expired — please sign in again.');
-      // stage every file as a job row, then kick the background reader for each
       for(var k=0;k<files.length;k++){
         var file=files[k], jobId=bfNewJobId();
         var b64=await fileB64(file);
@@ -2561,6 +2579,27 @@ window.DF = (function(){
       }
       bfProgress(); bfPoll();
     }catch(e){ bfFail((e&&e.message)||String(e), /brochure_extracts.*(does not exist|relation)/i.test((e&&e.message)||'')?' Run supabase/brochure-filing.sql first.':''); }
+  }
+  /* Market-report drop zone: PDFs dropped (or browsed) go straight into the
+   * filing pipeline — no modal, the progress sheet opens immediately. */
+  function reportDragOver(ev){ ev.preventDefault(); ev.currentTarget.classList.add('over'); }
+  function reportDragLeave(ev){ ev.currentTarget.classList.remove('over'); }
+  function reportDrop(ev, dealId){
+    ev.preventDefault(); ev.currentTarget.classList.remove('over');
+    fileBrochuresDrop(dealId, Array.prototype.slice.call((ev.dataTransfer&&ev.dataTransfer.files)||[]));
+  }
+  function reportBrowse(){ var inp=$('rfDropInput'); if(inp) inp.click(); }
+  function reportDropPick(dealId, inp){
+    var files=Array.prototype.slice.call(inp.files||[]); inp.value='';
+    fileBrochuresDrop(dealId, files);
+  }
+  function fileBrochuresDrop(dealId, files){
+    if(!files.length) return;
+    var v=bfValidate(files);
+    if(v){ aiToast(v); return; }
+    _bf={dealId:dealId, jobs:[], plan:null, open:{}};
+    loadPortalBuildings();
+    bfLaunch(files);
   }
   function bfProgress(){
     var rows=_bf.jobs.map(function(j){
@@ -2981,6 +3020,15 @@ window.DF = (function(){
     try{ reportProps=await q(sb.from('deal_properties').select('*').eq('deal_id',dealId).eq('status','shortlisted')); }catch(e){}
     if(!reportProps.length){ alert('Add buildings to the market report first.'); return; }
     await loadPortalBuildings();
+    // filed floor-plan images (brochure filer output — already contact-scrubbed)
+    var plansByBld={};
+    try{
+      var mIds=reportProps.map(function(p){ return p.building_id; }).filter(Boolean);
+      if(mIds.length){
+        var med=await q(sb.from('building_media').select('building_id,kind,url,title').in('building_id',mIds).eq('kind','floorplan').order('sort_order'));
+        (med||[]).forEach(function(m){ if(m.url&&/\.(png|jpe?g|webp|gif)(\?|$)/i.test(m.url)){ (plansByBld[m.building_id]=plansByBld[m.building_id]||[]).push(m); } });
+      }
+    }catch(e){}
     var dateStr=new Date().toLocaleDateString(undefined,{year:'numeric',month:'long',day:'numeric'});
     var sections=reportProps.map(function(p,i){
       var b=(_portalBuildings||[]).filter(function(x){return x.id===p.building_id;})[0];
@@ -2998,6 +3046,8 @@ window.DF = (function(){
         + (specs?'<div class="mr-specs">'+specs+'</div>':'')
         + (avail?'<div class="mr-sub">Availability</div>'+avail:'')
         + '<div class="mr-sub">Walkable amenities <span class="mr-note">(0–10)</span></div><div class="mr-chips">'+amen+'</div>'
+        + (function(){ var pls=(plansByBld[p.building_id]||[]).slice(0,4);
+            return pls.length?'<div class="mr-sub">Floor plans</div><div class="mr-plans">'+pls.map(function(m){ return '<img src="'+esc(m.url)+'" alt="'+esc(m.title||'Floor plan')+'">'; }).join('')+'</div>':''; })()
         + (b.read?'<div class="mr-sub">The neighborhood</div><div class="mr-p">'+esc(b.read)+'</div>':'')
         + (b.features&&b.features.length?'<div class="mr-p"><b>Features:</b> '+esc(b.features.join(', '))+'</div>':'')
         + (c?'<div class="mr-p"><b>Listing contact:</b> '+esc(c.name||'')+(c.company?', '+esc(c.company):'')+(c.phone?' · '+esc(c.phone):'')+(c.email?' · '+esc(c.email):'')+'</div>':'')
@@ -3021,6 +3071,7 @@ window.DF = (function(){
       +'.mr-avail{width:100%;border-collapse:collapse;font-size:12.5px}.mr-avail th{text-align:left;border-bottom:2px solid #1a1d21;padding:5px 8px;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:#888}.mr-avail td{padding:6px 8px;border-bottom:1px solid #eceef1}.mr-avail .num{text-align:right}'
       +'.mr-chips{display:flex;flex-wrap:wrap;gap:6px}.mr-chip{background:#f4f5f7;border-radius:999px;padding:4px 11px;font-size:12px;color:#666}.mr-chip b{color:#1a1d21}'
       +'.mr-p{color:#333;margin:6px 0;font-size:13px}'
+      +'.mr-plans{display:flex;flex-wrap:wrap;gap:10px}.mr-plans img{max-width:47%;max-height:300px;object-fit:contain;border:1px solid #e2e5e9;border-radius:6px}'
       +'.mr-foot{border-top:1px solid #e2e5e9;margin-top:26px;padding-top:14px;font-size:11px;color:#999}'
       +'@media print{body{padding:24px}.mr-b{page-break-inside:avoid}}'
       +'</style></head><body>'
@@ -3032,7 +3083,16 @@ window.DF = (function(){
       +'<div class="mr-foot">Availability, rents and building specifications are current to the date shown and subject to confirmation. Amenity scores reflect walkable points of interest near each building. Prepared for your confidential review.</div>'
       +'</body></html>';
     var w=window.open('','_blank'); if(!w){ alert('Please allow pop-ups to generate the market report.'); return; }
-    w.document.write(html); w.document.close(); w.focus(); setTimeout(function(){ try{ w.print(); }catch(e){} }, 350);
+    w.document.write(html); w.document.close(); w.focus();
+    // wait for floor-plan images before printing (capped so a dead URL can't hang it)
+    var imgs=Array.prototype.slice.call(w.document.images).filter(function(im){ return !im.complete; });
+    var fired=false; function goPrint(){ if(fired) return; fired=true; try{ w.print(); }catch(e){} }
+    if(!imgs.length){ setTimeout(goPrint, 350); }
+    else{
+      var left=imgs.length;
+      imgs.forEach(function(im){ im.onload=im.onerror=function(){ if(--left<=0) setTimeout(goPrint, 120); }; });
+      setTimeout(goPrint, 4000);
+    }
   }
 
   /* ---------- client survey (Phase 3 of requirement→deliverable) ----------
@@ -5123,7 +5183,7 @@ window.DF = (function(){
     deleteDealAsk:deleteDealAsk, deleteDealCancel:deleteDealCancel, deleteDealDo:deleteDealDo,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask, recGo:recGo,
-    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, importReport:importReport, fileBrochures:fileBrochures, bulkSync:bulkSync, bulkAll:bulkAll, bulkMove:bulkMove, bulkDelete:bulkDelete, viewBuilding:viewBuilding, generateMarketReport:generateMarketReport, clientSurvey:clientSurvey, copySurveyLink:copySurveyLink, deleteSurvey:deleteSurvey, dealTab:dealTab, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, npMode:npMode, newRound:newRound,
+    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, importReport:importReport, fileBrochures:fileBrochures, reportDragOver:reportDragOver, reportDragLeave:reportDragLeave, reportDrop:reportDrop, reportBrowse:reportBrowse, reportDropPick:reportDropPick, bulkSync:bulkSync, bulkAll:bulkAll, bulkMove:bulkMove, bulkDelete:bulkDelete, viewBuilding:viewBuilding, generateMarketReport:generateMarketReport, clientSurvey:clientSurvey, copySurveyLink:copySurveyLink, deleteSurvey:deleteSurvey, dealTab:dealTab, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, npMode:npMode, newRound:newRound,
     generateRfp:generateRfp, copyRfp:copyRfp, downloadRfp:downloadRfp, sendRfpTo:sendRfpTo,
     setStage:setStage, basisChange:basisChange, marketCheck:marketCheck, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
     proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead,
