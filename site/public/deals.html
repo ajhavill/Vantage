@@ -2718,6 +2718,13 @@ window.DF = (function(){
   function propBrowse(dealId, buildingId){
     _pdropTarget=buildingId; var inp=$('rfDropInput'); if(inp) inp.click();
   }
+  // Expand a card's hidden chips in place ('display:contents' keeps them
+  // flowing in the same flex row-wrap as the visible ones).
+  function showAllChips(el){
+    var wrap=el.closest('.mchips'); if(!wrap) return;
+    var rest=wrap.querySelector('.mchips-rest'); if(rest) rest.style.display='contents';
+    el.remove();
+  }
   // Remove a filed chip (two-click confirm). Inside the chip's <a>, so the
   // link must not open while confirming/deleting.
   async function deleteMediaChip(ev, el, mediaId, storagePath, dealId){
@@ -3266,18 +3273,20 @@ window.DF = (function(){
     // filed media chips: click a brochure or floor plan to open it right here
     var media=_dealMedia[mkey]||[], chips='';
     if(media.length){
-      var shown=media.slice(0,canView?4:6);
-      chips='<div class="mchips">'+shown.map(function(m){
+      // first 6 visible; the rest expand in place ("+n more") so every filed
+      // file stays clickable AND deletable (hover a chip → ✕, click twice)
+      var chipHtml=function(m){
         var lbl=(m.title||(m.kind==='brochure'?'Brochure':'Floor plan'));
         return '<a class="mchip" href="'+esc(m.url)+'" target="_blank" rel="noopener" title="'+esc(m.title||'')+'">'+(m.kind==='brochure'?'📄':'🗺')+' '+esc(lbl.length>40?lbl.slice(0,38)+'…':lbl)
           +'<span class="mchip-x" onclick="DF.deleteMediaChip(event,this,\''+m.id+'\',\''+esc(m.storage_path||'')+'\',\''+dealId+'\')" title="Remove this file from the building">✕</span></a>';
-      }).join('')
-      +(media.length>shown.length
-          ?(canView
-              ?'<span class="mchip more" onclick="DF.viewBuilding(\''+esc(p.building_id)+'\',\''+dealId+'\')" title="All media on the building dossier">+'+(media.length-shown.length)+' more</span>'
-              :'<span class="mchip more" title="'+(media.length-shown.length)+' more file(s) on this building">+'+(media.length-shown.length)+' more</span>')
-          :'')
-      +'</div>';
+      };
+      var shown=media.slice(0,6), rest=media.slice(6);
+      chips='<div class="mchips">'+shown.map(chipHtml).join('')
+        +(rest.length
+            ?'<span class="mchips-rest" style="display:none">'+rest.map(chipHtml).join('')+'</span>'
+             +'<span class="mchip more" onclick="DF.showAllChips(this)" title="Show every file on this building">+'+rest.length+' more</span>'
+            :'')
+        +'</div>';
     }
     return '<div class="pcard"><div class="top">'
       + '<span class="bselwrap"><input type="checkbox" class="rsel" data-id="'+p.id+'" onchange="DF.bulkSync(\'report\')" title="Select to add to the tour"></span>'
@@ -5496,7 +5505,7 @@ window.DF = (function(){
     deleteDealAsk:deleteDealAsk, deleteDealCancel:deleteDealCancel, deleteDealDo:deleteDealDo,
     editCommission:editCommission, seedSteps:seedSteps, cycleStep:cycleStep, stepDue:stepDue, stepNote:stepNote, stepNA:stepNA,
     newTask:newTask, toggleTask:toggleTask, deleteTask:deleteTask, recGo:recGo,
-    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, importReport:importReport, fileBrochures:fileBrochures, reportDragOver:reportDragOver, reportDragLeave:reportDragLeave, reportDrop:reportDrop, reportBrowse:reportBrowse, reportDropPick:reportDropPick, propDrop:propDrop, propBrowse:propBrowse, deleteMediaChip:deleteMediaChip, bulkSync:bulkSync, bulkAll:bulkAll, bulkMove:bulkMove, bulkDelete:bulkDelete, viewBuilding:viewBuilding, generateMarketReport:generateMarketReport, clientSurvey:clientSurvey, copySurveyLink:copySurveyLink, deleteSurvey:deleteSurvey, dealTab:dealTab, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, npMode:npMode, newRound:newRound,
+    newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, importReport:importReport, fileBrochures:fileBrochures, reportDragOver:reportDragOver, reportDragLeave:reportDragLeave, reportDrop:reportDrop, reportBrowse:reportBrowse, reportDropPick:reportDropPick, propDrop:propDrop, propBrowse:propBrowse, deleteMediaChip:deleteMediaChip, showAllChips:showAllChips, bulkSync:bulkSync, bulkAll:bulkAll, bulkMove:bulkMove, bulkDelete:bulkDelete, viewBuilding:viewBuilding, generateMarketReport:generateMarketReport, clientSurvey:clientSurvey, copySurveyLink:copySurveyLink, deleteSurvey:deleteSurvey, dealTab:dealTab, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, npMode:npMode, newRound:newRound,
     generateRfp:generateRfp, copyRfp:copyRfp, downloadRfp:downloadRfp, sendRfpTo:sendRfpTo,
     setStage:setStage, basisChange:basisChange, marketCheck:marketCheck, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
     proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead,
