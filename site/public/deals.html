@@ -1564,7 +1564,7 @@ window.DF = (function(){
           + '<button class="lk" onclick="DF.copySurveyLink(this,\''+esc(s.url)+'\')" style="font:600 11px Inter;background:none;border:0;color:var(--ink-faint);cursor:pointer">copy link</button>'
           + '<button class="delx" onclick="DF.deleteSurvey(this,\''+s.id+'\',\''+d.id+'\')" title="Forget this link (the shared page itself keeps working)">delete</button></div>';
       }).join('')+'</div>' : '';
-    var dropZone = '<div class="ri-drop" ondragover="DF.reportDragOver(event)" ondragleave="DF.reportDragLeave(event)" ondrop="DF.reportDrop(event,\''+d.id+'\')" onclick="DF.reportBrowse()">'
+    var dropZone = '<div class="ri-drop" ondragenter="DF.reportDragOver(event)" ondragover="DF.reportDragOver(event)" ondragleave="DF.reportDragLeave(event)" ondrop="DF.reportDrop(event,\''+d.id+'\')" onclick="DF.reportBrowse()">'
       + '<div class="ri-drop-ic">📎</div><div><b>Drop floor plans &amp; brochures here</b> — or click to browse.<br><span>Claude files each PDF under its building, masks listing-broker contacts off floor plans, and refreshes availability. You review before anything saves.</span></div></div>'
       + '<input type="file" id="rfDropInput" accept=".pdf,application/pdf" multiple style="display:none" onchange="DF.reportDropPick(\''+d.id+'\',this)">';
     var reportSection = (reportProps.length?bulkBar('report',d.id,'+ Add selected to tour'):'') + reportHtml + dropZone + '<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:10px">'
@@ -2658,8 +2658,16 @@ window.DF = (function(){
     }catch(e){ bfFailPill((e&&e.message)||String(e), /brochure_extracts.*(does not exist|relation)/i.test((e&&e.message)||'')?' Run supabase/brochure-filing.sql first.':''); }
   }
   /* Market-report drop zone: PDFs dropped (or browsed) go straight into the
-   * filing pipeline — no modal, the progress sheet opens immediately. */
-  function reportDragOver(ev){ ev.preventDefault(); ev.stopPropagation(); ev.currentTarget.classList.add('over'); }
+   * filing pipeline — no modal, the progress sheet opens immediately.
+   * NOTE: this handler is wired to BOTH dragenter and dragover on every zone.
+   * Per the HTML drag-and-drop spec an element only becomes the drop target
+   * if DRAGENTER is canceled — cancel only dragover and the drop retargets to
+   * <body> (which is exactly what made drops open the PDF in a new tab). */
+  function reportDragOver(ev){
+    ev.preventDefault(); ev.stopPropagation();
+    try{ ev.dataTransfer.dropEffect='copy'; }catch(e){}
+    ev.currentTarget.classList.add('over');
+  }
   function reportDragLeave(ev){ ev.currentTarget.classList.remove('over'); }
   function reportDrop(ev, dealId){
     ev.preventDefault(); ev.stopPropagation(); ev.currentTarget.classList.remove('over');
@@ -3128,7 +3136,7 @@ window.DF = (function(){
       // per-building drop target — a PDF dropped here files under THIS building
       + (canView
           ? '<div class="pdrop" title="Drop this building\'s floor plans or brochure here (or click to browse) — it files under '+esc(p.name||'this building')+', no matching needed"'
-            + ' ondragover="DF.reportDragOver(event)" ondragleave="DF.reportDragLeave(event)"'
+            + ' ondragenter="DF.reportDragOver(event)" ondragover="DF.reportDragOver(event)" ondragleave="DF.reportDragLeave(event)"'
             + ' ondrop="DF.propDrop(event,\''+dealId+'\',\''+esc(p.building_id)+'\')"'
             + ' onclick="DF.propBrowse(\''+dealId+'\',\''+esc(p.building_id)+'\')">📎<span>Drop PDF</span></div>'
           : '<div class="pdrop off" title="Link this building to the catalog first (open it and pick its catalog match) — then plans &amp; brochures can file here">📎<span>Drop PDF</span></div>')
