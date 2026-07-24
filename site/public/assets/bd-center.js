@@ -185,7 +185,31 @@
         .finally(function () { btnEl.disabled = false; btnEl.textContent = "▶ Run engine now"; });
     });
   }
-  window.__bdAct = act; window.__bdRun = runNow; window.__bdLoad = load;
+  // Approve-all: one click sends every drafted email (batches of 15 server-side;
+  // keep calling while the server reports more remaining). Calls/mail stay manual.
+  function sendAll(btnEl) {
+    if (!confirm("Send every drafted email in the queue now?")) return;
+    btnEl.disabled = true; btnEl.textContent = "Sending…";
+    var failures = 0;
+    function pass() {
+      token(function (t) {
+        if (!t) { load(); return; }
+        fetch("/.netlify/functions/bd-queue-act", { method: "POST", body: JSON.stringify({ token: t, action: "send_all" }) })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (d && d.error) { alert(d.error); load(); return; }
+            failures += (d && d.failed && d.failed.length) || 0;
+            if (d && d.remaining > 0) { pass(); return; }
+            if (failures) alert(failures + " email" + (failures === 1 ? "" : "s") + " failed to send — they're marked in the queue with the reason.");
+            load();
+          })
+          .catch(function () { load(); });
+      });
+    }
+    pass();
+  }
+
+  window.__bdAct = act; window.__bdRun = runNow; window.__bdLoad = load; window.__bdSendAll = sendAll;
   window.__bdEdit = function (id) { S.editing = id; render(); };
   window.__bdCancel = function () { S.editing = null; render(); };
   window.__bdSave = function (id, btn) {
@@ -320,7 +344,11 @@
     if (!d) { el.innerHTML = head + '<div class="bdc-card"><div class="bdc-empty">' + (S.loading ? "Loading the system…" : (S.err ? "Couldn't load: " + esc(S.err) : "")) + "</div></div>"; return; }
 
     var q = d.queue || [];
-    var queueCard = '<div class="bdc-card"><h3>Today’s queue — ' + q.length + " touch" + (q.length === 1 ? "" : "es") + " waiting</h3>" +
+    var pendEmails = q.filter(function (x) { return x.touch_type === "email"; }).length;
+    var approveAll = pendEmails >= 2
+      ? '<button class="bdc-btn pri" style="margin-left:auto" onclick="__bdSendAll(this)">✓ Approve &amp; send all emails (' + pendEmails + ")</button>"
+      : "";
+    var queueCard = '<div class="bdc-card"><div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><h3 style="margin:0">Today’s queue — ' + q.length + " touch" + (q.length === 1 ? "" : "es") + " waiting</h3>" + approveAll + "</div>" +
       (q.length ? '<div class="bdc-q">' + q.map(queueItemHtml).join("") + "</div>"
         : '<div class="bdc-empty">Queue is clear. The engine drafts due touches every morning — to start someone, set their Marketing Program Status to active with a Next Touch Date in HubSpot, then ▶ Run engine now.</div>') +
       "</div>";
