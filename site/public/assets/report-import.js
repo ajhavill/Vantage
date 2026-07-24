@@ -152,7 +152,12 @@
           catalogName: cat ? (cat.name || null) : null,
           alreadyOnDeal: false,
           include: true,                     // review checkbox — all checked by default
-          spaces: (Array.isArray(b.spaces) ? b.spaces : []).map(normalizeSpace)
+          spaces: (Array.isArray(b.spaces) ? b.spaces : []).map(normalizeSpace),
+          // CoStar reports often embed each building's floor plans — carried
+          // RAW here ({page, contactBox} from the extractor); the deal page
+          // normalizes via BrochureFile._normalizePages and renders/masks/files
+          // them exactly like brochure-sourced plans on confirm.
+          floorPlanPages: Array.isArray(b.floorPlanPages) ? b.floorPlanPages : []
         };
         entry.alreadyOnDeal = isOnDeal(entry, existingProps);
         return entry;
