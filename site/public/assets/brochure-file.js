@@ -49,14 +49,33 @@
 
   /* ---------------- plan: per-file extractions -> reviewable model ---------------- */
 
-  // 1-based page list: ints ≥ 1, deduped, sorted.
+  // Clamp a normalized (0-1, top-left origin) contact box; null when
+  // malformed or degenerate — a bad box means "don't mask", never a crash.
+  function normBox(b) {
+    if (!b || typeof b !== "object") return null;
+    var x0 = Number(b.x0), y0 = Number(b.y0), x1 = Number(b.x1), y1 = Number(b.y1);
+    if (![x0, y0, x1, y1].every(isFinite)) return null;
+    x0 = Math.min(Math.max(x0, 0), 1); y0 = Math.min(Math.max(y0, 0), 1);
+    x1 = Math.min(Math.max(x1, 0), 1); y1 = Math.min(Math.max(y1, 0), 1);
+    if (x1 - x0 < 0.005 || y1 - y0 < 0.005) return null;
+    return { x0: x0, y0: y0, x1: x1, y1: y1 };
+  }
+
+  // Floor-plan page list -> [{page, contactBox}], deduped, sorted (pages ≥ 1).
+  // `contactBox` marks the listing-broker contact block the renderer MASKS
+  // before the image reaches any client surface. Accepts bare ints (legacy
+  // extractions) or {page, contactBox} objects; a duplicate page keeps its box
+  // if ANY duplicate carried one — masking errs toward scrubbing.
   function normalizePages(pages) {
-    var seen = {}, out = [];
+    var byPage = {}, seen = [];
     (Array.isArray(pages) ? pages : []).forEach(function (p) {
-      var n = toInt(p);
-      if (n != null && n >= 1 && !seen[n]) { seen[n] = 1; out.push(n); }
+      var n = toInt(p && typeof p === "object" ? p.page : p);
+      if (n == null || n < 1) return;
+      var box = (p && typeof p === "object") ? normBox(p.contactBox) : null;
+      if (!byPage[n]) { byPage[n] = { page: n, contactBox: box }; seen.push(n); }
+      else if (!byPage[n].contactBox && box) byPage[n].contactBox = box;
     });
-    return out.sort(function (a, b) { return a - b; });
+    return seen.sort(function (a, b) { return a - b; }).map(function (n) { return byPage[n]; });
   }
 
   function normalizeHighlights(hs) {
@@ -236,6 +255,7 @@
     spacePatch: spacePatch,
     summarize: summarize,
     _normalizePages: normalizePages,
+    _normBox: normBox,
     _safeName: safeName
   };
   if (typeof module !== "undefined" && module.exports) module.exports = API;

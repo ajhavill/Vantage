@@ -27,7 +27,11 @@ const FILES = [
         { suite: "Suite 210", floor: "2", sf: 4500, rate: 4.75, ratePeriod: "mo", rateBasis: "FSG", spaceType: "direct", availableDate: "2026-09-01" },
         { suite: "300", floor: "3", sf: "12,000", rate: null, ratePeriod: null, rateBasis: null, spaceType: "sublease", availableDate: null }
       ],
-      floorPlanPages: [5, 4, 4, 0, -2, "6", null],
+      floorPlanPages: [
+        { page: 5, contactBox: { x0: 0, y0: 0.9, x1: 1, y1: 1 } },   // footer contact strip -> masked
+        { page: 4, contactBox: null },
+        4, 0, -2, "6", null                                          // legacy ints + junk still tolerated
+      ],
       highlights: ["On-site fitness center", "4/1,000 parking", null, "", "Ocean views", "New lobby (2024)", "EV charging", "Too many"]
     } },
   { filename: "MysteryFlyer.pdf", result: {
@@ -43,7 +47,19 @@ ok("catalog match by address variant", e0.buildingId === "watergarden" && e0.cat
 ok("unknown building -> null buildingId (broker picks in review)", e1.buildingId === null);
 ok("missing label falls back to docType + name", e1.label === "Flyer — Arizona Court", e1.label);
 ok("spaces normalized via ReportImport (sf string -> int)", e0.spaces[1].sf === 12000, e0.spaces[1].sf);
-ok("floor-plan pages deduped, sorted, ints >= 1 only", JSON.stringify(e0.floorPlanPages) === "[4,5,6]", e0.floorPlanPages);
+ok("floor-plan pages deduped, sorted, pages >= 1 only", JSON.stringify(e0.floorPlanPages.map(function (p) { return p.page; })) === "[4,5,6]", e0.floorPlanPages);
+ok("contact box rides along on its page", e0.floorPlanPages[1].contactBox && e0.floorPlanPages[1].contactBox.y0 === 0.9, e0.floorPlanPages[1]);
+ok("pages without contact info carry null box", e0.floorPlanPages[0].contactBox === null && e0.floorPlanPages[2].contactBox === null);
+
+/* ---------------- contact-box scrub validation ---------------- */
+console.log("\n== normBox (contact scrub) ==");
+ok("valid box passes", JSON.stringify(BF._normBox({ x0: 0.1, y0: 0.85, x1: 0.9, y1: 0.98 })) === JSON.stringify({ x0: 0.1, y0: 0.85, x1: 0.9, y1: 0.98 }));
+ok("out-of-range coords clamped to 0-1", BF._normBox({ x0: -0.4, y0: 0.9, x1: 1.7, y1: 1.2 }).x0 === 0 && BF._normBox({ x0: -0.4, y0: 0.9, x1: 1.7, y1: 1.2 }).x1 === 1);
+ok("degenerate box -> null (no mask, no crash)", BF._normBox({ x0: 0.5, y0: 0.5, x1: 0.5, y1: 0.5 }) === null);
+ok("inverted box -> null", BF._normBox({ x0: 0.9, y0: 0.9, x1: 0.1, y1: 0.95 }) === null);
+ok("garbage -> null", BF._normBox({ x0: "a", y0: null, x1: 1, y1: 1 }) === null && BF._normBox("footer") === null && BF._normBox(null) === null);
+ok("duplicate page keeps the box when any duplicate had one",
+  BF._normalizePages([{ page: 7, contactBox: null }, { page: 7, contactBox: { x0: 0, y0: 0.9, x1: 1, y1: 1 } }])[0].contactBox !== null);
 ok("highlights drop blanks and cap at 5", e0.highlights.length === 5 && e0.highlights[0] === "On-site fitness center", e0.highlights);
 ok("entries default to include", e0.include === true && e1.include === true);
 ok("plan.asOf honors ctx.today", plan.asOf === "2026-07-23", plan.asOf);

@@ -2613,7 +2613,8 @@ window.DF = (function(){
         +   '<div class="ri-ad"><input class="ri-in" data-act="label" data-i="'+i+'" value="'+esc(e.label||'')+'" style="width:min(320px,100%)" title="Filing label shown on the building dossier"></div></td>'
         + '<td><span class="ri-badge dup">'+esc(e.docTypeLabel)+'</span></td>'
         + '<td>'+bcell+'</td>'
-        + '<td class="ri-cnt">'+(e.floorPlanPages.length?e.floorPlanPages.length+' plan pg':'—')+'<br>'+(e.spaces.length?e.spaces.length+' space'+(e.spaces.length===1?'':'s'):'—')+'</td>'
+        + (function(){ var scrub=e.floorPlanPages.filter(function(fp){ return fp.contactBox; }).length;
+            return '<td class="ri-cnt">'+(e.floorPlanPages.length?e.floorPlanPages.length+' plan pg'+(scrub?' <span title="Listing-broker contact info gets masked off '+scrub+' page'+(scrub===1?'':'s')+' before filing" style="color:var(--accent);cursor:default">· scrubbed</span>':''):'—')+'<br>'+(e.spaces.length?e.spaces.length+' space'+(e.spaces.length===1?'':'s'):'—')+'</td>'; })()
         + '<td class="ri-tog">'+((e.spaces.length||e.highlights.length)?(open?'▾':'▸'):'')+'</td></tr>';
       var det='';
       if(open&&(e.spaces.length||e.highlights.length)){
@@ -2681,12 +2682,21 @@ window.DF = (function(){
     });
     return _pdfjsP;
   }
-  function bfRenderPage(pdf, pageNo){
+  function bfRenderPage(pdf, pageNo, contactBox){
     return pdf.getPage(pageNo).then(function(page){
       var viewport=page.getViewport({scale:1.6});
       var canvas=document.createElement('canvas');
       canvas.width=Math.ceil(viewport.width); canvas.height=Math.ceil(viewport.height);
-      return page.render({canvasContext:canvas.getContext('2d'), viewport:viewport}).promise.then(function(){
+      var ctx2=canvas.getContext('2d');
+      return page.render({canvasContext:ctx2, viewport:viewport}).promise.then(function(){
+        if(contactBox){
+          // scrub the listing-broker contact block — these images go on client
+          // surfaces; pad the AI's box a hair so nothing peeks out at the edges
+          var pad=0.01, w=canvas.width, h=canvas.height;
+          var mx=Math.max(0,contactBox.x0-pad)*w, my=Math.max(0,contactBox.y0-pad)*h;
+          var mx2=Math.min(1,contactBox.x1+pad)*w, my2=Math.min(1,contactBox.y1+pad)*h;
+          ctx2.fillStyle='#fff'; ctx2.fillRect(mx,my,mx2-mx,my2-my);
+        }
         return new Promise(function(res){ canvas.toBlob(function(b){ res(b); },'image/png'); });
       });
     });
@@ -2717,17 +2727,17 @@ window.DF = (function(){
             var buf=await e._file.arrayBuffer();
             var pdf=await pdfjs.getDocument({data:buf}).promise;
             for(var j2=0;j2<e.floorPlanPages.length;j2++){
-              var pg=e.floorPlanPages[j2];
-              if(pg>pdf.numPages){ planSkipped++; continue; }
+              var fp=e.floorPlanPages[j2];
+              if(fp.page>pdf.numPages){ planSkipped++; continue; }
               try{
-                var blob=await bfRenderPage(pdf,pg);
+                var blob=await bfRenderPage(pdf,fp.page,fp.contactBox);
                 if(!blob){ planSkipped++; continue; }
-                var fpName=e.filename.replace(/\.pdf$/i,'')+'_p'+pg+'.png';
+                var fpName=e.filename.replace(/\.pdf$/i,'')+'_p'+fp.page+'.png';
                 var fpPath=BrochureFile.storagePath(e,'floorplan',bfUniq(),fpName);
                 var fpUp=await sb.storage.from(BF_BUCKET).upload(fpPath, blob, {upsert:false, contentType:'image/png'});
                 if(fpUp.error){ planSkipped++; continue; }
                 var fpPub=sb.storage.from(BF_BUCKET).getPublicUrl(fpPath);
-                await q(sb.from('building_media').insert(BrochureFile.floorplanMediaRow(e,pg,fpPath,fpPub&&fpPub.data?fpPub.data.publicUrl:null)));
+                await q(sb.from('building_media').insert(BrochureFile.floorplanMediaRow(e,fp.page,fpPath,fpPub&&fpPub.data?fpPub.data.publicUrl:null)));
                 planImgs++;
               }catch(pe){ planSkipped++; }
             }
