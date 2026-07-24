@@ -19,3 +19,8 @@
 # and seeds renewal-outreach tasks ahead of executed-lease expirations.
 [functions."deal-critical-dates"]
   schedule = "@daily"
+
+# Daily BD cadence engine: drafts every due marketing-program touch (from HubSpot
+# state) into bd_queue for the BD Command Center's morning approval.
+[functions."bd-cadence"]
+  schedule = "@daily"
