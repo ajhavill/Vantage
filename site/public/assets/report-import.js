@@ -167,14 +167,19 @@
 
   /* ---------------- write payloads ---------------- */
 
-  // deal_properties insert (same shape as the page's manual "+ Add building")
+  // deal_properties insert. Imported buildings land DIRECTLY in the deal's
+  // Market report section (status 'shortlisted') — the CoStar survey IS the
+  // market survey the broker ran for this requirement, so making them
+  // candidates first just added a manual "add to report" step. The review
+  // sheet's checkboxes are the curation point; a building the broker rules
+  // out later moves back with "↩ Remove from report".
   function dealPropertyRow(entry, dealId) {
     return {
       deal_id: dealId,
       building_id: entry.buildingId || null,
       name: entry.catalogName || entry.name || entry.address || "Untitled building",
       address: entry.address || null,
-      status: "considering"
+      status: "shortlisted"
     };
   }
 
