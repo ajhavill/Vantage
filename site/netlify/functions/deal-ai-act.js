@@ -41,6 +41,22 @@ exports.handler = async (event) => {
   const type = action.type;
   const p = action.params || {};
 
+  // add_clip is deal-independent: it files a newsletter clip into bd_clips (BD module).
+  if (type === "add_clip") {
+    if (!p.title && !p.url && !p.note) return okJSON({ error: "The clip needs at least a title, link, or note." });
+    const pr = await sb.rest("profiles?id=eq." + user.id + "&select=org_id&limit=1");
+    const orgId = pr.data && pr.data[0] && pr.data[0].org_id;
+    if (!orgId) return okJSON({ error: "No org on your profile." });
+    const clip = {
+      org_id: orgId, created_by: user.id, source: "van",
+      url: p.url ? String(p.url).slice(0, 1000) : null,
+      title: p.title ? String(p.title).slice(0, 300) : null,
+      note: p.note ? String(p.note).slice(0, 2000) : null
+    };
+    await sb.rest("bd_clips", { method: "POST", headers: WHDR, body: JSON.stringify(clip) });
+    return okJSON({ message: "Filed for the newsletter: " + (clip.title || clip.url || "note") });
+  }
+
   // Resolve the deal this action targets: the open deal, or (for add_task) a deal linked via params.
   const targetDeal = dealId || String((p && p.deal_id) || "");
   if (type !== "add_task" && !targetDeal) return okJSON({ error: "Open a deal first — that action needs a specific deal." });
