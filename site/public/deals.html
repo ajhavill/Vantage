@@ -626,6 +626,7 @@
   <a class="vnav-item" href="index.html?m=market"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M9 8h2M13 8h2M9 12h2M13 12h2M9 16h2M13 16h2"/></svg><span>Market</span></a>
   <a class="vnav-item" data-nav="pipeline" onclick="DF.showPipeline();return false" href="deals.html?view=pipeline" title="Active Deals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg><span>Active Deals</span></a>
   <a class="vnav-item" data-nav="clients" onclick="DF.showClients();return false" href="deals.html?view=clients" title="Clients"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 6.6a3 3 0 0 1 0 5.8M20.5 20a5 5 0 0 0-4-4.9"/></svg><span>Clients</span></a>
+  <a class="vnav-item" href="index.html?m=bd" title="BD Command Center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1.6"/></svg><span>BD</span></a>
   <a class="vnav-item" href="index.html?m=settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 0 1-4 0v-.2A1.7 1.7 0 0 0 7 19.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H3a2 2 0 0 1 0-4h.1A1.7 1.7 0 0 0 4.6 7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 4.6V4a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg><span>Settings</span></a>
   <div class="vnav-spacer"></div>
 </nav>
@@ -3538,10 +3539,12 @@ window.DF = (function(){
     var propSel = props.length
       ? '<select id="f_prop"><option value="">— none —</option>'+props.map(function(p){return '<option value="'+p.id+'">'+esc(p.name)+'</option>';}).join('')+'</select>'
       : '<select id="f_prop" disabled><option>Add a building first (optional)</option></select>';
+    await loadLetterheads();
     _npMode='ai';
 
     var aiPanel = '<div id="npAI" class="np-panel">'
-      + '<div class="np-hint">Read the checklist and talk — Van pulls out the values and fills your letterhead template <b>exactly as designed</b>. Only the highlighted blanks change; anything you skip stays blank for you to complete.</div>'
+      + '<div class="np-hint">Pick the template, read the checklist, and talk — Van pulls out the values and fills that letterhead <b>exactly as designed</b>. Only the highlighted blanks change; anything you skip stays blank for you to complete.</div>'
+      + letterheadPickerHtml(true)
       + aiChecklistHtml(dealId)
       + '<div class="fld"><label>Deal points <span class="u">type or talk</span><button class="vbtn" id="ai_mic" onclick="DF.toggleVoice(\'ai_mic\',\'ai_points\')" title="Dictate">🎙</button></label>'
       +   '<textarea id="ai_points" placeholder="e.g. Water Garden suite 300, ~9,500 SF, 7-year term, asking $5.95 FSG — push for 4 months free and $60 TI, 3% annual bumps, one 5-yr option..."></textarea></div>'
@@ -3992,7 +3995,17 @@ window.DF = (function(){
   }
   /* ---- letterhead template picker (BD → Proposals library + local file) ---- */
   function lhLastPick(){ try{ return localStorage.getItem('vantage_letterhead_tmpl')||''; }catch(e){ return ''; } }
-  function letterheadPickerHtml(){
+  function lhPick(v){ try{ localStorage.setItem('vantage_letterhead_tmpl', v); }catch(e){} }
+  // Load the letterhead library (proposal_templates rows carrying an uploaded
+  // .docx). Used by both Draft-with-AI sheets and the round sheet.
+  async function loadLetterheads(){
+    try{ _lhTmpls=((await q(sb.from('proposal_templates').select('id,name,storage_path').order('name')))||[]).filter(function(t){ return !!t.storage_path; }); }
+    catch(e){ _lhTmpls=[]; }
+    return _lhTmpls;
+  }
+  // compact = selector only (Draft-with-AI sheets, where the merge-tag
+  // explanation would be noise).
+  function letterheadPickerHtml(compact){
     var last=lhLastPick(), localName='';
     try{ localName=localStorage.getItem('vantage_letterhead_name')||''; }catch(e){}
     var opts=_lhTmpls.map(function(t){
@@ -4000,12 +4013,13 @@ window.DF = (function(){
     }).join('');
     var localLabel='This computer'+(localName?' — '+esc(localName):' — pick a .docx');
     opts += '<option value="__local"'+(last==='__local'||!_lhTmpls.length?' selected':'')+'>'+localLabel+'</option>';
-    return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 8px">'
+    return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 '+(compact?'12px':'8px')+'">'
       + '<label style="font:600 11px Inter;color:var(--ink-soft)">Template</label>'
-      + '<select id="lh_tmpl" style="padding:6px 9px;font-size:12.5px;max-width:320px">'+opts+'</select>'
+      + '<select id="lh_tmpl" onchange="DF.lhPick(this.value)" style="padding:6px 9px;font-size:12.5px;max-width:340px">'+opts+'</select>'
       + (_lhTmpls.length?'':'<span style="font:400 11px Inter;color:var(--ink-faint)">Upload letterheads in BD → Proposals to pick them here</span>')
       + '</div>'
-      + '<div style="font:400 11px Inter;color:var(--ink-faint);margin-bottom:12px">Fills the selected .docx exactly — only the merge tags change; anything left blank below stays blank in the document. <a href="#" onclick="DF.clearLetterhead();return false" style="color:var(--accent)">clear the saved local file</a></div>';
+      + (compact ? ''
+        : '<div style="font:400 11px Inter;color:var(--ink-faint);margin-bottom:12px">Fills the selected .docx exactly — only the merge tags change; anything left blank below stays blank in the document. <a href="#" onclick="DF.clearLetterhead();return false" style="color:var(--accent)">clear the saved local file</a></div>');
   }
   // Resolve the chosen template to raw .docx bytes: a stored library template is
   // downloaded from the private bd-assets bucket; "__local" uses the remembered
@@ -4718,7 +4732,9 @@ window.DF = (function(){
       + '</div>';
   }
   async function aiDraft(dealId, proposalId){
-    openSheet('<h3>Draft with AI</h3><div class="ssub">Read the checklist and talk — Van pulls out the values and fills your letterhead template exactly as designed. Only the highlighted blanks change; anything you skip stays blank.</div>'
+    await loadLetterheads();
+    openSheet('<h3>Draft with AI</h3><div class="ssub">Pick the template, read the checklist, and talk — Van pulls out the values and fills that letterhead exactly as designed. Only the highlighted blanks change; anything you skip stays blank.</div>'
+      + letterheadPickerHtml(true)
       + aiChecklistHtml(dealId)
       + '<div class="fld"><label>Deal points <span class="u">type or talk</span><button class="vbtn" id="ai_mic" onclick="DF.toggleVoice(\'ai_mic\',\'ai_points\')" title="Dictate">🎙</button></label>'
       +   '<textarea id="ai_points" placeholder="e.g. Landlord is Jane Smith at Ocean Ave Partners — 1733 Ocean Ave suite 300, Santa Monica CA 90401, 9,500 SF, 5-year term commencing October 1, $5.25/SF/month FSG, 3% bumps, 2027 base year, 12 parking spaces..."></textarea></div>'
@@ -5675,7 +5691,8 @@ window.DF = (function(){
     generateRfp:generateRfp, copyRfp:copyRfp, downloadRfp:downloadRfp, sendRfpTo:sendRfpTo,
     setStage:setStage, basisChange:basisChange, marketCheck:marketCheck, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
     proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead, _mergeData:buildMergeData,
-    _lhPicker:function(t){ _lhTmpls=t||[]; return letterheadPickerHtml(); }, _lhBytes:letterheadBytes,
+    lhPick:lhPick,
+    _lhPicker:function(t,c){ _lhTmpls=t||[]; return letterheadPickerHtml(c); }, _lhBytes:letterheadBytes,
     shareDeal:shareDeal, toggleProposalVisible:toggleProposalVisible,
     attachDoc:attachDoc, attachLeaseDoc:attachLeaseDoc, downloadDoc:downloadDoc, deleteDoc:deleteDoc, toggleDocVisible:toggleDocVisible,
     aiDraft:aiDraft, aiPickTmpl:aiPickTmpl, aiDocx:aiDocx, toggleVoice:toggleVoice, editRound:editRound, extractFromPdf:extractFromPdf,
