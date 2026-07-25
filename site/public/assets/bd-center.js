@@ -140,7 +140,7 @@
     program: null, programErr: null, progDetail: false,
     templates: null, tplErr: null, tplEditing: null,
     assets: null, assetErr: null, assetEditing: null, assetKind: "collateral",
-    props: null, propErr: null, propOpen: null, propQ: "", propStatus: "all"
+    props: null, propErr: null, propEditing: null
   };
 
   /* ---------------- CSS ---------------- */
@@ -232,28 +232,6 @@
     ".bdc-pcard .co{font-size:12px;color:var(--ink-soft,#55606F)}" +
     ".bdc-pcard .st{font-size:11px;color:var(--ink-faint,#8A93A0);margin-top:3px}" +
     ".bdc-stepchip{display:inline-block;font-size:10.5px;font-weight:700;border-radius:20px;padding:1px 7px;background:var(--accent,#2D6E7E);color:#fff;margin-right:5px}" +
-    /* proposals library */
-    ".bdc-prop{border:1px solid var(--line,#E2DDD2);border-radius:10px;background:var(--paper,#F7F5F0);margin-bottom:9px;overflow:hidden}" +
-    ".bdc-prop-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:11px 14px;cursor:pointer}" +
-    ".bdc-prop-h:hover{background:var(--paper-2,#FCFBF8)}" +
-    ".bdc-prop-t{font-weight:600;font-size:14px;color:var(--ink,#1A2230)}" +
-    ".bdc-prop-c{font-size:12.5px;color:var(--ink-soft,#55606F)}" +
-    ".bdc-prop-m{margin-left:auto;font-size:11.5px;color:var(--ink-faint,#8A93A0);display:flex;gap:9px;align-items:center}" +
-    ".bdc-pst{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:20px;border:1px solid var(--line-2,#D2CCBF);color:var(--ink-soft,#55606F)}" +
-    ".bdc-pst.accepted{border-color:var(--fitness,#3F8F6B);color:var(--fitness,#3F8F6B)}" +
-    ".bdc-pst.declined,.bdc-pst.withdrawn{border-color:var(--dining,#C9543F);color:var(--dining,#C9543F)}" +
-    ".bdc-econ{display:flex;gap:6px;flex-wrap:wrap;padding:0 14px 11px}" +
-    ".bdc-echip{font-size:11.5px;border:1px solid var(--line,#E2DDD2);border-radius:7px;padding:3px 9px;background:var(--paper-2,#FCFBF8);color:var(--ink,#1A2230)}" +
-    ".bdc-echip b{color:var(--ink-soft,#55606F);font-weight:600}" +
-    ".bdc-prop-b{border-top:1px solid var(--line,#E2DDD2);padding:11px 14px;background:var(--paper-2,#FCFBF8)}" +
-    ".bdc-rnd{border-left:3px solid var(--line-2,#D2CCBF);padding:4px 0 8px 11px;margin-bottom:6px}" +
-    ".bdc-rnd.landlord{border-left-color:var(--coffee,#A56B3D)}" +
-    ".bdc-rnd.tenant{border-left-color:var(--accent,#2D6E7E)}" +
-    ".bdc-rnd-h{font-size:12.5px;font-weight:600;color:var(--ink,#1A2230)}" +
-    ".bdc-rnd-s{font-size:12px;color:var(--ink-soft,#55606F);margin:2px 0 4px;white-space:pre-wrap}" +
-    ".bdc-filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}" +
-    ".bdc-filters input,.bdc-filters select{border:1px solid var(--line-2,#D2CCBF);border-radius:8px;padding:7px 10px;font:inherit;font-size:13px;background:#fff;color:var(--ink,#1A2230)}" +
-    ".bdc-filters input{flex:1 1 260px}" +
     /* cadence timeline */
     ".bdc-tl{position:relative;margin:6px 0 0 10px;padding-left:26px;border-left:2px solid var(--line-2,#D2CCBF)}" +
     ".bdc-tlstep{position:relative;padding:0 0 6px}" +
@@ -709,16 +687,90 @@
     });
   }
 
-  // Proposals: firm-wide library of everything negotiated on every deal, plus
-  // the reusable proposal templates. Read-only here — editing lives on the deal.
+  // Proposals: the store for TEMPLATED proposals — the reusable documents we
+  // send, nothing else (Andrew's call). Live deal proposals stay on their deal
+  // page. Rows are proposal_templates, which already carries its own RLS
+  // (your own + firm-shared) and feeds the AI drafter on the deal page.
   function loadProposals(force) {
+    var sb = getSB(); if (!sb || !sb.from) { S.propErr = "signin"; render(); return; }
     if (S.props && !force) { render(); return; }
-    token(function (t) {
-      if (!t) { S.propErr = "signin"; render(); return; }
-      fetch("/.netlify/functions/bd-proposals", { method: "POST", body: JSON.stringify({ token: t }) })
-        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-        .then(function (d) { S.props = d; S.propErr = null; render(); })
-        .catch(function (e) { S.propErr = String(e.message || e); render(); });
+    sb.from("proposal_templates").select("*").order("updated_at", { ascending: false })
+      .then(function (r) {
+        if (r.error) { S.propErr = sbErr(r.error); } else { S.props = r.data || []; S.propErr = null; }
+        render();
+      });
+  }
+
+  function propSave(id, btn) {
+    var nm = $("bdcPropNm-" + id), ds = $("bdcPropDs-" + id), bo = $("bdcPropBo-" + id);
+    var name = nm ? nm.value.trim() : "";
+    if (!name) { alert("Give the template a name."); return; }
+    var sb = getSB(); if (!sb) return;
+    btn.disabled = true;
+    sb.from("proposal_templates").update({ name: name, description: ds ? (ds.value || null) : null, body: bo ? bo.value : null, updated_at: new Date().toISOString() }).eq("id", id)
+      .then(function (r) {
+        btn.disabled = false;
+        if (r.error) { alert("Couldn't save: " + sbErr(r.error)); return; }
+        S.propEditing = null; loadProposals(true);
+      });
+  }
+  function propAdd(btn) {
+    var name = ($("bdcPropNewNm") || {}).value || "", ds = ($("bdcPropNewDs") || {}).value || "", bo = ($("bdcPropNewBo") || {}).value || "";
+    name = name.trim();
+    if (!name) { alert("Give the template a name."); return; }
+    var sb = getSB(); if (!sb) return;
+    btn.disabled = true;
+    token(function (t, user) {
+      if (!user) { btn.disabled = false; return; }
+      sb.from("proposal_templates").insert({ owner_id: user.id, name: name, description: ds.trim() || null, body: bo || null, is_shared: true })
+        .then(function (r) {
+          btn.disabled = false;
+          if (r.error) { alert("Couldn't add the template: " + sbErr(r.error)); return; }
+          ["bdcPropNewNm", "bdcPropNewDs", "bdcPropNewBo"].forEach(function (i) { if ($(i)) $(i).value = ""; });
+          loadProposals(true);
+        });
+    });
+  }
+  function propDelete(id) {
+    if (!confirm("Delete this proposal template? Deals already drafted from it are unaffected.")) return;
+    var sb = getSB(); if (!sb) return;
+    sb.from("proposal_templates").delete().eq("id", id).then(function (r) {
+      if (r.error) { alert("Couldn't delete: " + sbErr(r.error)); return; }
+      loadProposals(true);
+    });
+  }
+  // The template document itself (Word/PDF) lives in the private bd-assets
+  // bucket under the org's folder; storage_path points at it.
+  function propUpload(input, id) {
+    var f = input.files && input.files[0];
+    if (!f) return;
+    if (f.size > 25 * 1024 * 1024) { alert("Keep template files under 25 MB."); return; }
+    var sb = getSB(); if (!sb || !sb.storage) return;
+    token(function (t, user) {
+      if (!user) return;
+      sb.from("profiles").select("org_id").eq("id", user.id).single().then(function (pr) {
+        var org = pr && pr.data && pr.data.org_id;
+        if (!org) { alert("No org on your profile."); return; }
+        var path = org + "/proposals/" + Date.now() + "-" + f.name.replace(/[^A-Za-z0-9._-]/g, "_");
+        sb.storage.from("bd-assets").upload(path, f).then(function (ur) {
+          if (ur.error) { alert("Upload failed: " + sbErr(ur.error)); return; }
+          if (id) {
+            sb.from("proposal_templates").update({ storage_path: path, updated_at: new Date().toISOString() }).eq("id", id).then(function () { loadProposals(true); });
+          } else {
+            token(function (t2, u2) {
+              sb.from("proposal_templates").insert({ owner_id: u2.id, name: f.name.replace(/\.[^.]+$/, ""), storage_path: path, is_shared: true })
+                .then(function () { loadProposals(true); });
+            });
+          }
+        });
+      });
+    });
+  }
+  function propOpenFile(path) {
+    var sb = getSB(); if (!sb || !sb.storage) return;
+    sb.storage.from("bd-assets").createSignedUrl(path, 3600).then(function (r) {
+      var u = r && r.data && (r.data.signedUrl || r.data.signedURL);
+      if (u) window.open(u, "_blank"); else alert("Couldn't open that file.");
     });
   }
 
@@ -768,9 +820,10 @@
     else load();
   };
 
-  window.__bdPropOpen = function (id) { S.propOpen = S.propOpen === id ? null : id; render(); };
-  window.__bdPropQ = function (v) { S.propQ = v; render(); };
-  window.__bdPropStatus = function (v) { S.propStatus = v; render(); };
+  window.__bdPropEdit = function (id) { S.propEditing = id; render(); };
+  window.__bdPropCancel = function () { S.propEditing = null; render(); };
+  window.__bdPropSave = propSave; window.__bdPropAdd = propAdd; window.__bdPropDelete = propDelete;
+  window.__bdPropUpload = propUpload; window.__bdPropOpenFile = propOpenFile;
 
   /* ---------------- render: shared ---------------- */
   function dot(state) { return '<span class="bdc-dot ' + state + '"></span>'; }
@@ -1292,96 +1345,61 @@
       '<div class="bdc-note">Collateral is what physically goes out — upload the print-ready file and attach it to the cadence step that mails it. Emails here are the one-off copy you reach for by hand (tour follow-ups, renewal openers); the cadence steps keep their own copy inside the program. Merge fields: {{first_name}} {{last_name}} {{company}} {{submarket}} {{title}} — unknown fields render blank, never as braces.</div>';
   }
 
-  /* ---------------- render: dispatch ---------------- */
-  /* ---------------- render: proposals ---------------- */
-  function money(n) { return (n == null || n === "") ? null : "$" + Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 }); }
-  function econChips(r) {
-    if (!r) return "";
-    var bits = [];
-    if (r.size_sf != null) bits.push(["Size", Number(r.size_sf).toLocaleString() + " SF"]);
-    if (r.base_rent_psf != null) bits.push(["Rate", money(r.base_rent_psf) + "/SF" + (r.rent_basis ? " " + r.rent_basis : "")]);
-    if (r.term_months != null) bits.push(["Term", r.term_months + " mo"]);
-    if (r.free_rent_months != null) bits.push(["Free rent", r.free_rent_months + " mo"]);
-    if (r.ti_psf != null) bits.push(["TI", money(r.ti_psf) + "/SF"]);
-    if (r.annual_escalation_pct != null) bits.push(["Bumps", r.annual_escalation_pct + "%/yr"]);
-    if (r.opex_psf != null) bits.push(["Opex", money(r.opex_psf) + "/SF"]);
-    if (!bits.length) return "";
-    return '<div class="bdc-econ">' + bits.map(function (b) {
-      return '<span class="bdc-echip"><b>' + esc(b[0]) + ":</b> " + esc(b[1]) + "</span>";
-    }).join("") + "</div>";
-  }
-
-  function propHtml(p) {
-    var open = S.propOpen === p.id;
-    var head = '<div class="bdc-prop-h" onclick="__bdPropOpen(\'' + p.id + "')\">" +
-      '<span class="bdc-prop-t">' + esc(p.title) + "</span>" +
-      (p.client_name ? '<span class="bdc-prop-c">' + esc(p.client_name) + "</span>" : "") +
-      '<span class="bdc-pst ' + esc(p.status) + '">' + esc(p.status) + "</span>" +
-      '<span class="bdc-prop-m">' + p.round_count + " round" + (p.round_count === 1 ? "" : "s") +
-      (p.doc_count ? " · " + p.doc_count + " file" + (p.doc_count === 1 ? "" : "s") : "") +
-      " · " + ago(p.updated_at || p.created_at) + "<span>" + (open ? "▲" : "▼") + "</span></span></div>";
-
-    var body = "";
-    if (open) {
-      var rounds = (p.rounds || []).map(function (r) {
-        var who = r.from_party === "landlord" ? "Landlord" : "Tenant side";
-        return '<div class="bdc-rnd ' + esc(r.from_party || "tenant") + '">' +
-          '<div class="bdc-rnd-h">Round ' + (r.round_no || "?") + " — " + who + '<span style="font-weight:400;color:var(--ink-faint,#8A93A0)"> · ' + ago(r.created_at) + "</span></div>" +
-          (r.summary ? '<div class="bdc-rnd-s">' + esc(r.summary) + "</div>" : "") +
-          econChips(r) + "</div>";
-      }).join("");
-      body = '<div class="bdc-prop-b">' +
-        (rounds || '<div class="bdc-empty">No rounds recorded on this proposal yet.</div>') +
-        '<div style="margin-top:8px"><a class="bdc-btn" href="deals.html?deal=' + encodeURIComponent(p.deal_id) + '" style="text-decoration:none;display:inline-block">Open the deal →</a></div>' +
-        "</div>";
+  /* ---------------- render: proposals (templated proposals only) ---------------- */
+  function propCardHtml(t) {
+    var editing = S.propEditing === t.id;
+    if (editing) {
+      return '<div class="bdc-item email"><div class="bdc-edit">' +
+        '<input id="bdcPropNm-' + t.id + '" value="' + esc(t.name || "") + '" placeholder="Template name" />' +
+        '<input id="bdcPropDs-' + t.id + '" value="' + esc(t.description || "") + '" placeholder="When to use it" />' +
+        '<textarea id="bdcPropBo-' + t.id + '" placeholder="The proposal text. Placeholders like {{tenant_name}} get filled per deal.">' + esc(t.body || "") + "</textarea>" +
+        '<div class="bdc-item-act">' +
+        '<button class="bdc-btn pri" onclick="__bdPropSave(\'' + t.id + "',this)\">Save</button>" +
+        '<button class="bdc-btn" onclick="__bdPropCancel()">Cancel</button>' +
+        '<label class="bdc-btn" style="display:inline-block">' + (t.storage_path ? "Replace file" : "Attach file") +
+        '<input type="file" style="display:none" accept=".docx,.doc,.pdf,.rtf,.txt" onchange="__bdPropUpload(this,\'' + t.id + '\')" /></label>' +
+        '<button class="bdc-btn dngr" onclick="__bdPropDelete(\'' + t.id + "')\">Delete</button>" +
+        "</div></div></div>";
     }
-    return '<div class="bdc-prop">' + head + (open ? "" : econChips(p.latest)) + body + "</div>";
+    var fields = Array.isArray(t.fields) ? t.fields : [];
+    return '<div class="bdc-item email">' +
+      '<div class="bdc-item-top"><span class="bdc-who">' + esc(t.name || "Untitled template") + "</span>" +
+      (t.storage_path ? '<span class="bdc-src">file</span>' : "") +
+      '<span class="bdc-due">updated ' + ago(t.updated_at) + "</span></div>" +
+      (t.description ? '<div class="bdc-step">' + esc(t.description) + "</div>" : "") +
+      (t.body ? '<div class="bdc-prev">' + esc(t.body) + "</div>" : "") +
+      '<div class="bdc-item-act">' +
+      '<button class="bdc-btn" onclick="__bdPropEdit(\'' + t.id + "')\">Edit</button>" +
+      (t.storage_path ? '<button class="bdc-btn" onclick="__bdPropOpenFile(\'' + esc(t.storage_path) + "')\">Open file</button>" : "") +
+      (fields.length ? '<span class="bdc-note" style="margin:0;align-self:center">' + fields.length + " merge field" + (fields.length === 1 ? "" : "s") + "</span>" : "") +
+      "</div></div>";
   }
 
   function renderProposals(el) {
-    var head = viewHead("Proposals", "Every proposal you've negotiated, across every deal — plus the templates that produce them.",
+    var head = viewHead("Proposals", "Your templated proposals — the reusable documents you send. Live deal proposals stay on their deal.",
       '<button class="bdc-btn" onclick="__bdReloadForce()">⟳ Refresh</button>');
     if (S.propErr === "signin") { el.innerHTML = head + signinCard(); return; }
 
-    var d = S.props;
-    if (!d) { el.innerHTML = head + '<div class="bdc-card"><div class="bdc-empty">' + (S.propErr ? "Couldn't load: " + esc(S.propErr) : "Loading proposals…") + "</div></div>"; return; }
+    var list = S.props;
+    if (list === null) { el.innerHTML = head + '<div class="bdc-card"><div class="bdc-empty">' + (S.propErr ? "Couldn't load: " + esc(S.propErr) : "Loading templates…") + "</div></div>"; return; }
 
-    var all = d.proposals || [];
-    var q = String(S.propQ || "").toLowerCase();
-    var list = all.filter(function (p) {
-      if (S.propStatus !== "all" && p.status !== S.propStatus) return false;
-      if (!q) return true;
-      return (p.title + " " + (p.client_name || "")).toLowerCase().indexOf(q) >= 0;
-    });
+    var addCard = '<div class="bdc-card"><h3>Add a proposal template</h3><div class="bdc-form">' +
+      '<input id="bdcPropNewNm" placeholder="Template name — e.g. “Havill &amp; Co. standard proposal”" />' +
+      '<input id="bdcPropNewDs" placeholder="When to use it (optional)" />' +
+      '<textarea id="bdcPropNewBo" rows="4" placeholder="The proposal text (optional). Placeholders like {{tenant_name}} or {{base_rent_psf}} get filled per deal."></textarea>' +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+      '<button class="bdc-btn pri" onclick="__bdPropAdd(this)">+ Add template</button>' +
+      '<label class="bdc-btn" style="display:inline-block">Upload a document<input type="file" style="display:none" accept=".docx,.doc,.pdf,.rtf,.txt" onchange="__bdPropUpload(this,null)" /></label>' +
+      '<span class="bdc-note" style="margin:0">Word or PDF is fine — uploading one on its own creates a template named after the file.</span>' +
+      "</div></div></div>";
 
-    var filters = '<div class="bdc-filters">' +
-      '<input placeholder="Search by proposal or client…" value="' + esc(S.propQ) + '" oninput="__bdPropQ(this.value)" />' +
-      '<select onchange="__bdPropStatus(this.value)">' +
-      ["all", "active", "accepted", "declined", "withdrawn"].map(function (s) {
-        return '<option value="' + s + '"' + (S.propStatus === s ? " selected" : "") + ">" + (s === "all" ? "All statuses" : s.charAt(0).toUpperCase() + s.slice(1)) + "</option>";
-      }).join("") + "</select></div>";
-
-    var libCard = '<div class="bdc-card"><h3>Proposal library — ' + list.length + " of " + all.length + "</h3>" + filters +
-      (list.length ? list.map(propHtml).join("")
-        : '<div class="bdc-empty">' + (all.length
-            ? "Nothing matches that filter."
-            : "No proposals yet. They're created on a deal (Deals → a deal → Proposals), and every one you negotiate shows up here automatically.") + "</div>") +
+    var listCard = '<div class="bdc-card"><h3>Proposal templates — ' + list.length + "</h3>" +
+      (list.length ? '<div class="bdc-q">' + list.map(propCardHtml).join("") + "</div>"
+        : '<div class="bdc-empty">No proposal templates yet. Add your standard proposal above — you have <em>Havill-Co-Proposal-Template.docx</em> sitting in the repo folder ready to upload.</div>') +
       "</div>";
 
-    var tpls = d.templates || [];
-    var tplCard = '<div class="bdc-card"><h3>Proposal templates — ' + tpls.length + "</h3>" +
-      (tpls.length ? tpls.map(function (t) {
-        return '<div class="bdc-clip"><div class="bdy"><div class="t">' + esc(t.name) + "</div>" +
-          (t.description ? '<div class="nt">' + esc(t.description) + "</div>" : "") +
-          '<div class="mt">' + (t.is_shared ? "firm-wide" : "personal") +
-          (Array.isArray(t.fields) && t.fields.length ? " · " + t.fields.length + " merge field" + (t.fields.length === 1 ? "" : "s") : "") +
-          " · updated " + ago(t.updated_at) + "</div></div></div>";
-      }).join("")
-        : '<div class="bdc-empty">No proposal templates yet — they feed the AI drafter on the deal page.</div>') +
-      "</div>";
-
-    el.innerHTML = head + libCard + tplCard +
-      '<div class="bdc-note">Read-only library: proposals are authored and negotiated on their deal page, and every round lands here automatically. Use it to pull up what you agreed at a building, compare terms you\'ve won, and feed real numbers into a pitch.</div>';
+    el.innerHTML = head + addCard + listCard +
+      '<div class="bdc-note">These are the same templates the AI drafter uses on a deal page: it fills the placeholders from that deal\'s notes and proposal rounds. Templates are firm-wide by default; files live in private storage and open through a signed link.</div>';
   }
 
   function render() {
