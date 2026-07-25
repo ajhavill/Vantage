@@ -131,7 +131,7 @@
     return found ? found[1] : (c || "—");
   }
 
-  var VIEWS = { overview: "Command Center", newsletter: "Newsletter", program: "Marketing Programs", signals: "Signals", templates: "Templates" };
+  var VIEWS = { overview: "Command Center", newsletter: "Newsletter", program: "Marketing Programs", proposals: "Proposals", signals: "Signals", templates: "Templates" };
   var S = {
     view: "overview",
     data: null, loading: false, err: null, editing: null,
@@ -139,7 +139,8 @@
     feeds: null, sigHist: null, sigErr: null,
     program: null, programErr: null, progDetail: false,
     templates: null, tplErr: null, tplEditing: null,
-    assets: null, assetErr: null, assetEditing: null, assetKind: "collateral"
+    assets: null, assetErr: null, assetEditing: null, assetKind: "collateral",
+    props: null, propErr: null, propOpen: null, propQ: "", propStatus: "all"
   };
 
   /* ---------------- CSS ---------------- */
@@ -231,6 +232,28 @@
     ".bdc-pcard .co{font-size:12px;color:var(--ink-soft,#55606F)}" +
     ".bdc-pcard .st{font-size:11px;color:var(--ink-faint,#8A93A0);margin-top:3px}" +
     ".bdc-stepchip{display:inline-block;font-size:10.5px;font-weight:700;border-radius:20px;padding:1px 7px;background:var(--accent,#2D6E7E);color:#fff;margin-right:5px}" +
+    /* proposals library */
+    ".bdc-prop{border:1px solid var(--line,#E2DDD2);border-radius:10px;background:var(--paper,#F7F5F0);margin-bottom:9px;overflow:hidden}" +
+    ".bdc-prop-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:11px 14px;cursor:pointer}" +
+    ".bdc-prop-h:hover{background:var(--paper-2,#FCFBF8)}" +
+    ".bdc-prop-t{font-weight:600;font-size:14px;color:var(--ink,#1A2230)}" +
+    ".bdc-prop-c{font-size:12.5px;color:var(--ink-soft,#55606F)}" +
+    ".bdc-prop-m{margin-left:auto;font-size:11.5px;color:var(--ink-faint,#8A93A0);display:flex;gap:9px;align-items:center}" +
+    ".bdc-pst{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:20px;border:1px solid var(--line-2,#D2CCBF);color:var(--ink-soft,#55606F)}" +
+    ".bdc-pst.accepted{border-color:var(--fitness,#3F8F6B);color:var(--fitness,#3F8F6B)}" +
+    ".bdc-pst.declined,.bdc-pst.withdrawn{border-color:var(--dining,#C9543F);color:var(--dining,#C9543F)}" +
+    ".bdc-econ{display:flex;gap:6px;flex-wrap:wrap;padding:0 14px 11px}" +
+    ".bdc-echip{font-size:11.5px;border:1px solid var(--line,#E2DDD2);border-radius:7px;padding:3px 9px;background:var(--paper-2,#FCFBF8);color:var(--ink,#1A2230)}" +
+    ".bdc-echip b{color:var(--ink-soft,#55606F);font-weight:600}" +
+    ".bdc-prop-b{border-top:1px solid var(--line,#E2DDD2);padding:11px 14px;background:var(--paper-2,#FCFBF8)}" +
+    ".bdc-rnd{border-left:3px solid var(--line-2,#D2CCBF);padding:4px 0 8px 11px;margin-bottom:6px}" +
+    ".bdc-rnd.landlord{border-left-color:var(--coffee,#A56B3D)}" +
+    ".bdc-rnd.tenant{border-left-color:var(--accent,#2D6E7E)}" +
+    ".bdc-rnd-h{font-size:12.5px;font-weight:600;color:var(--ink,#1A2230)}" +
+    ".bdc-rnd-s{font-size:12px;color:var(--ink-soft,#55606F);margin:2px 0 4px;white-space:pre-wrap}" +
+    ".bdc-filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}" +
+    ".bdc-filters input,.bdc-filters select{border:1px solid var(--line-2,#D2CCBF);border-radius:8px;padding:7px 10px;font:inherit;font-size:13px;background:#fff;color:var(--ink,#1A2230)}" +
+    ".bdc-filters input{flex:1 1 260px}" +
     /* cadence timeline */
     ".bdc-tl{position:relative;margin:6px 0 0 10px;padding-left:26px;border-left:2px solid var(--line-2,#D2CCBF)}" +
     ".bdc-tlstep{position:relative;padding:0 0 6px}" +
@@ -686,10 +709,24 @@
     });
   }
 
+  // Proposals: firm-wide library of everything negotiated on every deal, plus
+  // the reusable proposal templates. Read-only here — editing lives on the deal.
+  function loadProposals(force) {
+    if (S.props && !force) { render(); return; }
+    token(function (t) {
+      if (!t) { S.propErr = "signin"; render(); return; }
+      fetch("/.netlify/functions/bd-proposals", { method: "POST", body: JSON.stringify({ token: t }) })
+        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+        .then(function (d) { S.props = d; S.propErr = null; render(); })
+        .catch(function (e) { S.propErr = String(e.message || e); render(); });
+    });
+  }
+
   function loadView() {
     if (S.view === "overview") load();
     else if (S.view === "newsletter") loadClips();
     else if (S.view === "signals") loadSignals();
+    else if (S.view === "proposals") loadProposals();
     else if (S.view === "program") { loadProgram(); loadTemplates(); loadAssets(); }
     // Templates shows a summary card for each program, so it needs the steps too.
     else if (S.view === "templates") { loadAssets(); loadTemplates(); }
@@ -725,10 +762,15 @@
   window.__bdReloadForce = function () {
     if (S.view === "newsletter") loadClips(true);
     else if (S.view === "signals") loadSignals(true);
+    else if (S.view === "proposals") loadProposals(true);
     else if (S.view === "program") { loadProgram(true); loadTemplates(true); loadAssets(true); }
     else if (S.view === "templates") { loadAssets(true); loadTemplates(true); }
     else load();
   };
+
+  window.__bdPropOpen = function (id) { S.propOpen = S.propOpen === id ? null : id; render(); };
+  window.__bdPropQ = function (v) { S.propQ = v; render(); };
+  window.__bdPropStatus = function (v) { S.propStatus = v; render(); };
 
   /* ---------------- render: shared ---------------- */
   function dot(state) { return '<span class="bdc-dot ' + state + '"></span>'; }
@@ -1251,9 +1293,101 @@
   }
 
   /* ---------------- render: dispatch ---------------- */
+  /* ---------------- render: proposals ---------------- */
+  function money(n) { return (n == null || n === "") ? null : "$" + Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 }); }
+  function econChips(r) {
+    if (!r) return "";
+    var bits = [];
+    if (r.size_sf != null) bits.push(["Size", Number(r.size_sf).toLocaleString() + " SF"]);
+    if (r.base_rent_psf != null) bits.push(["Rate", money(r.base_rent_psf) + "/SF" + (r.rent_basis ? " " + r.rent_basis : "")]);
+    if (r.term_months != null) bits.push(["Term", r.term_months + " mo"]);
+    if (r.free_rent_months != null) bits.push(["Free rent", r.free_rent_months + " mo"]);
+    if (r.ti_psf != null) bits.push(["TI", money(r.ti_psf) + "/SF"]);
+    if (r.annual_escalation_pct != null) bits.push(["Bumps", r.annual_escalation_pct + "%/yr"]);
+    if (r.opex_psf != null) bits.push(["Opex", money(r.opex_psf) + "/SF"]);
+    if (!bits.length) return "";
+    return '<div class="bdc-econ">' + bits.map(function (b) {
+      return '<span class="bdc-echip"><b>' + esc(b[0]) + ":</b> " + esc(b[1]) + "</span>";
+    }).join("") + "</div>";
+  }
+
+  function propHtml(p) {
+    var open = S.propOpen === p.id;
+    var head = '<div class="bdc-prop-h" onclick="__bdPropOpen(\'' + p.id + "')\">" +
+      '<span class="bdc-prop-t">' + esc(p.title) + "</span>" +
+      (p.client_name ? '<span class="bdc-prop-c">' + esc(p.client_name) + "</span>" : "") +
+      '<span class="bdc-pst ' + esc(p.status) + '">' + esc(p.status) + "</span>" +
+      '<span class="bdc-prop-m">' + p.round_count + " round" + (p.round_count === 1 ? "" : "s") +
+      (p.doc_count ? " · " + p.doc_count + " file" + (p.doc_count === 1 ? "" : "s") : "") +
+      " · " + ago(p.updated_at || p.created_at) + "<span>" + (open ? "▲" : "▼") + "</span></span></div>";
+
+    var body = "";
+    if (open) {
+      var rounds = (p.rounds || []).map(function (r) {
+        var who = r.from_party === "landlord" ? "Landlord" : "Tenant side";
+        return '<div class="bdc-rnd ' + esc(r.from_party || "tenant") + '">' +
+          '<div class="bdc-rnd-h">Round ' + (r.round_no || "?") + " — " + who + '<span style="font-weight:400;color:var(--ink-faint,#8A93A0)"> · ' + ago(r.created_at) + "</span></div>" +
+          (r.summary ? '<div class="bdc-rnd-s">' + esc(r.summary) + "</div>" : "") +
+          econChips(r) + "</div>";
+      }).join("");
+      body = '<div class="bdc-prop-b">' +
+        (rounds || '<div class="bdc-empty">No rounds recorded on this proposal yet.</div>') +
+        '<div style="margin-top:8px"><a class="bdc-btn" href="deals.html?deal=' + encodeURIComponent(p.deal_id) + '" style="text-decoration:none;display:inline-block">Open the deal →</a></div>' +
+        "</div>";
+    }
+    return '<div class="bdc-prop">' + head + (open ? "" : econChips(p.latest)) + body + "</div>";
+  }
+
+  function renderProposals(el) {
+    var head = viewHead("Proposals", "Every proposal you've negotiated, across every deal — plus the templates that produce them.",
+      '<button class="bdc-btn" onclick="__bdReloadForce()">⟳ Refresh</button>');
+    if (S.propErr === "signin") { el.innerHTML = head + signinCard(); return; }
+
+    var d = S.props;
+    if (!d) { el.innerHTML = head + '<div class="bdc-card"><div class="bdc-empty">' + (S.propErr ? "Couldn't load: " + esc(S.propErr) : "Loading proposals…") + "</div></div>"; return; }
+
+    var all = d.proposals || [];
+    var q = String(S.propQ || "").toLowerCase();
+    var list = all.filter(function (p) {
+      if (S.propStatus !== "all" && p.status !== S.propStatus) return false;
+      if (!q) return true;
+      return (p.title + " " + (p.client_name || "")).toLowerCase().indexOf(q) >= 0;
+    });
+
+    var filters = '<div class="bdc-filters">' +
+      '<input placeholder="Search by proposal or client…" value="' + esc(S.propQ) + '" oninput="__bdPropQ(this.value)" />' +
+      '<select onchange="__bdPropStatus(this.value)">' +
+      ["all", "active", "accepted", "declined", "withdrawn"].map(function (s) {
+        return '<option value="' + s + '"' + (S.propStatus === s ? " selected" : "") + ">" + (s === "all" ? "All statuses" : s.charAt(0).toUpperCase() + s.slice(1)) + "</option>";
+      }).join("") + "</select></div>";
+
+    var libCard = '<div class="bdc-card"><h3>Proposal library — ' + list.length + " of " + all.length + "</h3>" + filters +
+      (list.length ? list.map(propHtml).join("")
+        : '<div class="bdc-empty">' + (all.length
+            ? "Nothing matches that filter."
+            : "No proposals yet. They're created on a deal (Deals → a deal → Proposals), and every one you negotiate shows up here automatically.") + "</div>") +
+      "</div>";
+
+    var tpls = d.templates || [];
+    var tplCard = '<div class="bdc-card"><h3>Proposal templates — ' + tpls.length + "</h3>" +
+      (tpls.length ? tpls.map(function (t) {
+        return '<div class="bdc-clip"><div class="bdy"><div class="t">' + esc(t.name) + "</div>" +
+          (t.description ? '<div class="nt">' + esc(t.description) + "</div>" : "") +
+          '<div class="mt">' + (t.is_shared ? "firm-wide" : "personal") +
+          (Array.isArray(t.fields) && t.fields.length ? " · " + t.fields.length + " merge field" + (t.fields.length === 1 ? "" : "s") : "") +
+          " · updated " + ago(t.updated_at) + "</div></div></div>";
+      }).join("")
+        : '<div class="bdc-empty">No proposal templates yet — they feed the AI drafter on the deal page.</div>') +
+      "</div>";
+
+    el.innerHTML = head + libCard + tplCard +
+      '<div class="bdc-note">Read-only library: proposals are authored and negotiated on their deal page, and every round lands here automatically. Use it to pull up what you agreed at a building, compare terms you\'ve won, and feed real numbers into a pitch.</div>';
+  }
+
   function render() {
     var el = $("bdView"); if (!el) return;
     if (S.err === "signin" && S.view === "overview") { el.innerHTML = signinCard(); return; }
+    if (S.view === "proposals") return renderProposals(el);
     if (S.view === "newsletter") return renderNewsletter(el);
     if (S.view === "program") return renderProgram(el);
     if (S.view === "signals") return renderSignals(el);
