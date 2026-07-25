@@ -3549,6 +3549,7 @@ window.DF = (function(){
       +   '<textarea id="ai_tmplbody" placeholder="Paste your standard proposal template here, or upload a .docx →"></textarea>'
       +   '<div style="display:flex;gap:14px;align-items:center;margin-top:7px;flex-wrap:wrap"><input type="file" id="ai_docx" accept=".docx" onchange="DF.aiDocx()">'
       +   '<label style="display:flex;gap:6px;align-items:center;font:500 11.5px Inter;color:var(--ink-soft)"><input type="checkbox" id="ai_savetmpl"> save this template for reuse</label></div></div>'
+      + aiChecklistHtml(dealId)
       + '<div class="fld"><label>Deal points <span class="u">type or talk</span><button class="vbtn" id="ai_mic" onclick="DF.toggleVoice(\'ai_mic\',\'ai_points\')" title="Dictate">🎙</button></label>'
       +   '<textarea id="ai_points" placeholder="e.g. Water Garden suite 300, ~9,500 SF, 7-year term, asking $5.95 FSG — push for 4 months free and $60 TI, 3% annual bumps, one 5-yr option..."></textarea></div>'
       + '<div class="formerr" id="ai_err"></div>'
@@ -3716,10 +3717,10 @@ window.DF = (function(){
   async function editRound(roundId, dealId){
     var r; try{ r=(await q(sb.from('proposal_rounds').select('*').eq('id',roundId).limit(1)))[0]; }catch(e){ alert('Could not load the round.'); return; }
     if(!r) return;
-    _curRound={r:r, dealId:dealId, building:'', address:''};
+    _curRound={r:r, dealId:dealId, building:'', address:'', proposalId:r.proposal_id, details:{}};
     try{
-      var prx=(await q(sb.from('proposals').select('title,property_id').eq('id',r.proposal_id).limit(1)))[0];
-      if(prx){ _curRound.building=prx.title||''; if(prx.property_id){ var px=(await q(sb.from('deal_properties').select('name,address').eq('id',prx.property_id).limit(1)))[0]; if(px){ if(px.name) _curRound.building=px.name; _curRound.address=px.address||''; } } }
+      var prx=(await q(sb.from('proposals').select('title,property_id,details').eq('id',r.proposal_id).limit(1)))[0];
+      if(prx){ _curRound.building=prx.title||''; _curRound.details=prx.details||{}; if(prx.property_id){ var px=(await q(sb.from('deal_properties').select('name,address').eq('id',prx.property_id).limit(1)))[0]; if(px){ if(px.name) _curRound.building=px.name; _curRound.address=px.address||''; } } }
     }catch(e){}
     var isDraft=r.status==='draft', hasProse=r.draft_text!=null;
     var draftSec = hasProse ? fld('Proposal'+(r.source==='ai'?' <span class="draftpill">AI-drafted</span>':''),'<textarea id="f_draft_text" style="min-height:190px">'+esc(r.draft_text)+'</textarea>') : '';
@@ -3729,6 +3730,7 @@ window.DF = (function(){
       + '<button class="btn" type="button" onclick="DF.proposalPdf()">PDF</button>'
       + '<button class="btn" type="button" onclick="DF.copyProposal()">Copy</button></div>'
       + '<div style="font:400 11px Inter;color:var(--ink-faint);margin-bottom:12px">First time, you\'ll pick your firm\'s Word letterhead (.docx with the merge tags) — it\'s remembered after. <a href="#" onclick="DF.clearLetterhead();return false" style="color:var(--accent)">change letterhead</a></div>'
+      + letterheadDetailsHtml()
       : '';
     openSheet('<h3>'+(hasProse?'Proposal — round ':'Edit round ')+esc(r.round_no)+(isDraft?' <span class="draftpill">draft</span>':'')+'</h3>'
       + '<div class="ssub">'+(hasProse?'Read it, tweak the wording or terms, then download or copy it to send — or mark it final.':('Adjust the terms'+(isDraft?', then save — or mark it final to make it a real round you can compare and share.':'.')))+'</div>'
@@ -3842,10 +3844,43 @@ window.DF = (function(){
     try{ localStorage.removeItem('vantage_letterhead_docx'); localStorage.removeItem('vantage_letterhead_name'); }catch(e){}
     aiToast('Letterhead cleared — you\'ll be asked to pick it next time you download in the firm template.');
   }
-  function buildMergeData(r, d, bldg, body){
+  // Spell out a whole number 0..999 ("Five", "Sixty-one"). Non-integers fall
+  // back to digits so "5.5 (5.5) years" still reads sanely in the letterhead.
+  function numWords(n){
+    n=Number(n);
+    if(!isFinite(n)||n<0||n>999||Math.floor(n)!==n) return String(n);
+    var ones=['zero','one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen'];
+    var tens=['','','twenty','thirty','forty','fifty','sixty','seventy','eighty','ninety'];
+    function u99(x){ return x<20?ones[x]:(tens[Math.floor(x/10)]+(x%10?'-'+ones[x%10]:'')); }
+    var w = n<100?u99(n):(ones[Math.floor(n/100)]+' hundred'+(n%100?' '+u99(n%100):''));
+    return w;
+  }
+  function capWords(w){ return w? w.charAt(0).toUpperCase()+w.slice(1) : w; }
+  // Trim a number to a clean string: 5 -> "5", 3.5 -> "3.5", 5.25 -> "5.25"
+  function numTrim(n){ if(n==null||n==='') return ''; var x=Number(n); if(!isFinite(x)) return String(n); return String(+x.toFixed(2)); }
+  // "123 Ocean Ave, Santa Monica, CA 90401" -> {street, city, state_zip}
+  function parseAddr(a){
+    var out={street:'', city:'', state_zip:''};
+    var parts=String(a||'').split(',').map(function(x){ return x.trim(); }).filter(Boolean);
+    if(parts.length>=1) out.street=parts[0];
+    if(parts.length>=2) out.city=parts[1];
+    if(parts.length>=3) out.state_zip=parts.slice(2).join(', ');
+    return out;
+  }
+  function buildMergeData(r, d, bldg, body, det, addr){
     function s(x){ return x==null?'':String(x); }
+    det=det||{};
     var base=r.base_rent_psf, opex=r.opex_psf;
-    return {
+    var pa=parseAddr(addr);
+    var street=s(det.building_address)||pa.street||s(bldg);
+    var city=s(det.building_city)||pa.city;
+    var stateZip=s(det.building_state_zip)||pa.state_zip;
+    var cityState=city?(city+(stateZip?', '+String(stateZip).split(/\s+/)[0]:'')):'';
+    var suiteNo=s(det.suite_number);
+    var years=r.term_months==null?null:r.term_months/12;
+    var esc_=r.annual_escalation_pct;
+    var data={
+      /* ---- house tags (single-brace templates, unchanged) ---- */
       date: new Date().toLocaleDateString(undefined,{year:'numeric',month:'long',day:'numeric'}),
       broker: (me&&me.email)||'',
       client: s(d&&d.client_name), tenant: s(d&&d.client_name),
@@ -3857,19 +3892,53 @@ window.DF = (function(){
       size_sf: r.size_sf==null?'':Number(r.size_sf).toLocaleString(),
       term_months: r.term_months==null?'':String(r.term_months),
       term_years: r.term_months==null?'':(r.term_months/12).toFixed(1),
-      escalation: r.annual_escalation_pct==null?'':(Number(r.annual_escalation_pct).toFixed(1)+'%'),
+      escalation: esc_==null?'':(Number(esc_).toFixed(1)+'%'),
       free_rent: r.free_rent_months==null?'':String(r.free_rent_months),
       ti: r.ti_psf==null?'':('$'+Number(r.ti_psf).toFixed(2)),
       notes: s(r.summary),
-      proposal_body: s(body!=null?body:r.draft_text)
+      proposal_body: s(body!=null?body:r.draft_text),
+      /* ---- letterhead tags (double-brace templates, e.g. the Full Service
+             (Office) proposal). Bare numbers — the $ and % live in the doc. ---- */
+      PROPOSAL_DATE: new Date().toLocaleDateString(undefined,{year:'numeric',month:'long',day:'numeric'}),
+      LANDLORD_CONTACT_NAME: s(det.landlord_contact_name),
+      LANDLORD_COMPANY_NAME: s(det.landlord_company),
+      LANDLORD_CONTACT_SALUTATION: s(det.landlord_salutation)||s(det.landlord_contact_name),
+      LANDLORD_LEGAL_NAME: s(det.landlord_legal_name)||s(det.landlord_company),
+      TENANT_NAME: s(d&&d.client_name),
+      TENANT_LEGAL_NAME: s(det.tenant_legal_name)||s(d&&d.client_name),
+      TENANT_WEBSITE: s(det.tenant_website),
+      BUILDING_ADDRESS: street,
+      BUILDING_CITY: city,
+      BUILDING_STATE_ZIP: stateZip,
+      BUILDING_CITY_STATE: cityState,
+      BUILDING_SUITE: suiteNo?('Suite '+suiteNo):'',
+      SUITE_NUMBER: suiteNo,
+      RENTABLE_SQUARE_FEET: r.size_sf==null?'':Number(r.size_sf).toLocaleString(),
+      LEASE_TERM_WORDS: years==null?'':capWords(numWords(years)),
+      LEASE_TERM_YEARS: years==null?'':numTrim(years),
+      COMMENCEMENT_DATE: s(det.commencement_date),
+      BASE_RENT_PSF_MONTH: base==null?'':Number(base).toFixed(2),
+      ANNUAL_INCREASE_WORDS: esc_==null?'':numWords(esc_),
+      ANNUAL_INCREASE_PCT: esc_==null?'':numTrim(esc_),
+      BASE_YEAR: s(det.base_year),
+      PARKING_SPACES: s(det.parking_spaces),
+      BROKER_LICENSE_NUMBER: s(det.broker_license)||'02039670'
     };
+    return data;
   }
   function fillTemplateDocx(ab, data, filename){
     var DT = window.docxtemplater || window.Docxtemplater;
     if(!window.PizZip || !DT){ alert('The Word template engine is still loading — give it a second and try again.'); return; }
     try{
       var zip=new window.PizZip(ab);
-      var doc=new DT(zip, {paragraphLoop:true, linebreaks:true, nullGetter:function(){ return ''; }});
+      // Support both tag dialects: the original guide's {tag} templates AND
+      // {{UPPER_SNAKE}} letterheads (Andrew's real proposal doc). Detect by
+      // scanning the document body for a double brace.
+      var xml=''; try{ xml=zip.file('word/document.xml').asText(); }catch(e){}
+      var dbl=/\{\{/.test(xml);
+      var opts={paragraphLoop:true, linebreaks:true, nullGetter:function(){ return ''; }};
+      if(dbl) opts.delimiters={start:'{{', end:'}}'};
+      var doc=new DT(zip, opts);
       doc.render(data);
       var out=doc.getZip().generate({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
       var url=URL.createObjectURL(out);
@@ -3883,10 +3952,54 @@ window.DF = (function(){
       alert('Could not fill the letterhead template:\n'+msg+'\n\nCheck that your .docx uses the {merge tags} from the template guide.');
     }
   }
+  /* ---- letterhead details (proposals.details jsonb) — the fields Andrew's
+          Full Service (Office) letterhead needs that rounds don't carry ---- */
+  var LH_FIELDS=[
+    ['landlord_contact_name','Landlord contact','Jane Smith'],
+    ['landlord_company','Landlord company','Ocean Ave Partners LLC'],
+    ['landlord_salutation','Salutation (Dear …)','Ms. Smith'],
+    ['landlord_legal_name','Landlord legal name','Ocean Ave Partners, LLC'],
+    ['tenant_legal_name','Tenant legal name','Brightline Health, Inc.'],
+    ['tenant_website','Tenant website','www.company.com'],
+    ['building_address','Building street address','1733 Ocean Ave'],
+    ['suite_number','Suite #','300'],
+    ['building_city','City','Santa Monica'],
+    ['building_state_zip','State + ZIP','CA 90401'],
+    ['commencement_date','Commencement','October 1, 2026'],
+    ['base_year','Base year','2027'],
+    ['parking_spaces','Parking spaces','12'],
+    ['broker_license','Broker license #','02039670']
+  ];
+  function letterheadDetailsHtml(){
+    var det=(_curRound&&_curRound.details)||{};
+    var pa=parseAddr(_curRound&&_curRound.address);
+    var pre={building_address:pa.street, building_city:pa.city, building_state_zip:pa.state_zip, broker_license:'02039670'};
+    var rows=LH_FIELDS.map(function(f){
+      var v=det[f[0]]!=null?det[f[0]]:(pre[f[0]]||'');
+      return '<div class="fld" style="margin:0"><label style="font-size:11px">'+f[1]+'</label>'
+        + '<input id="lh_'+f[0]+'" value="'+esc(v)+'" placeholder="'+esc(f[2])+'" style="padding:7px 9px;font-size:12.5px"></div>';
+    }).join('');
+    return '<details style="margin:0 0 12px;border:1px solid var(--line);border-radius:9px;padding:9px 12px;background:var(--paper)">'
+      + '<summary style="cursor:pointer;font:600 12px Inter;color:var(--ink-soft)">Letterhead details — landlord, address, base year… (fills the {{…}} tags)</summary>'
+      + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;margin-top:10px">'+rows+'</div>'
+      + '<div style="font:400 11px Inter;color:var(--ink-faint);margin-top:8px">Saved with the proposal — every round of this proposal reuses them. Term, rent, increases and size come from the round\'s terms below.</div>'
+      + '</details>';
+  }
+  function readLetterheadDetails(){
+    var det={}, any=false;
+    LH_FIELDS.forEach(function(f){ var el=$('lh_'+f[0]); if(el){ any=true; var v=el.value.trim(); if(v) det[f[0]]=v; } });
+    return any?det:null;
+  }
   async function proposalTemplateDl(){
     if(!_curRound) return;
     var r=_curRound.r, dealId=_curRound.dealId, d=deals.filter(function(x){return x.id===dealId;})[0];
-    var bodyEl=$('f_draft_text'), data=buildMergeData(r, d, _curRound.building, bodyEl?bodyEl.value:r.draft_text);
+    var det=readLetterheadDetails();
+    if(det){
+      _curRound.details=det;
+      // persist on the proposal so the next round (and next download) has them
+      try{ await q(sb.from('proposals').update({details:det}).eq('id',_curRound.proposalId)); }catch(e){}
+    } else det=_curRound.details||{};
+    var bodyEl=$('f_draft_text'), data=buildMergeData(r, d, _curRound.building, bodyEl?bodyEl.value:r.draft_text, det, _curRound.address);
     var ab=getLetterhead();
     if(!ab){ aiToast('Pick your firm\'s Word letterhead (.docx) — I\'ll remember it for next time.'); ab=await pickLetterhead(); if(!ab) return; }
     fillTemplateDocx(ab, data, proposalFilename());
@@ -4544,6 +4657,31 @@ window.DF = (function(){
     };
     inp.click();
   }
+  // The dictation teleprompter: everything the Full Service (Office) letterhead
+  // and the terms grid actually consume, in reading order, with what we already
+  // know filled in. Andrew reads down the list while talking to Van.
+  function aiChecklistHtml(dealId){
+    var d=deals.filter(function(x){return x.id===dealId;})[0];
+    var known=function(v){ return v?' <b style="color:var(--accent)">'+esc(v)+'</b>':' <span style="opacity:.55">?</span>'; };
+    var items=[
+      ['Landlord', 'contact name + company (who gets the letter), their legal entity name'],
+      ['Building', 'street address, Suite #, city, state + ZIP'],
+      ['Tenant', (d&&d.client_name?'client:'+known(d.client_name)+' — ':'')+'legal entity name, website'],
+      ['Premises', 'rentable square feet'],
+      ['Term', 'years + commencement date'],
+      ['Rent', 'starting $/SF/month · annual increase % · base year'],
+      ['Concessions', 'free rent (months) · TI allowance ($/SF)'],
+      ['Parking', 'spaces needed'],
+      ['Extras', 'renewal/expansion options, signage, anything unusual']
+    ];
+    return '<div style="margin:0 0 12px;border:1px solid var(--line);border-radius:9px;padding:10px 13px;background:var(--paper)">'
+      + '<div style="font:600 11px Inter;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:7px">📋 Read this off as you talk — the proposal needs:</div>'
+      + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:4px 14px">'
+      + items.map(function(it){ return '<div style="font:400 12px Inter;color:var(--ink-soft)"><b style="color:var(--ink)">'+it[0]+':</b> '+it[1]+'</div>'; }).join('')
+      + '</div>'
+      + '<div style="font:400 11px Inter;color:var(--ink-faint);margin-top:7px">Whatever you skip renders blank (or [TBD]) — you can fill it later in the round\'s Letterhead details.</div>'
+      + '</div>';
+  }
   async function aiDraft(dealId, proposalId){
     try{ _aiTmpls=await q(sb.from('proposal_templates').select('id,name,body').order('created_at',{ascending:false})); }catch(e){ _aiTmpls=[]; }
     var opts='<option value="">— paste or upload below —</option>'+_aiTmpls.map(function(t){return '<option value="'+t.id+'">'+esc(t.name)+'</option>';}).join('');
@@ -4553,6 +4691,7 @@ window.DF = (function(){
       +   '<textarea id="ai_tmplbody" placeholder="Paste your standard proposal template here, or upload a .docx →"></textarea>'
       +   '<div style="display:flex;gap:14px;align-items:center;margin-top:7px;flex-wrap:wrap"><input type="file" id="ai_docx" accept=".docx" onchange="DF.aiDocx()">'
       +   '<label style="display:flex;gap:6px;align-items:center;font:500 11.5px Inter;color:var(--ink-soft)"><input type="checkbox" id="ai_savetmpl"> save this template for reuse</label></div></div>'
+      + aiChecklistHtml(dealId)
       + '<div class="fld"><label>Deal points <span class="u">type or talk</span><button class="vbtn" id="ai_mic" onclick="DF.toggleVoice(\'ai_mic\',\'ai_points\')" title="Dictate">🎙</button></label>'
       +   '<textarea id="ai_points" placeholder="e.g. Water Garden suite 300, ~9,500 SF, 7-year term, asking $5.95 FSG — push for 4 months free and $60 TI, 3% annual bumps, one 5-yr option..."></textarea></div>'
       + '<div class="formerr" id="ai_err"></div>'
@@ -5511,7 +5650,7 @@ window.DF = (function(){
     newDeal:newDeal, companySuggest:companySuggest, companyPick:companyPick, newProperty:newProperty, propSuggest:propSuggest, propPick:propPick, setPropStatus:setPropStatus, addToTour:addToTour, importReport:importReport, fileBrochures:fileBrochures, reportDragOver:reportDragOver, reportDragLeave:reportDragLeave, reportDrop:reportDrop, reportBrowse:reportBrowse, reportDropPick:reportDropPick, propDrop:propDrop, propBrowse:propBrowse, deleteMediaChip:deleteMediaChip, showAllChips:showAllChips, bulkSync:bulkSync, bulkAll:bulkAll, bulkMove:bulkMove, bulkDelete:bulkDelete, viewBuilding:viewBuilding, generateMarketReport:generateMarketReport, clientSurvey:clientSurvey, copySurveyLink:copySurveyLink, deleteSurvey:deleteSurvey, dealTab:dealTab, buildTourFromTouring:buildTourFromTouring, newProposal:newProposal, npMode:npMode, newRound:newRound,
     generateRfp:generateRfp, copyRfp:copyRfp, downloadRfp:downloadRfp, sendRfpTo:sendRfpTo,
     setStage:setStage, basisChange:basisChange, marketCheck:marketCheck, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
-    proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead,
+    proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead, _mergeData:buildMergeData,
     shareDeal:shareDeal, toggleProposalVisible:toggleProposalVisible,
     attachDoc:attachDoc, attachLeaseDoc:attachLeaseDoc, downloadDoc:downloadDoc, deleteDoc:deleteDoc, toggleDocVisible:toggleDocVisible,
     aiDraft:aiDraft, aiPickTmpl:aiPickTmpl, aiDocx:aiDocx, toggleVoice:toggleVoice, editRound:editRound, extractFromPdf:extractFromPdf,
