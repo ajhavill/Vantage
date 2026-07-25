@@ -774,7 +774,7 @@ window.DF = (function(){
     ['Closeout','Client move-in / handoff']
   ];
 
-  var sb=null, me=null, deals=[], _rec=null, _aiTmpls=[], _showClosed=false, _curRound=null, _view='board', _agg=null;
+  var sb=null, me=null, deals=[], _rec=null, _aiTmpls=[], _lhTmpls=[], _showClosed=false, _curRound=null, _view='board', _agg=null;
 
   /* ---------- tiny helpers ---------- */
   function $(id){ return document.getElementById(id); }
@@ -3715,6 +3715,9 @@ window.DF = (function(){
       var prx=(await q(sb.from('proposals').select('title,property_id,details').eq('id',r.proposal_id).limit(1)))[0];
       if(prx){ _curRound.building=prx.title||''; _curRound.details=prx.details||{}; if(prx.property_id){ var px=(await q(sb.from('deal_properties').select('name,address').eq('id',prx.property_id).limit(1)))[0]; if(px){ if(px.name) _curRound.building=px.name; _curRound.address=px.address||''; } } }
     }catch(e){}
+    // Letterhead templates live in BD → Proposals (proposal_templates rows that
+    // carry an uploaded .docx). Load them so the round can pick which one to fill.
+    try{ _lhTmpls=(await q(sb.from('proposal_templates').select('id,name,storage_path').order('name'))).filter(function(t){ return !!t.storage_path; }); }catch(e){ _lhTmpls=[]; }
     var isDraft=r.status==='draft', hasProse=r.draft_text!=null;
     var draftSec = hasProse ? fld('Proposal'+(r.source==='ai'?' <span class="draftpill">AI-drafted</span>':''),'<textarea id="f_draft_text" style="min-height:190px">'+esc(r.draft_text)+'</textarea>') : '';
     // Letterhead download works on EVERY round now — AI extraction rounds carry
@@ -3727,7 +3730,7 @@ window.DF = (function(){
           + '<button class="btn" type="button" onclick="DF.copyProposal()">Copy</button>'
           : '')
       + '</div>'
-      + '<div style="font:400 11px Inter;color:var(--ink-faint);margin-bottom:12px">Fills your .docx letterhead exactly — only the merge tags change; anything blank below stays blank in the doc. First time, you\'ll pick the .docx — it\'s remembered after. <a href="#" onclick="DF.clearLetterhead();return false" style="color:var(--accent)">change letterhead</a></div>'
+      + letterheadPickerHtml()
       + letterheadDetailsHtml();
     openSheet('<h3>'+(hasProse?'Proposal — round ':'Edit round ')+esc(r.round_no)+(isDraft?' <span class="draftpill">draft</span>':'')+'</h3>'
       + '<div class="ssub">'+(hasProse?'Read it, tweak the wording or terms, then download or copy it to send — or mark it final.':('Adjust the terms'+(isDraft?', then save — or mark it final to make it a real round you can compare and share.':'.')))+'</div>'
@@ -3987,6 +3990,41 @@ window.DF = (function(){
     LH_FIELDS.forEach(function(f){ var el=$('lh_'+f[0]); if(el){ any=true; var v=el.value.trim(); if(v) det[f[0]]=v; } });
     return any?det:null;
   }
+  /* ---- letterhead template picker (BD → Proposals library + local file) ---- */
+  function lhLastPick(){ try{ return localStorage.getItem('vantage_letterhead_tmpl')||''; }catch(e){ return ''; } }
+  function letterheadPickerHtml(){
+    var last=lhLastPick(), localName='';
+    try{ localName=localStorage.getItem('vantage_letterhead_name')||''; }catch(e){}
+    var opts=_lhTmpls.map(function(t){
+      return '<option value="'+t.id+'"'+(last===t.id?' selected':'')+'>'+esc(t.name)+'</option>';
+    }).join('');
+    var localLabel='This computer'+(localName?' — '+esc(localName):' — pick a .docx');
+    opts += '<option value="__local"'+(last==='__local'||!_lhTmpls.length?' selected':'')+'>'+localLabel+'</option>';
+    return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 8px">'
+      + '<label style="font:600 11px Inter;color:var(--ink-soft)">Template</label>'
+      + '<select id="lh_tmpl" style="padding:6px 9px;font-size:12.5px;max-width:320px">'+opts+'</select>'
+      + (_lhTmpls.length?'':'<span style="font:400 11px Inter;color:var(--ink-faint)">Upload letterheads in BD → Proposals to pick them here</span>')
+      + '</div>'
+      + '<div style="font:400 11px Inter;color:var(--ink-faint);margin-bottom:12px">Fills the selected .docx exactly — only the merge tags change; anything left blank below stays blank in the document. <a href="#" onclick="DF.clearLetterhead();return false" style="color:var(--accent)">clear the saved local file</a></div>';
+  }
+  // Resolve the chosen template to raw .docx bytes: a stored library template is
+  // downloaded from the private bd-assets bucket; "__local" uses the remembered
+  // browser copy (prompting once if there isn't one).
+  async function letterheadBytes(){
+    var sel=$('lh_tmpl')?$('lh_tmpl').value:'__local';
+    try{ localStorage.setItem('vantage_letterhead_tmpl', sel); }catch(e){}
+    if(sel && sel!=='__local'){
+      var t=_lhTmpls.filter(function(x){ return x.id===sel; })[0];
+      if(t && t.storage_path){
+        var dl=await sb.storage.from('bd-assets').download(t.storage_path);
+        if(dl.error||!dl.data) throw new Error('Could not download “'+t.name+'” from the template library.');
+        return await dl.data.arrayBuffer();
+      }
+    }
+    var ab=getLetterhead();
+    if(!ab){ aiToast('Pick your Word letterhead (.docx) — I\'ll remember it on this computer.'); ab=await pickLetterhead(); }
+    return ab;
+  }
   async function proposalTemplateDl(){
     if(!_curRound) return;
     var r=_curRound.r, dealId=_curRound.dealId, d=deals.filter(function(x){return x.id===dealId;})[0];
@@ -3997,8 +4035,8 @@ window.DF = (function(){
       try{ await q(sb.from('proposals').update({details:det}).eq('id',_curRound.proposalId)); }catch(e){}
     } else det=_curRound.details||{};
     var bodyEl=$('f_draft_text'), data=buildMergeData(r, d, _curRound.building, bodyEl?bodyEl.value:r.draft_text, det, _curRound.address);
-    var ab=getLetterhead();
-    if(!ab){ aiToast('Pick your firm\'s Word letterhead (.docx) — I\'ll remember it for next time.'); ab=await pickLetterhead(); if(!ab) return; }
+    var ab; try{ ab=await letterheadBytes(); }catch(e){ alert(e.message||String(e)); return; }
+    if(!ab) return;
     fillTemplateDocx(ab, data, proposalFilename());
   }
   function copyProposal(){
@@ -5637,6 +5675,7 @@ window.DF = (function(){
     generateRfp:generateRfp, copyRfp:copyRfp, downloadRfp:downloadRfp, sendRfpTo:sendRfpTo,
     setStage:setStage, basisChange:basisChange, marketCheck:marketCheck, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
     proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead, _mergeData:buildMergeData,
+    _lhPicker:function(t){ _lhTmpls=t||[]; return letterheadPickerHtml(); }, _lhBytes:letterheadBytes,
     shareDeal:shareDeal, toggleProposalVisible:toggleProposalVisible,
     attachDoc:attachDoc, attachLeaseDoc:attachLeaseDoc, downloadDoc:downloadDoc, deleteDoc:deleteDoc, toggleDocVisible:toggleDocVisible,
     aiDraft:aiDraft, aiPickTmpl:aiPickTmpl, aiDocx:aiDocx, toggleVoice:toggleVoice, editRound:editRound, extractFromPdf:extractFromPdf,

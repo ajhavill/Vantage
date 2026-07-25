@@ -67,8 +67,12 @@ async function extractWithClaude(system, userText) {
     },
     body: JSON.stringify({
       model: "claude-opus-4-8",
-      max_tokens: 3000,
-      output_config: { effort: "medium", format: { type: "json_schema", schema: SCHEMA } },
+      max_tokens: 8000,
+      // Same call shape as the previously-working drafter: adaptive thinking is
+      // opt-in on Opus 4.8 (omitting it runs with none), and effort/format live
+      // together in output_config.
+      thinking: { type: "adaptive" },
+      output_config: { effort: "high", format: { type: "json_schema", schema: SCHEMA } },
       system: system,
       messages: [{ role: "user", content: userText }]
     })
@@ -81,15 +85,50 @@ async function extractWithClaude(system, userText) {
   return JSON.parse(textBlock.text);
 }
 
+// A background function answers 202 before it does any work, so every failure
+// below is invisible to the browser. Record each one: bd_job_runs for the
+// operator (queryable), and — once we know which proposal it belongs to — a
+// draft round whose summary carries the reason, so the broker sees it in the
+// deal instead of an empty rounds table.
+async function logFail(note, ctx) {
+  try {
+    await sb.rest("bd_job_runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ job: "deal-ai-draft", ok: false, note: String(note).slice(0, 500), counts: ctx || null })
+    });
+  } catch (e) { /* logging must never mask the original failure */ }
+}
+async function failRound(dealId, proposalId, userId, note) {
+  await logFail(note, { dealId: dealId, proposalId: proposalId });
+  if (!dealId || !proposalId) return;
+  let nextNo = 1;
+  try {
+    const r = await sb.rest("proposal_rounds?proposal_id=eq." + proposalId + "&select=round_no&order=round_no.desc&limit=1");
+    if (r.data && r.data[0]) nextNo = (r.data[0].round_no || 0) + 1;
+  } catch (e) { /* default 1 */ }
+  try {
+    await sb.rest("proposal_rounds", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({
+        deal_id: dealId, proposal_id: proposalId, round_no: nextNo, from_party: "tenant",
+        status: "draft", source: "ai", draft_text: null, created_by: userId,
+        summary: "⚠ Couldn't read your deal points — " + String(note).slice(0, 300) + " (delete this round and try again)"
+      })
+    });
+  } catch (e) { /* best-effort */ }
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") return { statusCode: 405, body: "Use POST." };
   let body; try { body = JSON.parse(event.body || "{}"); } catch (e) { return { statusCode: 400, body: "bad body" }; }
 
-  const user = await sb.userFromToken(body.token);   // broker must be signed in
-  if (!user) { console.log("ai-draft: unauthorized"); return { statusCode: 401, body: "unauthorized" }; }
-  if (!process.env.ANTHROPIC_API_KEY) { console.log("ai-draft: ANTHROPIC_API_KEY not set"); return { statusCode: 500, body: "no key" }; }
-
   const dealId = String(body.dealId || ""), proposalId = String(body.proposalId || "");
+
+  const user = await sb.userFromToken(body.token);   // broker must be signed in
+  if (!user) { await logFail("unauthorized — broker token rejected", { dealId: dealId }); return { statusCode: 401, body: "unauthorized" }; }
+  if (!process.env.ANTHROPIC_API_KEY) { await failRound(dealId, proposalId, user.id, "ANTHROPIC_API_KEY is not set on the site"); return { statusCode: 500, body: "no key" }; }
 
   // defense in depth: service_role bypasses RLS, so verify this broker owns the deal
   let deal = null;
@@ -97,7 +136,8 @@ exports.handler = async (event) => {
     const r = await sb.rest("deals?id=eq." + dealId + "&select=id,owner_id,client_name&limit=1");
     deal = r.data && r.data[0];
   } catch (e) { /* leave null */ }
-  if (!deal || deal.owner_id !== user.id) { console.log("ai-draft: deal not owned by user"); return { statusCode: 403, body: "forbidden" }; }
+  if (!deal) { await failRound(dealId, proposalId, user.id, "deal " + dealId + " not found"); return { statusCode: 403, body: "forbidden" }; }
+  if (deal.owner_id !== user.id) { await failRound(dealId, proposalId, user.id, "this deal belongs to another broker"); return { statusCode: 403, body: "forbidden" }; }
 
   const system =
     "You are a data-extraction assistant for a commercial real estate proposal. The broker dictated deal points; your ONLY " +
@@ -121,7 +161,11 @@ exports.handler = async (event) => {
 
   let out;
   try { out = await extractWithClaude(system, userText); }
-  catch (e) { console.log("ai-draft: extraction failed:", e.message); return { statusCode: 200, body: "extract failed" }; }
+  catch (e) {
+    console.log("ai-draft: extraction failed:", e.message);
+    await failRound(dealId, proposalId, user.id, e.message || String(e));
+    return { statusCode: 200, body: "extract failed" };
+  }
 
   // next round number for this proposal
   let nextNo = 1;
@@ -140,13 +184,16 @@ exports.handler = async (event) => {
     term_months: ec.term_months, annual_escalation_pct: ec.annual_escalation_pct,
     free_rent_months: ec.free_rent_months, ti_psf: ec.ti_psf, created_by: user.id
   };
-  try {
-    await sb.rest("proposal_rounds", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
-      body: JSON.stringify(row)
-    });
-  } catch (e) { console.log("ai-draft: round insert failed:", e.message); return { statusCode: 200, body: "save failed" }; }
+  const ins = await sb.rest("proposal_rounds", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify(row)
+  });
+  if (!ins.ok) {
+    console.log("ai-draft: round insert failed:", ins.text);
+    await logFail("round insert rejected: " + (ins.text || ins.status), { dealId: dealId, proposalId: proposalId });
+    return { statusCode: 200, body: "save failed" };
+  }
 
   // merge the extracted letterhead fields over what the proposal already has —
   // extracted non-null values win; existing values survive when nothing new came in
