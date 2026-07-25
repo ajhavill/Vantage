@@ -54,6 +54,37 @@ just come through blank.
 
 ---
 
+## The letterhead dialect: `{{UPPER_SNAKE}}` tags
+
+Formal letterhead proposals (e.g. **Proposal - Full Service (Office).docx**) use a second
+tag style: **double braces + UPPER_SNAKE names**. The app detects which style a `.docx`
+uses automatically — don't mix both styles in one document.
+
+These tags emit **bare values** — the `$`, `%`, and words like "years" are typed in the
+document itself (`$ {{BASE_RENT_PSF_MONTH}} per rentable square foot per month`).
+
+| Tag | Fills in | Example output |
+|---|---|---|
+| `{{PROPOSAL_DATE}}` | today's date | July 26, 2026 |
+| `{{TENANT_NAME}}` | the deal's client name | Brightline Health |
+| `{{RENTABLE_SQUARE_FEET}}` | round's size | 9,500 |
+| `{{LEASE_TERM_WORDS}}` / `{{LEASE_TERM_YEARS}}` | term from the round's months | Five / 5 |
+| `{{BASE_RENT_PSF_MONTH}}` | round's base rent, bare number | 5.25 |
+| `{{ANNUAL_INCREASE_WORDS}}` / `{{ANNUAL_INCREASE_PCT}}` | round's escalation, bare | three / 3 |
+
+These come from the **Letterhead details** panel on the proposal round (saved per proposal,
+reused by every round): `{{LANDLORD_CONTACT_NAME}}`, `{{LANDLORD_COMPANY_NAME}}`,
+`{{LANDLORD_CONTACT_SALUTATION}}`, `{{LANDLORD_LEGAL_NAME}}`, `{{TENANT_LEGAL_NAME}}`,
+`{{TENANT_WEBSITE}}`, `{{BUILDING_ADDRESS}}`, `{{BUILDING_SUITE}}` / `{{SUITE_NUMBER}}`,
+`{{BUILDING_CITY}}`, `{{BUILDING_STATE_ZIP}}`, `{{BUILDING_CITY_STATE}}`,
+`{{COMMENCEMENT_DATE}}`, `{{BASE_YEAR}}`, `{{PARKING_SPACES}}`,
+`{{BROKER_LICENSE_NUMBER}}` (defaults to 02039670).
+
+City/state/zip prefill from the deal building's address when it's in
+"street, city, ST zip" form. Anything left empty renders blank.
+
+---
+
 ## Two ways to build your template
 
 **A) Your standard language, with tags for the blanks (recommended).**
