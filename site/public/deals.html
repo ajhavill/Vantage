@@ -3538,17 +3538,10 @@ window.DF = (function(){
     var propSel = props.length
       ? '<select id="f_prop"><option value="">— none —</option>'+props.map(function(p){return '<option value="'+p.id+'">'+esc(p.name)+'</option>';}).join('')+'</select>'
       : '<select id="f_prop" disabled><option>Add a building first (optional)</option></select>';
-    try{ _aiTmpls=await q(sb.from('proposal_templates').select('id,name,body').order('created_at',{ascending:false})); }catch(e){ _aiTmpls=[]; }
-    var tmplOpts='<option value="">— paste or upload below —</option>'+_aiTmpls.map(function(t){return '<option value="'+t.id+'">'+esc(t.name)+'</option>';}).join('');
     _npMode='ai';
 
     var aiPanel = '<div id="npAI" class="np-panel">'
-      + '<div class="np-hint">Describe the deal in plain words — Van drafts the full proposal and drops it in as a round to review.</div>'
-      + fld('Template <span class="u">optional</span>','<select id="ai_tmpl" onchange="DF.aiPickTmpl()">'+tmplOpts+'</select>')
-      + '<div class="fld"><label>Template text <span class="u">paste, or upload a Word .docx</span></label>'
-      +   '<textarea id="ai_tmplbody" placeholder="Paste your standard proposal template here, or upload a .docx →"></textarea>'
-      +   '<div style="display:flex;gap:14px;align-items:center;margin-top:7px;flex-wrap:wrap"><input type="file" id="ai_docx" accept=".docx" onchange="DF.aiDocx()">'
-      +   '<label style="display:flex;gap:6px;align-items:center;font:500 11.5px Inter;color:var(--ink-soft)"><input type="checkbox" id="ai_savetmpl"> save this template for reuse</label></div></div>'
+      + '<div class="np-hint">Read the checklist and talk — Van pulls out the values and fills your letterhead template <b>exactly as designed</b>. Only the highlighted blanks change; anything you skip stays blank for you to complete.</div>'
       + aiChecklistHtml(dealId)
       + '<div class="fld"><label>Deal points <span class="u">type or talk</span><button class="vbtn" id="ai_mic" onclick="DF.toggleVoice(\'ai_mic\',\'ai_points\')" title="Dictate">🎙</button></label>'
       +   '<textarea id="ai_points" placeholder="e.g. Water Garden suite 300, ~9,500 SF, 7-year term, asking $5.95 FSG — push for 4 months free and $60 TI, 3% annual bumps, one 5-yr option..."></textarea></div>'
@@ -3600,7 +3593,7 @@ window.DF = (function(){
       proposalId=row&&row.id;
     }catch(e){ $('f_err').textContent=e.message; btn.disabled=false; btn.textContent=lbl; return; }
     if(_npMode==='ai'){
-      aiGenerate(dealId, proposalId, btn);   // reads ai_points/ai_tmplbody/ai_savetmpl; closes + toasts + refreshes
+      aiGenerate(dealId, proposalId, btn);   // reads ai_points; extraction fills terms + letterhead details; closes + toasts + refreshes
       return;
     }
     // manual: log the entered terms as round 1, then open the deal
@@ -3724,14 +3717,18 @@ window.DF = (function(){
     }catch(e){}
     var isDraft=r.status==='draft', hasProse=r.draft_text!=null;
     var draftSec = hasProse ? fld('Proposal'+(r.source==='ai'?' <span class="draftpill">AI-drafted</span>':''),'<textarea id="f_draft_text" style="min-height:190px">'+esc(r.draft_text)+'</textarea>') : '';
-    var actionBar = hasProse ? '<div style="display:flex;gap:10px;margin:2px 0 6px;flex-wrap:wrap">'
+    // Letterhead download works on EVERY round now — AI extraction rounds carry
+    // terms + details but no prose; the doc's copy comes from the template itself.
+    var actionBar = '<div style="display:flex;gap:10px;margin:2px 0 6px;flex-wrap:wrap">'
       + '<button class="btn pri" type="button" onclick="DF.proposalTemplateDl()">⬇ Download in our letterhead</button>'
-      + '<button class="btn" type="button" onclick="DF.proposalDocx()">Plain Word</button>'
-      + '<button class="btn" type="button" onclick="DF.proposalPdf()">PDF</button>'
-      + '<button class="btn" type="button" onclick="DF.copyProposal()">Copy</button></div>'
-      + '<div style="font:400 11px Inter;color:var(--ink-faint);margin-bottom:12px">First time, you\'ll pick your firm\'s Word letterhead (.docx with the merge tags) — it\'s remembered after. <a href="#" onclick="DF.clearLetterhead();return false" style="color:var(--accent)">change letterhead</a></div>'
-      + letterheadDetailsHtml()
-      : '';
+      + (hasProse
+          ? '<button class="btn" type="button" onclick="DF.proposalDocx()">Plain Word</button>'
+          + '<button class="btn" type="button" onclick="DF.proposalPdf()">PDF</button>'
+          + '<button class="btn" type="button" onclick="DF.copyProposal()">Copy</button>'
+          : '')
+      + '</div>'
+      + '<div style="font:400 11px Inter;color:var(--ink-faint);margin-bottom:12px">Fills your .docx letterhead exactly — only the merge tags change; anything blank below stays blank in the doc. First time, you\'ll pick the .docx — it\'s remembered after. <a href="#" onclick="DF.clearLetterhead();return false" style="color:var(--accent)">change letterhead</a></div>'
+      + letterheadDetailsHtml();
     openSheet('<h3>'+(hasProse?'Proposal — round ':'Edit round ')+esc(r.round_no)+(isDraft?' <span class="draftpill">draft</span>':'')+'</h3>'
       + '<div class="ssub">'+(hasProse?'Read it, tweak the wording or terms, then download or copy it to send — or mark it final.':('Adjust the terms'+(isDraft?', then save — or mark it final to make it a real round you can compare and share.':'.')))+'</div>'
       + draftSec + actionBar + roundFields(r)
@@ -4683,46 +4680,35 @@ window.DF = (function(){
       + '</div>';
   }
   async function aiDraft(dealId, proposalId){
-    try{ _aiTmpls=await q(sb.from('proposal_templates').select('id,name,body').order('created_at',{ascending:false})); }catch(e){ _aiTmpls=[]; }
-    var opts='<option value="">— paste or upload below —</option>'+_aiTmpls.map(function(t){return '<option value="'+t.id+'">'+esc(t.name)+'</option>';}).join('');
-    openSheet('<h3>Draft with AI</h3><div class="ssub">Pick a template, describe the deal in plain words (type or talk), and Claude drafts a proposal you can review, finalize, and share.</div>'
-      + fld('Template','<select id="ai_tmpl" onchange="DF.aiPickTmpl()">'+opts+'</select>')
-      + '<div class="fld"><label>Template text <span class="u">paste, or upload a Word .docx</span></label>'
-      +   '<textarea id="ai_tmplbody" placeholder="Paste your standard proposal template here, or upload a .docx →"></textarea>'
-      +   '<div style="display:flex;gap:14px;align-items:center;margin-top:7px;flex-wrap:wrap"><input type="file" id="ai_docx" accept=".docx" onchange="DF.aiDocx()">'
-      +   '<label style="display:flex;gap:6px;align-items:center;font:500 11.5px Inter;color:var(--ink-soft)"><input type="checkbox" id="ai_savetmpl"> save this template for reuse</label></div></div>'
+    openSheet('<h3>Draft with AI</h3><div class="ssub">Read the checklist and talk — Van pulls out the values and fills your letterhead template exactly as designed. Only the highlighted blanks change; anything you skip stays blank.</div>'
       + aiChecklistHtml(dealId)
       + '<div class="fld"><label>Deal points <span class="u">type or talk</span><button class="vbtn" id="ai_mic" onclick="DF.toggleVoice(\'ai_mic\',\'ai_points\')" title="Dictate">🎙</button></label>'
-      +   '<textarea id="ai_points" placeholder="e.g. Water Garden suite 300, ~9,500 SF, 7-year term, asking $5.95 FSG — push for 4 months free and $60 TI, 3% annual bumps, one 5-yr option..."></textarea></div>'
+      +   '<textarea id="ai_points" placeholder="e.g. Landlord is Jane Smith at Ocean Ave Partners — 1733 Ocean Ave suite 300, Santa Monica CA 90401, 9,500 SF, 5-year term commencing October 1, $5.25/SF/month FSG, 3% bumps, 2027 base year, 12 parking spaces..."></textarea></div>'
       + '<div class="formerr" id="ai_err"></div>'
-      + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button><button class="btn pri" id="ai_go">✨ Generate draft</button></div>');
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button><button class="btn pri" id="ai_go">✨ Fill the proposal</button></div>');
     $('ai_go').addEventListener('click',function(){ aiGenerate(dealId, proposalId, this); });
   }
   async function aiGenerate(dealId, proposalId, btn){
     var points=($('ai_points').value||'').trim();
     if(!points){ $('ai_err').textContent='Tell me the deal points first (type or talk).'; return; }
-    var tmplBody=($('ai_tmplbody').value||'').trim();
     btn.disabled=true; btn.textContent='Sending…'; $('ai_err').textContent='';
     if(_rec){ try{ _rec.stop(); }catch(e){} _rec=null; }
     try{
-      if($('ai_savetmpl').checked && tmplBody){
-        try{ await q(sb.from('proposal_templates').insert({owner_id:me.id, name:'Template '+new Date().toLocaleDateString(), body:tmplBody}).select().single()); }catch(e){}
-      }
       var s=await sb.auth.getSession(); var token=(s&&s.data&&s.data.session)?s.data.session.access_token:null;
       if(!token) throw new Error('Your session expired — please sign in again.');
-      var bldg='';
+      var bldg='', bAddr='';
       try{
         var pr=(await q(sb.from('proposals').select('property_id').eq('id',proposalId).limit(1)))[0];
-        if(pr&&pr.property_id){ var p=(await q(sb.from('deal_properties').select('name').eq('id',pr.property_id).limit(1)))[0]; bldg=p?p.name:''; }
+        if(pr&&pr.property_id){ var p=(await q(sb.from('deal_properties').select('name,address').eq('id',pr.property_id).limit(1)))[0]; if(p){ bldg=p.name||''; bAddr=p.address||''; } }
       }catch(e){}
       var d=deals.filter(function(x){return x.id===dealId;})[0];
       var res=await fetch('/.netlify/functions/deal-ai-draft-background',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({token:token, dealId:dealId, proposalId:proposalId, templateBody:tmplBody, dealPoints:points, clientName:d?d.client_name:'', buildingName:bldg})});
-      if(res.status!==202 && !res.ok) throw new Error('Could not start the draft (HTTP '+res.status+'). Is the AI key set up?');
+        body:JSON.stringify({token:token, dealId:dealId, proposalId:proposalId, dealPoints:points, clientName:d?d.client_name:'', buildingName:bldg, buildingAddress:bAddr})});
+      if(res.status!==202 && !res.ok) throw new Error('Could not start the extraction (HTTP '+res.status+'). Is the AI key set up?');
       closeSheet();
-      aiToast('✨ Claude is drafting your proposal — it\'ll appear as a draft round in ~30 seconds.');
-      setTimeout(function(){ openDeal(dealId); }, 32000);
-    }catch(e){ $('ai_err').textContent=e.message; btn.disabled=false; btn.textContent='✨ Generate draft'; }
+      aiToast('✨ Van is pulling the values out of your deal points — open the new round in ~20 seconds, review the Letterhead details, then Download in our letterhead.');
+      setTimeout(function(){ openDeal(dealId); }, 22000);
+    }catch(e){ $('ai_err').textContent=e.message; btn.disabled=false; btn.textContent='✨ Fill the proposal'; }
   }
   /* ---------- boot ---------- */
   document.addEventListener('DOMContentLoaded',bindAuth);

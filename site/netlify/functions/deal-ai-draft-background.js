@@ -1,10 +1,20 @@
 // Vantage — deal-ai-draft (Netlify BACKGROUND function).
 //
-// Drafts a tenant-side lease proposal with Claude from the broker's template +
-// dictated/typed deal points, then writes it into the deal as a DRAFT round for
-// the broker to review. Background function (name ends in "-background"): returns
-// 202 immediately and runs up to 15 min, so the ~20-40s Opus draft never hits the
-// normal 10s function timeout. The broker's page polls the deal for the new draft.
+// EXTRACTION, not authorship (Andrew's call 2026-07-25: "the AI must use the
+// exact template — exact copy, exact formatting; the only thing it changes is
+// what's highlighted"). The broker dictates deal points; Claude extracts ONLY
+// the values the letterhead's {{merge tokens}} and the round's terms grid need,
+// and this function saves them:
+//   * proposal_rounds  — a draft round carrying the economics + a short summary
+//   * proposals.details — the letterhead fields (landlord block, address parts,
+//     base year, parking, commencement…), merged over what's already saved
+// The document itself is NEVER generated or altered by the AI: the broker's
+// .docx letterhead is filled deterministically in the browser (docxtemplater),
+// so the copy and formatting are byte-identical to the template. Any value the
+// broker didn't state comes back null and renders as a BLANK in the document.
+//
+// Background function: returns 202 immediately, runs past the 10s limit; the
+// deal page re-opens itself shortly after to show the new round.
 //
 // Requires env var ANTHROPIC_API_KEY (+ the existing SUPABASE_URL / SERVICE_ROLE).
 
@@ -13,11 +23,19 @@ const sb = require("./_sb");
 const RENT_BASES = ["FSG", "MG", "IG", "NNN", "NN", "N", "GROSS", "ABS", "OTHER"];
 const NUMN = { anyOf: [{ type: "number" }, { type: "null" }] };
 const INTN = { anyOf: [{ type: "integer" }, { type: "null" }] };
+const STRN = { anyOf: [{ type: "string" }, { type: "null" }] };
+
+const DETAIL_KEYS = [
+  "landlord_contact_name", "landlord_company", "landlord_salutation", "landlord_legal_name",
+  "tenant_legal_name", "tenant_website",
+  "building_address", "suite_number", "building_city", "building_state_zip",
+  "commencement_date", "base_year", "parking_spaces"
+];
+
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
   properties: {
-    proposal_markdown: { type: "string" },
     economics: {
       type: "object",
       additionalProperties: false,
@@ -27,12 +45,19 @@ const SCHEMA = {
         annual_escalation_pct: NUMN, free_rent_months: NUMN, ti_psf: NUMN
       },
       required: ["rent_basis", "base_rent_psf", "opex_psf", "size_sf", "term_months", "annual_escalation_pct", "free_rent_months", "ti_psf"]
-    }
+    },
+    details: {
+      type: "object",
+      additionalProperties: false,
+      properties: DETAIL_KEYS.reduce((o, k) => { o[k] = STRN; return o; }, {}),
+      required: DETAIL_KEYS
+    },
+    summary: { type: "string" }
   },
-  required: ["proposal_markdown", "economics"]
+  required: ["economics", "details", "summary"]
 };
 
-async function draftWithClaude(system, userText) {
+async function extractWithClaude(system, userText) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -42,9 +67,8 @@ async function draftWithClaude(system, userText) {
     },
     body: JSON.stringify({
       model: "claude-opus-4-8",
-      max_tokens: 8000,
-      thinking: { type: "adaptive" },
-      output_config: { effort: "high", format: { type: "json_schema", schema: SCHEMA } },
+      max_tokens: 3000,
+      output_config: { effort: "medium", format: { type: "json_schema", schema: SCHEMA } },
       system: system,
       messages: [{ role: "user", content: userText }]
     })
@@ -53,7 +77,7 @@ async function draftWithClaude(system, userText) {
   if (!res.ok) throw new Error((data && data.error && data.error.message) || ("Anthropic HTTP " + res.status));
   if (data.stop_reason === "refusal") throw new Error("The model's safety system declined this request.");
   const textBlock = (data.content || []).filter((b) => b.type === "text")[0];
-  if (!textBlock || !textBlock.text) throw new Error("No draft text returned.");
+  if (!textBlock || !textBlock.text) throw new Error("No extraction returned.");
   return JSON.parse(textBlock.text);
 }
 
@@ -76,22 +100,28 @@ exports.handler = async (event) => {
   if (!deal || deal.owner_id !== user.id) { console.log("ai-draft: deal not owned by user"); return { statusCode: 403, body: "forbidden" }; }
 
   const system =
-    "You are an expert commercial real estate broker at Havill & Co. drafting a TENANT-SIDE lease proposal for the " +
-    "broker to review before it is sent to their client. Write in a professional, confident, client-ready tone. Use the " +
-    "broker's template as the structure and style guide and fill it with the specific deal points provided. Reflect the " +
-    "economic terms the broker gives accurately. Do NOT invent hard numbers that were not provided — where a needed figure " +
-    "is unknown, write a clearly marked [TBD]. Return the proposal body as clean markdown, plus a structured summary of the " +
-    "key economics. rent_basis must be one of: " + RENT_BASES.join(", ") + " (or null if unclear). Respond only with the " +
-    "structured result — no preamble.";
-  const userText =
-    "CLIENT: " + (body.clientName || deal.client_name || "the client") + "\n" +
-    (body.buildingName ? "BUILDING: " + body.buildingName + "\n" : "") +
-    "\nBROKER'S TEMPLATE:\n" + (body.templateBody || "(no template provided — use a standard, professional lease-proposal structure)") +
-    "\n\nDEAL POINTS (what the broker said about this deal):\n" + (body.dealPoints || "(none provided)");
+    "You are a data-extraction assistant for a commercial real estate proposal. The broker dictated deal points; your ONLY " +
+    "job is to pull out the specific values below so they can be merged into a fixed letterhead template. You never write " +
+    "prose and you NEVER invent, infer, or estimate a value the broker did not state — anything not explicitly given is null " +
+    "(it renders as an intentionally blank space in the document for the broker to complete). Rules: " +
+    "term_months is the lease term in months (broker may say years — 5 years = 60). " +
+    "base_rent_psf is the dollars per square foot figure exactly as stated — do NOT convert between monthly and annual. " +
+    "annual_escalation_pct is the yearly increase percent as a bare number (\"3% bumps\" = 3). " +
+    "rent_basis must be one of: " + RENT_BASES.join(", ") + " (FSG for full service gross) or null. " +
+    "details values are strings exactly as the broker gave them: commencement_date like \"October 1, 2026\" if spoken that way; " +
+    "suite_number is just the number/identifier (\"300\"); building_state_zip like \"CA 90401\"; base_year like \"2027\"; " +
+    "parking_spaces is the count as a string; landlord_salutation is how the letter greets them (\"Mr. Jones\") if stated. " +
+    "summary is 1–2 plain sentences of the key terms for the broker's notes. Respond only with the structured result.";
 
-  let draft;
-  try { draft = await draftWithClaude(system, userText); }
-  catch (e) { console.log("ai-draft: generation failed:", e.message); return { statusCode: 200, body: "draft failed" }; }
+  const userText =
+    "CLIENT (tenant): " + (body.clientName || deal.client_name || "unknown") + "\n" +
+    (body.buildingName ? "BUILDING (name): " + body.buildingName + "\n" : "") +
+    (body.buildingAddress ? "BUILDING ADDRESS on file: " + body.buildingAddress + "\n" : "") +
+    "\nBROKER'S DEAL POINTS (verbatim):\n" + (body.dealPoints || "(none provided)");
+
+  let out;
+  try { out = await extractWithClaude(system, userText); }
+  catch (e) { console.log("ai-draft: extraction failed:", e.message); return { statusCode: 200, body: "extract failed" }; }
 
   // next round number for this proposal
   let nextNo = 1;
@@ -100,10 +130,11 @@ exports.handler = async (event) => {
     if (r.data && r.data[0]) nextNo = (r.data[0].round_no || 0) + 1;
   } catch (e) { /* default 1 */ }
 
-  const ec = draft.economics || {};
+  const ec = out.economics || {};
   const row = {
     deal_id: dealId, proposal_id: proposalId, round_no: nextNo, from_party: "tenant",
-    status: "draft", source: "ai", draft_text: draft.proposal_markdown || null,
+    status: "draft", source: "ai", draft_text: null,
+    summary: out.summary || null,
     rent_basis: RENT_BASES.indexOf(ec.rent_basis) >= 0 ? ec.rent_basis : null,
     base_rent_psf: ec.base_rent_psf, opex_psf: ec.opex_psf, size_sf: ec.size_sf,
     term_months: ec.term_months, annual_escalation_pct: ec.annual_escalation_pct,
@@ -115,8 +146,25 @@ exports.handler = async (event) => {
       headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
       body: JSON.stringify(row)
     });
-  } catch (e) { console.log("ai-draft: insert failed:", e.message); return { statusCode: 200, body: "save failed" }; }
+  } catch (e) { console.log("ai-draft: round insert failed:", e.message); return { statusCode: 200, body: "save failed" }; }
 
-  console.log("ai-draft: wrote draft round", nextNo, "for proposal", proposalId);
+  // merge the extracted letterhead fields over what the proposal already has —
+  // extracted non-null values win; existing values survive when nothing new came in
+  try {
+    const pr = await sb.rest("proposals?id=eq." + proposalId + "&select=details&limit=1");
+    const existing = (pr.data && pr.data[0] && pr.data[0].details) || {};
+    const merged = Object.assign({}, existing);
+    DETAIL_KEYS.forEach((k) => {
+      const v = out.details && out.details[k];
+      if (v != null && String(v).trim() !== "") merged[k] = String(v).trim();
+    });
+    await sb.rest("proposals?id=eq." + proposalId, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ details: merged })
+    });
+  } catch (e) { console.log("ai-draft: details merge failed:", e.message); /* round still saved */ }
+
+  console.log("ai-draft: extracted round", nextNo, "for proposal", proposalId);
   return { statusCode: 200, body: JSON.stringify({ ok: true, round_no: nextNo }) };
 };
