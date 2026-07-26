@@ -58,6 +58,16 @@
   .mm-empty{font:500 12px Inter;color:var(--ink-faint);padding:4px 2px}
   .mm-status{font:500 12px Inter;color:var(--ink-soft);min-height:16px}
   .mm-status.err{color:#c0392b}
+  /* finalized proposals filed under this building (broker-only via RLS) */
+  .bp-row{border:1px solid var(--line);border-radius:11px;background:var(--paper-2);padding:12px 14px;margin-bottom:10px}
+  .bp-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .bp-c{font:700 14px 'Bricolage Grotesque';color:var(--ink)}
+  .bp-t{font:500 12.5px Inter;color:var(--ink-soft)}
+  .bp-d{font:500 11.5px Inter;color:var(--ink-faint);margin-left:auto}
+  .bp-a{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px}
+  .bp-dl{font:600 12px Inter;color:var(--accent);text-decoration:none;cursor:pointer}
+  .bp-dl:hover{text-decoration:underline}
+  .bp-none{font:500 12px Inter;color:var(--ink-faint)}
 </style>
 </head>
 <body>
@@ -149,6 +159,10 @@
       <div class="dsr-h"><h3 class="display">Brochures</h3></div>
       <div id="brochureList" class="plans"></div>
     </section>
+    <section class="dsr-sec" id="proposalsSec" style="display:none">
+      <div class="dsr-h"><h3 class="display">Proposals</h3></div>
+      <div id="proposalList"></div>
+    </section>
     <section class="dsr-sec" id="dMediaSec"></section>
   </div>
   <div class="lightbox" id="lightbox">
@@ -195,6 +209,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script src="assets/vantage-view.js"></script>
+<script src="assets/proposal-econ.js"></script>
 <script>
 (function(){
   "use strict";
@@ -255,6 +270,78 @@
     sec.style.display = '';
   }
 
+  // Finalized proposals filed under this building.
+  //
+  // The hop is proposals.property_id -> deal_properties.building_id -> this page's
+  // catalog id, so only catalog-matched deal properties surface here (a manually
+  // typed building has no dossier page to appear on at all).
+  //
+  // CONFIDENTIALITY: this page has no sign-in gate, so the guard is RLS, not the
+  // isBroker flag. proposals_all requires can_access_deal() — owner, that firm's
+  // org_admin, or platform admin — so an anonymous visitor reads back zero rows
+  // even though the anon key is in the page source. The isBroker short-circuit
+  // below is only there to skip a pointless request.
+  function fetchProposals(){
+    if(!sb || !isBroker) return Promise.resolve([]);
+    return sb.from('proposals')
+      .select('id,title,deal_id,finalized_at,final_econ,final_doc_id,deal_properties!inner(building_id,name),deals(client_name)')
+      .not('finalized_at', 'is', null)
+      .eq('deal_properties.building_id', buildingId)
+      .order('finalized_at', { ascending: false })
+      .then(function(res){
+        if(res.error || !res.data) return [];
+        var rows = res.data;
+        // final_doc_id is resolved separately: `documents` and `proposals` are
+        // joined two ways (documents.proposal_id and proposals.final_doc_id), so
+        // an embed would be ambiguous to PostgREST.
+        var ids = rows.map(function(r){ return r.final_doc_id; }).filter(Boolean);
+        if(!ids.length) return rows;
+        return sb.from('documents').select('id,filename,storage_path').in('id', ids)
+          .then(function(dr){
+            var byId = {}; (dr.data || []).forEach(function(x){ byId[x.id] = x; });
+            rows.forEach(function(r){ r._doc = byId[r.final_doc_id] || null; });
+            return rows;
+          })
+          .catch(function(){ return rows; });
+      })
+      .catch(function(){ return []; });
+  }
+
+  function renderProposals(rows){
+    var sec = $('proposalsSec'), list = $('proposalList');
+    if(!rows || !rows.length){ sec.style.display='none'; list.innerHTML=''; return; }
+    list.innerHTML = rows.map(function(p){
+      var client = (p.deals && p.deals.client_name) || 'Client';
+      var when = p.finalized_at ? new Date(p.finalized_at).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}) : '';
+      var chips = window.ProposalEcon ? ProposalEcon.chipsHtml(p.final_econ || {}) : '';
+      var doc = p._doc;
+      return '<div class="bp-row">'
+        + '<div class="bp-h"><span class="bp-c">'+esc(client)+'</span>'
+        +   (p.title ? '<span class="bp-t">'+esc(p.title)+'</span>' : '')
+        +   '<span class="bp-d">Finalized '+esc(when)+'</span></div>'
+        + (chips ? '<div class="pe-chips">'+chips+'</div>' : '')
+        + '<div class="bp-a">'
+        +   (doc ? '<a href="#" class="bp-dl" data-path="'+esc(doc.storage_path)+'">⬇ '+esc(doc.filename)+'</a>' : '<span class="bp-none">No document archived</span>')
+        +   '<a class="bp-dl" href="deals.html?deal='+esc(p.deal_id)+'">Open the deal →</a>'
+        + '</div></div>';
+    }).join('');
+    sec.style.display = '';
+  }
+
+  // deal-files is private — mint a short-lived signed URL on click rather than
+  // storing one, so a copied page never carries a live link to a proposal.
+  document.addEventListener('click', function(ev){
+    var a = ev.target.closest && ev.target.closest('a.bp-dl[data-path]');
+    if(!a) return;
+    ev.preventDefault();
+    sb.storage.from('deal-files').createSignedUrl(a.getAttribute('data-path'), 120)
+      .then(function(r){
+        if(r.error || !r.data){ alert('Could not open that document.'); return; }
+        window.open(r.data.signedUrl, '_blank', 'noopener');
+      })
+      .catch(function(){ alert('Could not open that document.'); });
+  });
+
   function renderExisting(rows){
     var el = $('mmExisting');
     if(!rows || !rows.length){ el.innerHTML = '<div class="mm-empty">Nothing uploaded yet.</div>'; return; }
@@ -281,6 +368,8 @@
       }
       renderBrochures(m.brochures);
       renderExisting(m.rows);
+      // Independent of media — a proposals failure must not blank the dossier.
+      fetchProposals().then(renderProposals).catch(function(){});
       return m;
     });
   }
