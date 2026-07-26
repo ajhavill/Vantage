@@ -115,6 +115,15 @@
   .party.tenant{background:rgba(45,110,126,.12);color:var(--accent)}
   .party.landlord{background:rgba(201,84,63,.13);color:var(--dining)}
   .draftpill{font:600 9.5px Inter;text-transform:uppercase;letter-spacing:.06em;color:#9a6a00;background:#fbeecb;border-radius:5px;padding:2px 6px;margin-left:6px}
+  /* "read the landlord's response" panel at the top of the Add round sheet */
+  .lread{border:1px solid rgba(45,110,126,.28);background:rgba(45,110,126,.05);border-radius:11px;padding:12px 14px;margin:4px 0 0}
+  .lread-h{font:700 13px 'Bricolage Grotesque';color:var(--accent)}
+  .lread-s{font:400 11.5px Inter;color:var(--ink-soft);margin:3px 0 9px;line-height:1.45}
+  .lread-a{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0 0}
+  .lread textarea{width:100%;margin-top:9px}
+  .lread-fn{font:500 11.5px Inter;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:230px}
+  .lread-st{font:500 11.5px Inter;color:var(--dining)}
+  .lread-or{text-align:center;font:500 11px Inter;color:var(--ink-faint);margin:14px 0 2px}
   /* finalized proposal — the terms on record, filed under its building */
   .pcard.final{border-color:rgba(45,110,126,.4)}
   .tag.fin{color:var(--accent);border-color:rgba(45,110,126,.45);background:rgba(45,110,126,.09)}
@@ -1640,7 +1649,7 @@ window.DF = (function(){
         +   '<button class="miniadd" onclick="DF.newRound(\''+d.id+'\',\''+pr.id+'\')">+ Add round</button>'
         +   '<button class="miniadd" onclick="DF.addProposalToModel(\''+d.id+'\',\''+pr.id+'\')" title="Model this proposal\'s latest round in Financial Analysis and open it">📊 Add to financial analysis</button>'
         +   '<button class="miniadd ai" onclick="DF.aiDraft(\''+d.id+'\',\''+pr.id+'\')">✨ Draft with AI</button>'
-        +   '<button class="miniadd ai" onclick="DF.extractFromPdf(\''+d.id+'\',\''+pr.id+'\')" title="Upload a landlord proposal/LOI PDF — Claude reads it into a draft round">📄 Read a landlord PDF</button>'
+        +   '<button class="miniadd ai" onclick="DF.extractFromPdf(\''+d.id+'\',\''+pr.id+'\')" title="Upload their PDF or Word file, or paste the email — Claude reads it into a draft round">📄 Read their response</button>'
         +   (isFinal?'':'<button class="miniadd fin" onclick="DF.finalizeProposal(\''+d.id+'\',\''+pr.id+'\')" title="Freeze these terms, archive the document, and file it under this building">✓ Finalize proposal</button>')
         + '</div>'
         + '</div>';
@@ -3725,6 +3734,7 @@ window.DF = (function(){
     try{ prior=await q(sb.from('proposal_rounds').select('*').eq('proposal_id',proposalId).order('round_no',{ascending:false})); }catch(e){}
     var last=prior[0]; var nextNo=last?(last.round_no+1):1;
     openSheet('<h3>Round '+nextNo+'</h3><div class="ssub">Log a set of proposal terms — yours or the landlord\'s response.</div>'
+      + landlordReadHtml()
       + roundFields({ rent_basis: last?last.rent_basis:'FSG' })   // carry forward prior structure
       + '<div class="formerr" id="f_err"></div>'
       + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button>'
@@ -3739,7 +3749,124 @@ window.DF = (function(){
     }
     $('f_final').addEventListener('click',function(){ save('final'); });
     $('f_draft').addEventListener('click',function(){ save('draft'); });
+    wireLandlordRead(dealId, proposalId);
     marketCheck();
+  }
+
+  /* ---------- reading the landlord's response ----------
+     Their counter arrives as a PDF, a Word doc, or just the body of an email,
+     so all three are accepted here rather than making the broker convert first.
+     PDF goes to Claude as a native document block; .docx is flattened to text in
+     the browser (Word isn't a document block type) and pasted text goes as-is.
+     The extraction lands as a DRAFT round to be checked against the source. ---- */
+
+  // Flatten a .docx to text using PizZip, already loaded for the letterhead merge
+  // — so this costs no new dependency. Good enough for an LOI: paragraph and row
+  // breaks become newlines, everything else is tags we drop.
+  async function docxToText(file){
+    if(!window.PizZip) throw new Error('The Word reader is still loading — give it a second and try again.');
+    var zip=new window.PizZip(await file.arrayBuffer());
+    var names=['word/document.xml'].concat(Object.keys(zip.files).filter(function(n){
+      return /^word\/(header|footer)\d*\.xml$/.test(n);   // terms sometimes sit in a header
+    }));
+    var out=names.map(function(n){
+      var f=zip.file(n); if(!f) return '';
+      return f.asText()
+        .replace(/<\/w:p>/g,'\n').replace(/<w:br[^>]*\/>/g,'\n')
+        .replace(/<w:tab[^>]*\/>/g,'\t').replace(/<\/w:tc>/g,'\t')
+        .replace(/<[^>]+>/g,'');
+    }).join('\n');
+    // &amp; must be decoded LAST or "&amp;lt;" would collapse to "<"
+    out=out.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&amp;/g,'&');
+    return out.replace(/[ \t]{2,}/g,' ').replace(/\n{3,}/g,'\n\n').trim();
+  }
+
+  function landlordReadHtml(){
+    return '<div class="lread">'
+      + '<div class="lread-h">✨ Read the landlord\'s response</div>'
+      + '<div class="lread-s">Upload their PDF or Word file, or paste the email — Claude pulls out the terms and fills a draft round for you to check.</div>'
+      + '<div class="lread-a"><button class="btn" type="button" id="f_lr_file">📎 Choose a PDF or Word file</button>'
+      +   '<span class="lread-fn" id="f_lr_name"></span></div>'
+      + '<textarea id="f_lr_text" placeholder="…or paste the landlord\'s email here" style="min-height:88px"></textarea>'
+      + '<div class="lread-a"><button class="btn pri" type="button" id="f_lr_go">Read it →</button>'
+      +   '<span class="lread-st" id="f_lr_st"></span></div>'
+      + '</div>'
+      + '<div class="lread-or">— or enter the terms yourself —</div>';
+  }
+
+  function wireLandlordRead(dealId, proposalId){
+    var picked=null;
+    $('f_lr_file').addEventListener('click', function(){
+      var inp=document.createElement('input');
+      inp.type='file'; inp.accept='.pdf,.docx,application/pdf';
+      inp.onchange=function(){
+        var f=inp.files&&inp.files[0]; if(!f) return;
+        if(!/\.(pdf|docx)$/i.test(f.name)){ alert('Pick a PDF or a Word .docx — for anything else, paste the text instead.'); return; }
+        if(f.size>15*1024*1024){ alert('File too large — 15MB max.'); return; }
+        picked=f; $('f_lr_name').textContent=f.name;
+      };
+      inp.click();
+    });
+
+    $('f_lr_go').addEventListener('click', async function(){
+      var btn=this, st=$('f_lr_st'), typed=($('f_lr_text').value||'').trim();
+      if(!picked && !typed){ st.textContent='Pick a file or paste their email first.'; return; }
+      if(!picked && typed.length<40){ st.textContent='That looks too short to read — paste the whole message.'; return; }
+      btn.disabled=true; btn.textContent='Reading…'; st.textContent='';
+      try{
+        var s=await sb.auth.getSession(); var token=(s&&s.data&&s.data.session)?s.data.session.access_token:null;
+        if(!token) throw new Error('Your session expired — please sign in again.');
+        var payload={token:token, dealId:dealId, proposalId:proposalId};
+
+        if(picked){
+          // Keep the original file on the deal either way — it's the source of
+          // truth the broker verifies the extracted round against.
+          var safe=picked.name.replace(/[^A-Za-z0-9._-]/g,'_');
+          var path=dealId+'/'+randSlug(8)+'_'+safe;   // first folder = deal_id → storage RLS scopes by it
+          var up=await sb.storage.from('deal-files').upload(path, picked, {upsert:false, contentType:picked.type||undefined});
+          if(up.error) throw up.error;
+          await q(sb.from('documents').insert({deal_id:dealId, proposal_id:proposalId, kind:'response',
+            filename:picked.name, storage_path:path, mime:picked.type||null, size_bytes:picked.size, uploaded_by:me.id}).select().single());
+          payload.filename=picked.name;
+          if(/\.pdf$/i.test(picked.name)) payload.storagePath=path;
+          else {
+            st.textContent='Reading the Word file…';
+            payload.text=await docxToText(picked);
+            if(payload.text.length<40) throw new Error('That Word file had almost no readable text in it.');
+          }
+        } else {
+          payload.text=typed; payload.filename='pasted email';
+        }
+
+        var res=await fetch('/.netlify/functions/deal-ai-extract-background',{method:'POST',
+          headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+        if(res.status!==202 && !res.ok) throw new Error('Could not start the read (HTTP '+res.status+'). Is the AI key set up?');
+        closeSheet();
+        aiToast('✨ Claude is reading '+(payload.filename||'the response')+' — the draft round will appear shortly.');
+        openDeal(dealId);                       // show the attached file straight away
+        pollForRound(dealId, proposalId);       // then the round, whenever it lands
+      }catch(e){
+        st.textContent=(e&&e.message)||String(e);
+        btn.disabled=false; btn.textContent='Read it →';
+      }
+    });
+  }
+
+  // The extractor is a background function: it 202s immediately and the round
+  // shows up whenever Opus finishes. Poll for it instead of guessing a delay —
+  // a fixed timeout either re-renders too early or leaves the broker staring at
+  // a stale page. Failures now write an error round, so this ends either way.
+  async function pollForRound(dealId, proposalId){
+    var before=0;
+    try{ before=(await q(sb.from('proposal_rounds').select('id').eq('proposal_id',proposalId))).length; }catch(e){}
+    var tries=0;
+    var timer=setInterval(async function(){
+      tries++;
+      if(tries>30){ clearInterval(timer); return; }          // ~2 min, then give up quietly
+      var n=before;
+      try{ n=(await q(sb.from('proposal_rounds').select('id').eq('proposal_id',proposalId))).length; }catch(e){ return; }
+      if(n>before){ clearInterval(timer); openDeal(dealId); }
+    }, 4000);
   }
 
   /* ---------- edit: round (manual or AI draft) ---------- */
@@ -4846,32 +4973,10 @@ window.DF = (function(){
   // Read a landlord proposal/LOI PDF → extract terms into a draft round (reverse of aiDraft).
   // Uploads the PDF (so it's attached to the proposal too), then a background function
   // reads it with Claude and writes a pre-filled DRAFT round for the broker to verify.
-  function extractFromPdf(dealId, proposalId){
-    var inp=document.createElement('input');
-    inp.type='file'; inp.accept='.pdf,application/pdf';
-    inp.onchange=async function(){
-      var file=inp.files&&inp.files[0]; if(!file) return;
-      if(!/pdf$/i.test(file.name) && file.type!=='application/pdf'){ alert('Please pick a PDF — for other formats, add the round manually.'); return; }
-      if(file.size>15*1024*1024){ alert('File too large — 15MB max.'); return; }
-      var safe=file.name.replace(/[^A-Za-z0-9._-]/g,'_');
-      var path=dealId+'/'+randSlug(8)+'_'+safe;       // first folder = deal_id → storage RLS scopes by it
-      try{
-        var up=await sb.storage.from('deal-files').upload(path, file, {upsert:false, contentType:file.type||'application/pdf'});
-        if(up.error) throw up.error;
-        await q(sb.from('documents').insert({deal_id:dealId, proposal_id:proposalId, kind:'response',
-          filename:file.name, storage_path:path, mime:file.type||'application/pdf', size_bytes:file.size, uploaded_by:me.id}).select().single());
-        var s=await sb.auth.getSession(); var token=(s&&s.data&&s.data.session)?s.data.session.access_token:null;
-        if(!token) throw new Error('Your session expired — please sign in again.');
-        var res=await fetch('/.netlify/functions/deal-ai-extract-background',{method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({token:token, dealId:dealId, proposalId:proposalId, storagePath:path, filename:file.name})});
-        if(res.status!==202 && !res.ok) throw new Error('Could not start the read (HTTP '+res.status+'). Is the AI key set up?');
-        aiToast('📄 Claude is reading '+file.name+' — the terms will appear as a draft round in ~30 seconds.');
-        openDeal(dealId);                       // show the attached file now
-        setTimeout(function(){ openDeal(dealId); }, 32000);   // then the draft round
-      }catch(e){ alert('Could not read that PDF: '+(e.message||e)); }
-    };
-    inp.click();
-  }
+  // The card's "Read the landlord's response" button and the Add-round sheet are
+  // the same thing now — this opens the sheet, where the reader lives. One code
+  // path, so the two entry points can't drift.
+  function extractFromPdf(dealId, proposalId){ return newRound(dealId, proposalId); }
   // Read the executed lease PDF → abstract fields + critical dates + tenant-side risk
   // review. Safe: if an abstract already exists, only the AI review is attached (the
   // broker's typed fields are never overwritten); otherwise a pre-filled draft is created.
@@ -5887,6 +5992,7 @@ window.DF = (function(){
     setStage:setStage, basisChange:basisChange, marketCheck:marketCheck, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
     proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead, _mergeData:buildMergeData,
     finalizeProposal:finalizeProposal, unfinalizeProposal:unfinalizeProposal, replaceFinalDoc:replaceFinalDoc,
+    _docxToText:docxToText,   // test hook (tools/docx-text.test.js drives it in a browser)
     lhPick:lhPick,
     _lhPicker:function(t,c){ _lhTmpls=t||[]; return letterheadPickerHtml(c); }, _lhBytes:letterheadBytes,
     shareDeal:shareDeal, toggleProposalVisible:toggleProposalVisible,
