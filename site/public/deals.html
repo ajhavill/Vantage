@@ -115,6 +115,15 @@
   .party.tenant{background:rgba(45,110,126,.12);color:var(--accent)}
   .party.landlord{background:rgba(201,84,63,.13);color:var(--dining)}
   .draftpill{font:600 9.5px Inter;text-transform:uppercase;letter-spacing:.06em;color:#9a6a00;background:#fbeecb;border-radius:5px;padding:2px 6px;margin-left:6px}
+  /* finalized proposal — the terms on record, filed under its building */
+  .pcard.final{border-color:rgba(45,110,126,.4)}
+  .tag.fin{color:var(--accent);border-color:rgba(45,110,126,.45);background:rgba(45,110,126,.09)}
+  .pfinal{border:1px solid rgba(45,110,126,.25);background:rgba(45,110,126,.05);border-radius:10px;padding:10px 12px;margin:10px 0 2px}
+  .pfinal-h{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  .pfinal-t{font:600 12px Inter;color:var(--accent)}
+  .pfinal-w{font:400 11.5px Inter;color:var(--ink-faint)}
+  .pfinal-a{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px}
+  .miniadd.fin{color:var(--accent);font-weight:600}
   .ge{font:500 11.5px Inter;color:var(--ink-faint);margin-top:8px}
   .ge b{color:var(--ink-soft);font-family:'JetBrains Mono'}
 
@@ -715,6 +724,7 @@
 <script src="https://cdn.jsdelivr.net/npm/pizzip@3.1.7/dist/pizzip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.50.0/build/docxtemplater.js"></script>
 <script src="assets/van.js"></script>
+<script src="assets/proposal-econ.js"></script>
 <script src="assets/model-engine.js"></script>
 <script src="assets/tour-plan.js"></script>
 <!-- market-spaces.js: only its pure window.MarketSpaces helpers are used here (the
@@ -1594,11 +1604,33 @@ window.DF = (function(){
         '<tr><td colspan="9" style="color:var(--ink-faint)">No rounds yet — add the first proposal terms.</td></tr>';
       var visBtn='<button class="vis '+(pr.client_visible?'on':'')+'" onclick="DF.toggleProposalVisible(\''+pr.id+'\','+(pr.client_visible?'false':'true')+',\''+d.id+'\')" title="Toggle whether the client can see this proposal">'
         +(pr.client_visible?'● Shown to client':'○ Hidden from client')+'</button>';
-      return '<div class="pcard">'
+      // Finalized proposals carry a frozen terms snapshot — show those business
+      // points on the card so the numbers that were actually sent are readable
+      // without opening a round or the document itself.
+      var isFinal=!!pr.finalized_at;
+      var finalBar='';
+      if(isFinal){
+        var chips=window.ProposalEcon?ProposalEcon.chipsHtml(pr.final_econ||{}):'';
+        var finalDoc=(docsByProp[pr.id]||[]).filter(function(x){ return x.id===pr.final_doc_id; })[0];
+        finalBar='<div class="pfinal">'
+          // finalized_at is a timestamptz; fmtDate wants a bare date
+          + '<div class="pfinal-h"><span class="pfinal-t">✓ Finalized '+fmtDate(String(pr.finalized_at).slice(0,10))+'</span>'
+          +   (bldg?'<span class="pfinal-w">on the '+esc(bldg)+' page</span>':'<span class="pfinal-w">not linked to a catalog building — no building page</span>')
+          + '</div>'
+          + (chips?'<div class="pe-chips">'+chips+'</div>':'')
+          + '<div class="pfinal-a">'
+          +   (finalDoc?'<button class="miniadd" onclick="DF.downloadDoc(\''+finalDoc.storage_path+'\')" title="'+esc(finalDoc.filename)+'">⬇ Download Word</button>':'')
+          +   '<button class="miniadd" onclick="DF.replaceFinalDoc(\''+d.id+'\',\''+pr.id+'\')" title="Upload a version you edited in Word — it becomes the document on record">⬆ Upload edited version</button>'
+          +   '<button class="miniadd" onclick="DF.unfinalizeProposal(\''+d.id+'\',\''+pr.id+'\')">Reopen</button>'
+          + '</div></div>';
+      }
+      return '<div class="pcard'+(isFinal?' final':'')+'">'
         + '<div class="top"><div><div class="nm">'+esc(pr.title||'Proposal')+'</div>'
         +   (bldg?'<div class="ad">'+esc(bldg)+'</div>':'')+'</div>'
-        +   '<div style="display:flex;gap:8px;align-items:center">'+visBtn+'<span class="tag">'+esc(pr.status)+'</span>'
+        +   '<div style="display:flex;gap:8px;align-items:center">'+visBtn
+        +     '<span class="tag'+(isFinal?' fin':'')+'">'+(isFinal?'FINAL':esc(pr.status))+'</span>'
       +     '<button class="delx" onclick="DF.deleteProposal(this,\''+pr.id+'\',\''+d.id+'\')" title="Delete this proposal — its rounds and attached files go with it">delete</button></div></div>'
+        + finalBar
         + '<div class="rounds"><table class="rtable"><thead><tr>'
         +   '<th>Rd</th><th>From</th><th>Structure</th><th class="num">Base $/SF</th><th class="num">Opex</th>'
         +   '<th class="num">≈ Gross</th><th class="num">Size SF</th><th class="num">Term</th><th>Notes</th>'
@@ -1609,6 +1641,7 @@ window.DF = (function(){
         +   '<button class="miniadd" onclick="DF.addProposalToModel(\''+d.id+'\',\''+pr.id+'\')" title="Model this proposal\'s latest round in Financial Analysis and open it">📊 Add to financial analysis</button>'
         +   '<button class="miniadd ai" onclick="DF.aiDraft(\''+d.id+'\',\''+pr.id+'\')">✨ Draft with AI</button>'
         +   '<button class="miniadd ai" onclick="DF.extractFromPdf(\''+d.id+'\',\''+pr.id+'\')" title="Upload a landlord proposal/LOI PDF — Claude reads it into a draft round">📄 Read a landlord PDF</button>'
+        +   (isFinal?'':'<button class="miniadd fin" onclick="DF.finalizeProposal(\''+d.id+'\',\''+pr.id+'\')" title="Freeze these terms, archive the document, and file it under this building">✓ Finalize proposal</button>')
         + '</div>'
         + '</div>';
     }).join('') : '<div class="sub" style="color:var(--ink-faint);font-size:12.5px">No proposals yet.</div>';
@@ -3929,9 +3962,13 @@ window.DF = (function(){
     };
     return data;
   }
-  function fillTemplateDocx(ab, data, filename){
+  // Merge the letterhead and hand back the blob. Split out from the download so
+  // finalizing can ARCHIVE the very same bytes the broker gets (see finalizeProposal)
+  // — one merge path, so the filed copy can't drift from the downloaded one.
+  // Throws on a bad template; callers surface the message.
+  function mergeTemplateDocx(ab, data){
     var DT = window.docxtemplater || window.Docxtemplater;
-    if(!window.PizZip || !DT){ alert('The Word template engine is still loading — give it a second and try again.'); return; }
+    if(!window.PizZip || !DT) throw new Error('The Word template engine is still loading — give it a second and try again.');
     try{
       var zip=new window.PizZip(ab);
       // Support both tag dialects: the original guide's {tag} templates AND
@@ -3943,17 +3980,23 @@ window.DF = (function(){
       if(dbl) opts.delimiters={start:'{{', end:'}}'};
       var doc=new DT(zip, opts);
       doc.render(data);
-      var out=doc.getZip().generate({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
-      var url=URL.createObjectURL(out);
-      var a=document.createElement('a'); a.href=url; a.download=(filename||'Proposal')+'.docx';
-      document.body.appendChild(a); a.click();
-      aiToast('Saved “'+(filename||'Proposal')+'.docx” to your Downloads.');
-      setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+      return doc.getZip().generate({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
     }catch(e){
       var msg=e.message||(''+e);
       if(e.properties && e.properties.errors){ msg=e.properties.errors.map(function(x){ return (x.properties&&x.properties.explanation)||''; }).filter(Boolean).join('; ')||msg; }
-      alert('Could not fill the letterhead template:\n'+msg+'\n\nCheck that your .docx uses the {merge tags} from the template guide.');
+      throw new Error('Could not fill the letterhead template:\n'+msg+'\n\nCheck that your .docx uses the {merge tags} from the template guide.');
     }
+  }
+  function saveBlob(blob, filename){
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a'); a.href=url; a.download=filename;
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+  }
+  function fillTemplateDocx(ab, data, filename){
+    var out; try{ out=mergeTemplateDocx(ab, data); }catch(e){ alert(e.message||String(e)); return; }
+    saveBlob(out, (filename||'Proposal')+'.docx');
+    aiToast('Saved “'+(filename||'Proposal')+'.docx” to your Downloads.');
   }
   /* ---- letterhead details (proposals.details jsonb) — the fields Andrew's
           Full Service (Office) letterhead needs that rounds don't carry ---- */
@@ -4053,6 +4096,158 @@ window.DF = (function(){
     if(!ab) return;
     fillTemplateDocx(ab, data, proposalFilename());
   }
+
+  /* ---------- finalizing a proposal ----------
+     Finalize = "this is what we sent". It freezes the terms into
+     proposals.final_econ, archives the actual document into the deal-files
+     bucket (rounds alone never left a copy of what the landlord received), and
+     makes the proposal visible on that building's dossier page.
+     The economics are SNAPSHOTTED rather than read live: rounds stay editable
+     for ongoing negotiation, and editing one months later must not silently
+     rewrite what we're on record as having proposed. ---------- */
+
+  // The round whose terms a finalize would freeze: the highest-numbered FINAL
+  // round, falling back to the highest-numbered round of any status.
+  function pickFinalRound(rs){
+    if(!rs || !rs.length) return null;
+    var sorted=rs.slice().sort(function(a,b){ return (a.round_no||0)-(b.round_no||0); });
+    var finals=sorted.filter(function(r){ return r.status==='final'; });
+    var pool=finals.length?finals:sorted;
+    return pool[pool.length-1];
+  }
+  function econSnapshot(r){
+    if(!r) return {};
+    return { round_no:r.round_no, from_party:r.from_party, rent_basis:r.rent_basis,
+      rent_basis_label:r.rent_basis_label, base_rent_psf:r.base_rent_psf, opex_psf:r.opex_psf,
+      size_sf:r.size_sf, term_months:r.term_months, annual_escalation_pct:r.annual_escalation_pct,
+      free_rent_months:r.free_rent_months, ti_psf:r.ti_psf, summary:r.summary };
+  }
+  // Upload a blob to deal-files and record it in `documents`. Returns the row.
+  async function archiveProposalDoc(dealId, proposalId, blob, filename, mime){
+    var safe=filename.replace(/[^A-Za-z0-9._-]/g,'_');
+    var path=dealId+'/'+randSlug(8)+'_'+safe;
+    var up=await sb.storage.from('deal-files').upload(path, blob, {upsert:false, contentType:mime||undefined});
+    if(up.error) throw new Error('Could not upload the document: '+up.error.message);
+    return await q(sb.from('documents').insert({deal_id:dealId, proposal_id:proposalId, kind:'proposal',
+      filename:filename, storage_path:path, mime:mime||null, size_bytes:blob.size, uploaded_by:me.id}).select().single());
+  }
+
+  async function finalizeProposal(dealId, proposalId){
+    var pr, rs, prop=null;
+    try{
+      pr=(await q(sb.from('proposals').select('*').eq('id',proposalId).limit(1)))[0];
+      rs=await q(sb.from('proposal_rounds').select('*').eq('proposal_id',proposalId).order('round_no'));
+      if(pr && pr.property_id) prop=(await q(sb.from('deal_properties').select('name,address,building_id').eq('id',pr.property_id).limit(1)))[0]||null;
+    }catch(e){ alert('Could not load the proposal.'); return; }
+    if(!pr) return;
+    if(!rs.length){ alert('Add at least one round before finalizing — the finalized proposal records the terms that were sent.'); return; }
+
+    var d=deals.filter(function(x){return x.id===dealId;})[0];
+    var def=pickFinalRound(rs);
+    // A proposal only reaches a building dossier through deal_properties.building_id.
+    // Manually-typed buildings leave it null, so say so up front rather than
+    // letting the broker finalize and then wonder why nothing showed up.
+    var noBldg = !prop || !prop.building_id;
+    var warn = noBldg
+      ? '<div class="formerr" style="display:block;margin-bottom:10px">This proposal isn\'t linked to a building in the market catalog, so it won\'t appear on a building page. It will still be finalized and archived. Link it from the Buildings tab to file it under a location.</div>'
+      : '';
+    try{ _lhTmpls=(await q(sb.from('proposal_templates').select('id,name,storage_path').order('name'))).filter(function(t){ return !!t.storage_path; }); }catch(e){ _lhTmpls=[]; }
+
+    var roundOpts=rs.map(function(r){
+      return '<option value="'+r.id+'"'+(def&&r.id===def.id?' selected':'')+'>Round '+esc(r.round_no)
+        +' — '+esc(r.from_party==='landlord'?'Landlord':'Tenant')+(r.status==='draft'?' (draft)':'')+'</option>';
+    }).join('');
+
+    openSheet('<h3>Finalize proposal</h3>'
+      + '<div class="ssub">Freezes these terms as what was sent, files the document under '
+      + esc((prop&&prop.name)||pr.title||'this proposal')+', and archives a copy you can always get back.</div>'
+      + warn
+      + fld('Terms being finalized','<select id="f_fin_round">'+roundOpts+'</select>')
+      + '<div id="f_fin_econ" class="pe-chips" style="margin:-4px 0 14px"></div>'
+      + letterheadPickerHtml(true)
+      + '<div style="font:400 11px Inter;color:var(--ink-faint);margin:-6px 0 14px">Generating fills the selected letterhead exactly and archives that file. Already edited it in Word? Upload yours instead — that becomes the record.</div>'
+      + '<div class="formerr" id="f_err"></div>'
+      + '<div class="srow"><button class="btn" onclick="DF.close()">Cancel</button>'
+      +   '<button class="btn" id="f_fin_up">Upload my document</button>'
+      +   '<button class="btn pri" id="f_fin_gen">Generate &amp; finalize</button></div>');
+
+    function curRound(){ var id=$('f_fin_round').value; return rs.filter(function(r){ return r.id===id; })[0]||def; }
+    function paintEcon(){ $('f_fin_econ').innerHTML=window.ProposalEcon?ProposalEcon.chipsHtml(econSnapshot(curRound())):''; }
+    $('f_fin_round').addEventListener('change', paintEcon); paintEcon();
+
+    async function commit(docRow, r){
+      await q(sb.from('proposals').update({
+        finalized_at:new Date().toISOString(), finalized_by:me.id,
+        final_round_id:r.id, final_doc_id:docRow?docRow.id:null, final_econ:econSnapshot(r)
+      }).eq('id',proposalId).select().single());
+      closeSheet(); openDeal(dealId);
+      aiToast(noBldg?'Proposal finalized and archived.':'Proposal finalized — it\'s now on the '+((prop&&prop.name)||'building')+' page.');
+    }
+    function fail(e, btn, orig){ $('f_err').textContent=(e&&e.message)||String(e); btn.disabled=false; btn.textContent=orig; }
+
+    $('f_fin_gen').addEventListener('click', async function(){
+      var btn=this, orig=btn.textContent; btn.disabled=true; btn.textContent='Generating…';
+      var r=curRound();
+      try{
+        var det=pr.details||{}, bldgName=(prop&&prop.name)||pr.title||'';
+        var data=buildMergeData(r, d, bldgName, r.draft_text, det, (prop&&prop.address)||'');
+        var ab=await letterheadBytes();
+        if(!ab){ btn.disabled=false; btn.textContent=orig; return; }
+        var blob=mergeTemplateDocx(ab, data);
+        var name=safeName([((d&&d.client_name)||'Proposal')+' Proposal', safeName(bldgName), todayStamp()].filter(Boolean).join(' - '))+'.docx';
+        var doc=await archiveProposalDoc(dealId, proposalId, blob, name,
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+        saveBlob(blob, name);   // the broker gets the same bytes that were filed
+        await commit(doc, r);
+      }catch(e){ fail(e, btn, orig); }
+    });
+
+    $('f_fin_up').addEventListener('click', function(){
+      var btn=this, orig=btn.textContent;
+      pickProposalFile(async function(file){
+        btn.disabled=true; btn.textContent='Uploading…';
+        try{
+          var doc=await archiveProposalDoc(dealId, proposalId, file, file.name, file.type||null);
+          await commit(doc, curRound());
+        }catch(e){ fail(e, btn, orig); }
+      });
+    });
+  }
+
+  // Shared file picker for a proposal document (generated or hand-edited).
+  function pickProposalFile(cb){
+    var inp=document.createElement('input');
+    inp.type='file'; inp.accept='.docx,.doc,.pdf';
+    inp.onchange=function(){
+      var f=inp.files[0]; if(!f) return;
+      if(!/\.(docx?|pdf)$/i.test(f.name)){ alert('Upload a Word document (.docx) or a PDF.'); return; }
+      if(f.size>15*1024*1024){ alert('File too large — 15MB max.'); return; }
+      cb(f);
+    };
+    inp.click();
+  }
+
+  // Replace the archived document with a hand-edited version. Prior versions
+  // stay in `documents` as history; only the pointer moves.
+  function replaceFinalDoc(dealId, proposalId){
+    pickProposalFile(async function(file){
+      try{
+        var doc=await archiveProposalDoc(dealId, proposalId, file, file.name, file.type||null);
+        await q(sb.from('proposals').update({final_doc_id:doc.id}).eq('id',proposalId).select().single());
+        openDeal(dealId);
+        aiToast('Updated — “'+file.name+'” is now the proposal on record.');
+      }catch(e){ alert((e&&e.message)||String(e)); }
+    });
+  }
+
+  async function unfinalizeProposal(dealId, proposalId){
+    if(!confirm('Reopen this proposal?\n\nIt comes off the building page and the frozen terms are cleared. The archived documents are kept.')) return;
+    try{
+      await q(sb.from('proposals').update({finalized_at:null, finalized_by:null, final_round_id:null, final_econ:{}}).eq('id',proposalId).select().single());
+      openDeal(dealId);
+    }catch(e){ alert((e&&e.message)||String(e)); }
+  }
+
   function copyProposal(){
     var el=$('f_draft_text'); var t=el?el.value:'';
     if(navigator.clipboard && navigator.clipboard.writeText){
@@ -5691,6 +5886,7 @@ window.DF = (function(){
     generateRfp:generateRfp, copyRfp:copyRfp, downloadRfp:downloadRfp, sendRfpTo:sendRfpTo,
     setStage:setStage, basisChange:basisChange, marketCheck:marketCheck, close:closeSheet, proposalPdf:proposalPdf, proposalDocx:proposalDocx, copyProposal:copyProposal,
     proposalTemplateDl:proposalTemplateDl, clearLetterhead:clearLetterhead, _mergeData:buildMergeData,
+    finalizeProposal:finalizeProposal, unfinalizeProposal:unfinalizeProposal, replaceFinalDoc:replaceFinalDoc,
     lhPick:lhPick,
     _lhPicker:function(t,c){ _lhTmpls=t||[]; return letterheadPickerHtml(c); }, _lhBytes:letterheadBytes,
     shareDeal:shareDeal, toggleProposalVisible:toggleProposalVisible,
