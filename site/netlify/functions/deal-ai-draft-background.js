@@ -23,7 +23,14 @@ const sb = require("./_sb");
 const RENT_BASES = ["FSG", "MG", "IG", "NNN", "NN", "N", "GROSS", "ABS", "OTHER"];
 const NUMN = { anyOf: [{ type: "number" }, { type: "null" }] };
 const INTN = { anyOf: [{ type: "integer" }, { type: "null" }] };
-const STRN = { anyOf: [{ type: "string" }, { type: "null" }] };
+// The structured-output schema may carry at most 16 union-typed ("nullable")
+// parameters — past that the API rejects the whole request with "Schemas
+// contains too many parameters with union types". The 8 economics fields below
+// need real nulls (a number is either known or it isn't), so the 13 letterhead
+// details use a plain string with "" as the not-stated sentinel instead: 8
+// unions total, comfortably under the limit. The merge step already treats ""
+// as absent, so a blank still renders as a blank in the .docx.
+const STR = { type: "string" };
 
 const DETAIL_KEYS = [
   "landlord_contact_name", "landlord_company", "landlord_salutation", "landlord_legal_name",
@@ -49,7 +56,7 @@ const SCHEMA = {
     details: {
       type: "object",
       additionalProperties: false,
-      properties: DETAIL_KEYS.reduce((o, k) => { o[k] = STRN; return o; }, {}),
+      properties: DETAIL_KEYS.reduce((o, k) => { o[k] = STR; return o; }, {}),
       required: DETAIL_KEYS
     },
     summary: { type: "string" }
@@ -142,13 +149,15 @@ exports.handler = async (event) => {
   const system =
     "You are a data-extraction assistant for a commercial real estate proposal. The broker dictated deal points; your ONLY " +
     "job is to pull out the specific values below so they can be merged into a fixed letterhead template. You never write " +
-    "prose and you NEVER invent, infer, or estimate a value the broker did not state — anything not explicitly given is null " +
-    "(it renders as an intentionally blank space in the document for the broker to complete). Rules: " +
+    "prose and you NEVER invent, infer, or estimate a value the broker did not state — anything not explicitly given comes " +
+    "back empty (null for economics numbers, an empty string \"\" for details), which renders as an intentionally blank " +
+    "space in the document for the broker to complete. Rules: " +
     "term_months is the lease term in months (broker may say years — 5 years = 60). " +
     "base_rent_psf is the dollars per square foot figure exactly as stated — do NOT convert between monthly and annual. " +
     "annual_escalation_pct is the yearly increase percent as a bare number (\"3% bumps\" = 3). " +
     "rent_basis must be one of: " + RENT_BASES.join(", ") + " (FSG for full service gross) or null. " +
-    "details values are strings exactly as the broker gave them: commencement_date like \"October 1, 2026\" if spoken that way; " +
+    "details values are strings exactly as the broker gave them, or \"\" if the broker did not state them — never guess. " +
+    "commencement_date like \"October 1, 2026\" if spoken that way; " +
     "suite_number is just the number/identifier (\"300\"); building_state_zip like \"CA 90401\"; base_year like \"2027\"; " +
     "parking_spaces is the count as a string; landlord_salutation is how the letter greets them (\"Mr. Jones\") if stated. " +
     "summary is 1–2 plain sentences of the key terms for the broker's notes. Respond only with the structured result.";
@@ -215,3 +224,6 @@ exports.handler = async (event) => {
   console.log("ai-draft: extracted round", nextNo, "for proposal", proposalId);
   return { statusCode: 200, body: JSON.stringify({ ok: true, round_no: nextNo }) };
 };
+
+exports.SCHEMA = SCHEMA;          // for tools/ai-draft-schema.test.js
+exports.DETAIL_KEYS = DETAIL_KEYS;
