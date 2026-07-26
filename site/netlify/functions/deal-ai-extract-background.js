@@ -1,12 +1,25 @@
 // Vantage — deal-ai-extract (Netlify BACKGROUND function).
 //
-// Reads an uploaded landlord proposal / LOI (PDF) with Claude and extracts the
-// deal economics, writing them into the deal as a DRAFT round the broker verifies
-// against the source before making it a real round. This is the reverse of
-// deal-ai-draft-background: PDF in → structured terms out. Background function
-// (name ends "-background"): returns 202 immediately, runs up to 15 min, so the
-// ~20-40s Opus read never hits the ~10s sync-function timeout. The broker's page
-// polls the deal for the new draft round.
+// Reads a landlord's proposal / LOI / counter and extracts the deal economics,
+// writing them into the deal as a DRAFT round the broker verifies against the
+// source before making it a real round. The reverse of deal-ai-draft-background:
+// their document in → structured terms out.
+//
+// TWO INPUT SHAPES (landlord responses don't always arrive as a PDF):
+//   * storagePath — a PDF already uploaded to deal-files; fetched server-side
+//     with the service_role key and handed to Claude as a native document block.
+//   * text        — plain text: a pasted email body, or a .docx the browser
+//     already flattened (Word can't be sent as a document block, and converting
+//     it in the browser avoids a server-side dependency).
+// Exactly one is required; PDF wins if both arrive, since the real document
+// carries layout that flattened text loses.
+//
+// Background function (name ends "-background"): returns 202 immediately and
+// runs up to 15 min, so the ~20-40s Opus read never hits the ~10s sync timeout.
+// That also means the browser NEVER sees a failure here — so every failure path
+// below is recorded twice: bd_job_runs for the operator, and a draft round whose
+// summary carries the reason, so the broker sees it in the deal instead of
+// waiting on a round that is never coming.
 //
 // Requires env var ANTHROPIC_API_KEY (+ the existing SUPABASE_URL / SERVICE_ROLE).
 
@@ -51,10 +64,13 @@ async function fetchPdfBase64(storagePath) {
   return buf.toString("base64");
 }
 
-async function extractWithClaude(pdfB64, filename) {
+async function extractWithClaude(src, filename) {
   const system =
     "You are an expert commercial real estate tenant-rep analyst at Havill & Co. You read a landlord's lease " +
-    "PROPOSAL or Letter of Intent (LOI) and extract its economic terms precisely for the broker. Extract ONLY figures " +
+    "PROPOSAL, Letter of Intent (LOI), or counter-offer and extract its economic terms precisely for the broker. " +
+    "The material may be a PDF, or plain text pasted from an email or converted from a Word document — in the text " +
+    "case, layout and tables are flattened, so read carefully and do not mistake a stray number for a term. " +
+    "Extract ONLY figures " +
     "actually stated in the document — never infer or invent a number; if a term isn't stated, return null for it. " +
     "Normalize the rent structure to one of: " + RENT_BASES.join(", ") + " (FSG = full-service gross / base-year stop; " +
     "MG = modified gross; NNN = triple net; use OTHER + rent_basis_label only if none fit). base_rent_psf and opex_psf " +
@@ -79,10 +95,10 @@ async function extractWithClaude(pdfB64, filename) {
       system: system,
       messages: [{
         role: "user",
-        content: [
-          { type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfB64 }, title: filename || "proposal.pdf" },
-          { type: "text", text: "Extract the economic terms from this proposal per your instructions." }
-        ]
+        content: (src.pdfB64
+          ? [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: src.pdfB64 }, title: filename || "proposal.pdf" }]
+          : [{ type: "text", text: "LANDLORD RESPONSE" + (filename ? " (" + filename + ")" : "") + ":\n\n" + src.text }]
+        ).concat([{ type: "text", text: "Extract the economic terms from this proposal per your instructions." }])
       }]
     })
   });
@@ -94,18 +110,60 @@ async function extractWithClaude(pdfB64, filename) {
   return JSON.parse(textBlock.text);
 }
 
+// A background function answers 202 before doing any work, so nothing below is
+// visible to the browser. Record every failure: bd_job_runs for the operator
+// (queryable), and — once the proposal is known — a draft round whose summary
+// carries the reason. Mirrors deal-ai-draft-background; before this, a failed
+// read left the broker watching for a round that would never arrive.
+async function logFail(note, ctx) {
+  try {
+    await sb.rest("bd_job_runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ job: "deal-ai-extract", ok: false, note: String(note).slice(0, 500), counts: ctx || null })
+    });
+  } catch (e) { /* logging must never mask the original failure */ }
+}
+async function nextRoundNo(proposalId) {
+  try {
+    const r = await sb.rest("proposal_rounds?proposal_id=eq." + proposalId + "&select=round_no&order=round_no.desc&limit=1");
+    if (r.data && r.data[0]) return (r.data[0].round_no || 0) + 1;
+  } catch (e) { /* fall through */ }
+  return 1;
+}
+async function failRound(dealId, proposalId, userId, note) {
+  await logFail(note, { dealId: dealId, proposalId: proposalId });
+  if (!dealId || !proposalId) return;
+  try {
+    await sb.rest("proposal_rounds", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({
+        deal_id: dealId, proposal_id: proposalId, round_no: await nextRoundNo(proposalId),
+        from_party: "landlord", status: "draft", source: "ai", created_by: userId,
+        summary: "⚠ Couldn't read the landlord's response — " + String(note).slice(0, 300) + " (delete this round and try again)"
+      })
+    });
+  } catch (e) { /* best-effort */ }
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") return { statusCode: 405, body: "Use POST." };
   let body; try { body = JSON.parse(event.body || "{}"); } catch (e) { return { statusCode: 400, body: "bad body" }; }
 
-  const user = await sb.userFromToken(body.token);   // broker must be signed in
-  if (!user) { console.log("ai-extract: unauthorized"); return { statusCode: 401, body: "unauthorized" }; }
-  if (!process.env.ANTHROPIC_API_KEY) { console.log("ai-extract: ANTHROPIC_API_KEY not set"); return { statusCode: 500, body: "no key" }; }
+  const dealId = String(body.dealId || ""), proposalId = String(body.proposalId || "");
+  const storagePath = String(body.storagePath || ""), pastedText = String(body.text || "").trim();
 
-  const dealId = String(body.dealId || ""), proposalId = String(body.proposalId || ""), storagePath = String(body.storagePath || "");
-  if (!dealId || !proposalId || !storagePath) return { statusCode: 400, body: "missing fields" };
+  const user = await sb.userFromToken(body.token);   // broker must be signed in
+  if (!user) { await logFail("unauthorized — broker token rejected", { dealId: dealId }); return { statusCode: 401, body: "unauthorized" }; }
+  if (!process.env.ANTHROPIC_API_KEY) { await failRound(dealId, proposalId, user.id, "ANTHROPIC_API_KEY is not set on the site"); return { statusCode: 500, body: "no key" }; }
+
+  if (!dealId || !proposalId) return { statusCode: 400, body: "missing fields" };
+  if (!storagePath && !pastedText) { await failRound(dealId, proposalId, user.id, "nothing to read — no file and no text"); return { statusCode: 400, body: "missing source" }; }
+  // Guard against a near-empty paste burning an Opus call on nothing.
+  if (!storagePath && pastedText.length < 40) { await failRound(dealId, proposalId, user.id, "the pasted text was too short to read"); return { statusCode: 400, body: "text too short" }; }
   // storage RLS scopes deal-files by first path folder = deal_id; enforce it here too
-  if (storagePath.split("/")[0] !== dealId) { console.log("ai-extract: path/deal mismatch"); return { statusCode: 400, body: "bad path" }; }
+  if (storagePath && storagePath.split("/")[0] !== dealId) { await failRound(dealId, proposalId, user.id, "upload path did not match this deal"); return { statusCode: 400, body: "bad path" }; }
 
   // defense in depth: service_role bypasses RLS, so verify this broker owns the deal
   let deal = null;
@@ -113,33 +171,43 @@ exports.handler = async (event) => {
     const r = await sb.rest("deals?id=eq." + dealId + "&select=id,owner_id&limit=1");
     deal = r.data && r.data[0];
   } catch (e) { /* leave null */ }
-  if (!deal || deal.owner_id !== user.id) { console.log("ai-extract: deal not owned by user"); return { statusCode: 403, body: "forbidden" }; }
+  if (!deal) { await failRound(dealId, proposalId, user.id, "deal " + dealId + " not found"); return { statusCode: 403, body: "forbidden" }; }
+  if (deal.owner_id !== user.id) { await failRound(dealId, proposalId, user.id, "this deal belongs to another broker"); return { statusCode: 403, body: "forbidden" }; }
 
-  let pdfB64;
-  try { pdfB64 = await fetchPdfBase64(storagePath); }
-  catch (e) { console.log("ai-extract: pdf fetch failed:", e.message); return { statusCode: 200, body: "pdf fetch failed" }; }
+  // PDF wins when both are present — the real document keeps layout that a
+  // browser-flattened .docx loses.
+  let src;
+  if (storagePath) {
+    try { src = { pdfB64: await fetchPdfBase64(storagePath) }; }
+    catch (e) {
+      console.log("ai-extract: pdf fetch failed:", e.message);
+      await failRound(dealId, proposalId, user.id, "couldn't read the uploaded file back from storage (" + e.message + ")");
+      return { statusCode: 200, body: "pdf fetch failed" };
+    }
+  } else {
+    src = { text: pastedText };
+  }
 
   let ex;
-  try { ex = await extractWithClaude(pdfB64, body.filename); }
-  catch (e) { console.log("ai-extract: extraction failed:", e.message); return { statusCode: 200, body: "extract failed" }; }
+  try { ex = await extractWithClaude(src, body.filename); }
+  catch (e) {
+    console.log("ai-extract: extraction failed:", e.message);
+    await failRound(dealId, proposalId, user.id, e.message || String(e));
+    return { statusCode: 200, body: "extract failed" };
+  }
 
-  // next round number for this proposal
-  let nextNo = 1;
-  try {
-    const r = await sb.rest("proposal_rounds?proposal_id=eq." + proposalId + "&select=round_no&order=round_no.desc&limit=1");
-    if (r.data && r.data[0]) nextNo = (r.data[0].round_no || 0) + 1;
-  } catch (e) { /* default 1 */ }
-
+  const nextNo = await nextRoundNo(proposalId);
   const ec = ex.economics || {};
   const conf = ex.confidence || "low";
   // The extraction summary + caveats live in the round's Notes as BULLETS, one per
   // line (Andrew's call: scannable, not a wall of text). Each notable term gets its
   // own bullet. The broker checks the pre-filled round against the attached PDF.
+  const srcLabel = body.filename || (src.text ? "pasted text" : "PDF");
   const noteBits = [];
-  noteBits.push("• AI-read from " + (body.filename || "PDF") + " (" + conf + " confidence)" + (ex.is_proposal === false ? " — may not be a proposal" : ""));
+  noteBits.push("• AI-read from " + srcLabel + " (" + conf + " confidence)" + (ex.is_proposal === false ? " — may not be a proposal" : ""));
   if (ex.summary) noteBits.push("• " + ex.summary);
   (ex.notable || []).forEach((n) => { if (n) noteBits.push("• " + String(n)); });
-  noteBits.push("• Verify against the source PDF before marking final.");
+  noteBits.push("• Verify against the " + (src.text ? "original message" : "source PDF") + " before marking final.");
 
   const basis = RENT_BASES.indexOf(ec.rent_basis) >= 0 ? ec.rent_basis : null;
   const row = {
@@ -153,13 +221,18 @@ exports.handler = async (event) => {
     free_rent_months: ec.free_rent_months, ti_psf: ec.ti_psf,
     summary: noteBits.join("\n"), created_by: user.id
   };
-  try {
-    await sb.rest("proposal_rounds", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
-      body: JSON.stringify(row)
-    });
-  } catch (e) { console.log("ai-extract: insert failed:", e.message); return { statusCode: 200, body: "save failed" }; }
+  // sb.rest RESOLVES on a non-2xx PostgREST reply — it never throws — so a
+  // try/catch here would silently swallow a rejected insert. Check ins.ok.
+  const ins = await sb.rest("proposal_rounds", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify(row)
+  });
+  if (!ins.ok) {
+    console.log("ai-extract: round insert failed:", ins.text);
+    await logFail("round insert rejected: " + (ins.text || ins.status), { dealId: dealId, proposalId: proposalId });
+    return { statusCode: 200, body: "save failed" };
+  }
 
   console.log("ai-extract: wrote draft round", nextNo, "for proposal", proposalId, "conf", conf);
   return { statusCode: 200, body: JSON.stringify({ ok: true, round_no: nextNo }) };
