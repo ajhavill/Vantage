@@ -182,7 +182,7 @@
     </section>
 
     <section class="dsr-sec">
-      <div class="dsr-h"><h3 class="display">Tenants in the building</h3><span class="sample-tag">Sample</span></div>
+      <div class="dsr-h"><h3 class="display">Tenants in the building</h3><span class="sample-tag" id="dTenantsTag">Sample</span></div>
       <div id="dTenants"></div>
     </section>
 
@@ -278,7 +278,7 @@
     </div>
     <aside class="crail right">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
-        <span class="r-eyebrow">Selected building</span><span class="sample-tag">Sample roster</span>
+        <span class="r-eyebrow">Selected building</span><span class="sample-tag" id="cRosterTag">Sample roster</span>
       </div>
       <h2 class="r-name display" id="cRName"></h2>
       <div class="r-loc" id="cRLoc"></div>
@@ -506,12 +506,69 @@
   }
   function indOf(k){ return IND[k] || {label:k,color:'#8A93A0'}; }
   var ROSTERS={"watergarden":[["Vellum Health","Healthcare"],["Coastline Capital","Finance"],["Brightwork Software","Technology/software"],["Harbor & Oak","Manufacturing"],["Meridian Analytics","Technology/software"],["Pacific Reserve Advisors","Finance"],["Lumen Wellness Co.","Healthcare"],["Tidewater Labs","Technology/software"],["Northstar Goods","Manufacturing"],["Cardinal Creative","Professional services"],["Atlas Ventures","Finance"]],"clocktower":[["Promenade Pictures","Media"],["Third Street Media","Media"],["Beacon Advertising","Professional services"],["Civic Square Partners","Finance"],["Marquee Talent Group","Media"],["Ocean Ave Capital","Finance"],["Highline Agency","Professional services"],["Bluebird Brand Studio","Professional services"],["Lantern Films","Media"],["Pier Public Relations","Professional services"],["Vanguard Wealth","Finance"]],"smbp":[["Sunset Park Software","Technology/software"],["Greenline Apps","Technology/software"],["Cove Consumer Co.","Manufacturing"],["Driftwood Brands","Manufacturing"],["Pixel & Pine","Professional services"],["Orbit Robotics","Hardware technology"],["Ocean Park Outfitters","Manufacturing"],["Bramble Foods","Manufacturing"],["Foundry Digital","Professional services"],["Sandbar Systems","Technology/software"],["Halcyon Health","Healthcare"],["Mainstay Marketing","Professional services"]],"lantana":[["Bergamot Studios","Media"],["Exposition Pictures","Media"],["Atelier Creative","Professional services"],["Frame 24 Productions","Media"],["Gallery Row Agency","Professional services"],["Spectrum Post","Media"],["Canvas & Co.","Professional services"],["Mod Type Studio","Professional services"],["Daylight Media","Media"],["Loom Wellness","Healthcare"]],"b-100-wilshire-blvd":[["Cobalt Hardware","Hardware technology"],["Verde Advisory","Professional services"],["Bayfront Partners","Finance"],["Granite Wellness","Healthcare"],["Vector Hardware","Hardware technology"],["Meridian Brands","Manufacturing"],["Lumina Pictures","Media"],["Halcyon Cloud","Technology/software"],["Atlas Studios","Media"]],"wilshire-palisades":[["Foundry Bio","Healthcare"],["Vista Devices","Hardware technology"],["Onyx R&D Labs","Research & development"],["Ardent Pictures","Media"],["Driftline Robotics","Hardware technology"],["Northpoint Robotics","Hardware technology"],["Westwood Brands","Manufacturing"],["Northpoint Group","Professional services"],["Meridian Law Group","Legal"],["Crescent Robotics","Hardware technology"],["Foundry Productions","Entertainment"]],"b-401-wilshire-blvd":[["Cedar LLP","Legal"],["Beacon Talent","Entertainment"],["Cobalt LLP","Legal"],["Meridian Partners","Professional services"],["Cedar Works","Manufacturing"],["Halcyon Consulting","Professional services"],["Crescent Studios","Media"],["Cypress Consulting","Professional services"],["Noble Goods","Manufacturing"],["Northpoint Supply","Manufacturing"]],"b-233-wilshire-blvd":[["Summit R&D Labs","Research & development"],["Anchor Content","Media"],["Verde Legal","Legal"],["Lark Devices","Hardware technology"],["Tidal Devices","Hardware technology"],["Westwood Records","Entertainment"],["Atlas Wealth","Finance"],["Driftline Supply","Manufacturing"],["Meridian Cloud","Technology/software"],["Solstice Systems","Technology/software"],["Verde Sciences","Research & development"]],"b-520-broadway":[["Noble Bio","Healthcare"],["Quill Partners","Finance"],["Cypress Legal","Legal"],["Vista Group","Professional services"],["Cobalt LLP","Legal"],["Westwood Content","Media"],["Foundry Robotics","Hardware technology"],["Onyx Advisory","Professional services"],["Sequoia Post","Media"],["Bayfront Hardware","Hardware technology"]],"b-312-arizona-ave":[["Halcyon Devices","Hardware technology"],["Beacon Sciences","Research & development"],["Driftline Research","Research & development"],["Solstice Instruments","Hardware technology"],["Vector Content","Media"],["Northpoint Media","Media"],["Quill Hardware","Hardware technology"],["Solstice Entertainment","Entertainment"]],"b-730-arizona-ave":[["Marlin Works","Manufacturing"],["Pioneer Hardware","Hardware technology"],["Harbor Goods","Manufacturing"],["Verde Post","Media"],["Cobalt Robotics","Hardware technology"],["Verde Wellness","Healthcare"],["Northpoint Brands","Manufacturing"],["Pacific Consulting","Professional services"]],"b-201-santa-monica-blvd":[["Verde Goods","Manufacturing"],["Sequoia Analytics","Technology/software"],["Solstice Content","Media"],["Noble Advisors","Finance"],["Beacon Post","Media"],["Summit Partners","Professional services"],["Kestrel Labs","Technology/software"],["Bayfront Productions","Entertainment"],["Vector Wellness","Healthcare"]],"b-1333-2nd-st":[["Beacon Advisory","Professional services"],["Beacon Advisors","Finance"],["Onyx Productions","Entertainment"],["Driftline Capital","Finance"],["Noble Health","Healthcare"],["Cobalt Systems","Technology/software"],["Northpoint Health","Healthcare"],["Granite Media","Media"],["Harbor Wellness","Healthcare"],["Cypress Bio","Healthcare"],["Crescent LLP","Legal"]],"b-1640-5th-st":[["Northpoint Bio","Healthcare"],["Kestrel Supply","Manufacturing"],["Noble Sciences","Research & development"],["Granite Consulting","Professional services"],["Bright Hardware","Hardware technology"],["Tidal Content","Media"],["Noble Instruments","Hardware technology"],["Harbor Robotics","Hardware technology"],["Tidal Health","Healthcare"],["Verde Capital","Finance"]],"b-1250-6th-st":[["Kestrel Bio","Healthcare"],["Beacon Productions","Entertainment"],["Cypress Cloud","Technology/software"],["Bayfront Advisors","Finance"],["Harbor Robotics","Hardware technology"],["Lark Wellness","Healthcare"],["Cobalt Research","Research & development"],["Crescent Labs","Technology/software"],["Westwood Systems","Technology/software"]],"colorado-center":[["Solstice Law Group","Legal"],["Kestrel Robotics","Hardware technology"],["Cedar Bio","Healthcare"],["Cobalt Studios","Media"],["Anchor Hardware","Hardware technology"],["Meridian Works","Manufacturing"],["Sequoia Studios","Media"],["Granite Wealth","Finance"],["Sequoia Entertainment","Entertainment"],["Anchor Group","Professional services"]],"b-2425-olympic-blvd":[["Cobalt Goods","Manufacturing"],["Beacon Partners","Professional services"],["Lark Instruments","Hardware technology"],["Lark Supply","Manufacturing"],["Vista Devices","Hardware technology"],["Harbor Hardware","Hardware technology"],["Sequoia Partners","Professional services"],["Lark Talent","Entertainment"],["Westwood Content","Media"]],"b-2450-colorado-ave":[["Cypress Analytics","Technology/software"],["Beacon R&D Labs","Research & development"],["Vista Advisors","Finance"],["Onyx Hardware","Hardware technology"],["Quill Consulting","Professional services"],["Aria Law Group","Legal"],["Vector Legal","Legal"]],"b-1640-cloverfield-blvd":[["Anchor Capital","Finance"],["Aria Wellness","Healthcare"],["Pacific Research","Research & development"],["Crescent Advisory","Professional services"],["Aria Instruments","Hardware technology"],["Lark Entertainment","Entertainment"]],"the-pen-factory":[["Granite Research","Research & development"],["Onyx Instruments","Hardware technology"],["Verde Bio","Healthcare"],["Bright R&D Labs","Research & development"],["Lumina Ventures","Finance"],["Marlin Talent","Entertainment"],["Lumina Partners","Professional services"]],"b-3025-olympic-blvd":[["Lumina Capital","Finance"],["Foundry Legal","Legal"],["Foundry Goods","Manufacturing"],["Northpoint Wealth","Finance"],["Summit Sciences","Research & development"],["Verde Capital","Finance"],["Foundry Group","Professional services"],["Vista Research","Research & development"],["Vista Hardware","Hardware technology"],["Ardent Content","Media"]],"b-3000-olympic-blvd":[["Halcyon Group","Professional services"],["Quill Partners","Finance"],["Solstice Hardware","Hardware technology"],["Kestrel LLP","Legal"],["Beacon Devices","Hardware technology"],["Verde Works","Manufacturing"],["Verde Bio","Healthcare"],["Solstice Care","Healthcare"],["Vector Instruments","Hardware technology"]],"b-2912-colorado-ave":[["Vector Sciences","Research & development"],["Halcyon Capital","Finance"],["Tidal Advisory","Professional services"],["Solstice Hardware","Hardware technology"],["Cedar Post","Media"],["Crescent Advisory","Professional services"]],"b-2834-colorado-ave":[["Cobalt R&D Labs","Research & development"],["Foundry Studios","Media"],["Meridian Cloud","Technology/software"],["Quill Labs","Technology/software"],["Crescent Productions","Entertainment"],["Cedar Talent","Entertainment"],["Verde Cloud","Technology/software"],["Ardent Goods","Manufacturing"]],"b-3401-exposition-blvd":[["Noble Entertainment","Entertainment"],["Driftline Talent","Entertainment"],["Lumina Studios","Media"],["Cobalt Research","Research & development"],["Bayfront Sciences","Research & development"],["Tidal Pictures","Media"]],"b-3110-main-st":[["Pacific Sciences","Research & development"],["Ardent Systems","Technology/software"],["Foundry Instruments","Hardware technology"],["Cypress Content","Media"],["Westwood Research","Research & development"],["Bright LLP","Legal"],["Foundry Research","Research & development"],["Harbor Pictures","Media"],["Halcyon Works","Manufacturing"],["Harbor Sciences","Research & development"],["Tidal Analytics","Technology/software"]],"b-2629-main-st":[["Solstice Productions","Entertainment"],["Foundry Goods","Manufacturing"],["Aria Consulting","Professional services"],["Crescent Law Group","Legal"],["Kestrel Works","Manufacturing"],["Onyx Studios","Media"],["Meridian Research","Research & development"],["Aria Health","Healthcare"],["Quill R&D Labs","Research & development"],["Cedar Studios","Media"],["Halcyon Entertainment","Entertainment"]],"b-3000-ocean-park-blvd":[["Quill Pictures","Media"],["Beacon AI","Technology/software"],["Kestrel Consulting","Professional services"],["Crescent Cloud","Technology/software"],["Harbor R&D Labs","Research & development"],["Foundry Health","Healthcare"],["Bayfront Records","Entertainment"],["Beacon Robotics","Hardware technology"]],"b-2701-ocean-park-blvd":[["Foundry Hardware","Hardware technology"],["Bright Wellness","Healthcare"],["Bright Bio","Healthcare"],["Tidal Entertainment","Entertainment"],["Marlin Partners","Finance"],["Westwood Goods","Manufacturing"],["Kestrel Instruments","Hardware technology"],["Cypress Systems","Technology/software"],["Verde Productions","Entertainment"]],"b-3415-ocean-park-blvd":[["Quill Health","Healthcare"],["Foundry Partners","Finance"],["Tidal Works","Manufacturing"],["Atlas Analytics","Technology/software"],["Atlas Studios","Media"],["Lumina Labs","Technology/software"],["Crescent Legal","Legal"],["Cedar Wellness","Healthcare"]],"b-2730-wilshire-blvd":[["Foundry Hardware","Hardware technology"],["Cypress R&D Labs","Research & development"],["Onyx Wealth","Finance"],["Kestrel Entertainment","Entertainment"],["Meridian Research","Research & development"],["Marlin Analytics","Technology/software"],["Tidal Partners","Finance"],["Crescent LLP","Legal"],["Pacific Capital","Finance"],["Granite Analytics","Technology/software"],["Solstice Consulting","Professional services"]],"b-3130-wilshire-blvd":[["Kestrel Instruments","Hardware technology"],["Cypress Post","Media"],["Lumina Advisory","Professional services"],["Northpoint Wealth","Finance"],["Pacific Analytics","Technology/software"],["Vista Instruments","Hardware technology"],["Verde Post","Media"],["Pioneer AI","Technology/software"]],"b-1454-4th-st":[["Bayfront AI","Technology/software"],["Driftline Software","Technology/software"],["Halcyon Analytics","Technology/software"],["Verde Legal","Legal"],["Westwood Health","Healthcare"],["Westwood Devices","Hardware technology"]],"b-429-santa-monica-blvd":[["Beacon Sciences","Research & development"],["Lark Care","Healthcare"],["Foundry Health","Healthcare"],["Cobalt Wealth","Finance"],["Cedar Sciences","Research & development"],["Lumina Law Group","Legal"],["Summit Works","Manufacturing"]]};
-  function computeTenants(){ BUILDINGS.forEach(function(b){
-    b.tenants=ROSTERS[b.id]||[];
+  // Real rosters, keyed by building id, harvested from completed Directory
+  // Scans (BD → Directory Scan). Same [[name, industry], ...] shape as ROSTERS.
+  var VERIFIED_ROSTERS={};
+  function anyVerified(){ for(var k in VERIFIED_ROSTERS){ if(VERIFIED_ROSTERS.hasOwnProperty(k)) return true; } return false; }
+
+  // Sample rosters are demo scaffolding. The moment ONE building has been
+  // walked and scanned, they all go: a map that mixes real tenants with
+  // invented ones is worse than a map that's honestly sparse (Andrew's call).
+  function computeTenants(){ var live=anyVerified(); BUILDINGS.forEach(function(b){
+    var ver=VERIFIED_ROSTERS[b.id];
+    b.tenants = ver ? ver.tenants : (live ? [] : (ROSTERS[b.id]||[]));
+    b.tenantsVerified = !!ver;
+    b.tenantsScannedAt = ver ? ver.scannedAt : null;
     b.total=b.tenants.length; b.byInd={};
     IORDER.forEach(function(k){b.byInd[k]=0});
     b.tenants.forEach(function(t){b.byInd[t[1]]=(b.byInd[t[1]]||0)+1});
   }); }
+
+  // Pull completed scans that were linked to a building and rebuild the map.
+  // Broker-only and RLS-scoped; if it fails or nobody's signed in, the sample
+  // data simply stays put.
+  function loadVerifiedRosters(){
+    var sb=window.vantageSB; if(!sb||!sb.from) return;
+    sb.from('bd_directory_scans')
+      .select('building_id,companies,updated_at')
+      .eq('status','done').not('building_id','is',null)
+      .order('updated_at',{ascending:true})
+      .then(function(r){
+        if(r.error||!r.data||!r.data.length) return;
+        var next={};
+        r.data.forEach(function(row){
+          var list=(Array.isArray(row.companies)?row.companies:[])
+            .filter(function(c){ return c && c.company && c.include!==false; })
+            .map(function(c){ return [String(c.company), c.industry||'Professional services']; });
+          if(!list.length) return;
+          // Oldest first, so a re-scan of the same building overwrites the old one.
+          next[row.building_id]={tenants:list, scannedAt:row.updated_at};
+        });
+        if(!Object.keys(next).length) return;
+        VERIFIED_ROSTERS=next;
+        computeTenants();
+        // Rebuild search too, or the old sample companies stay findable in the
+        // omnibox after they've disappeared from every view.
+        try{ buildSearchIndex(); }catch(e){}
+        // Repaint the Tenants map in place; a building dossier picks the new
+        // roster up the next time it's opened.
+        try{ if(typeof cRender==='function') cRender(); }catch(e){}
+      });
+  }
+  window.__vantageReloadRosters=loadVerifiedRosters;
+
+  // "Sample" vs "Verified · scanned Jul 28" — the tag has to tell the truth on
+  // screen, especially in a pitch.
+  function rosterTag(el,b){
+    if(!el) return;
+    if(b && b.tenantsVerified){
+      el.textContent='Verified · scanned '+new Date(b.tenantsScannedAt).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+      el.classList.add('verified-tag'); el.classList.remove('sample-tag');
+    } else {
+      el.textContent = anyVerified() ? 'Not yet walked' : 'Sample';
+      el.classList.add('sample-tag'); el.classList.remove('verified-tag');
+    }
+  }
 
   function matchScore(b){
     var sum=0, acc=0;
@@ -1037,10 +1094,13 @@
         searchIndex.push({label:a[0], sub:(a[5]||a[1])+' · near '+b.name, kind:'amenity', lat:a[2], lng:a[3], color:COLOR[a[1]]||'#888'});
       });
     });
-    Object.keys(ROSTERS||{}).forEach(function(bid){
-      var b=BUILDINGS.filter(function(x){return x.id===bid;})[0]; if(!b)return;
-      (ROSTERS[bid]||[]).forEach(function(t){
-        searchIndex.push({label:t[0], sub:(IND[t[1]]?IND[t[1]].label:t[1])+' · in '+b.name, kind:'company', lat:b.lat, lng:b.lng, color:(IND[t[1]]?IND[t[1]].color:'#2D6E7E'), bid:bid});
+    // Index b.tenants, NOT ROSTERS — computeTenants has already decided whether
+    // this building's roster is verified, sample, or deliberately empty. Reading
+    // ROSTERS here would keep sample companies searchable after a real scan
+    // replaced them on screen, which is the one thing we're trying to avoid.
+    BUILDINGS.forEach(function(b){
+      (b.tenants||[]).forEach(function(t){
+        searchIndex.push({label:t[0], sub:(IND[t[1]]?IND[t[1]].label:t[1])+' · in '+b.name, kind:'company', lat:b.lat, lng:b.lng, color:(IND[t[1]]?IND[t[1]].color:'#2D6E7E'), bid:b.id});
       });
     });
   }
@@ -1338,7 +1398,8 @@
       var ind=IND[t[1]]?IND[t[1]]:{label:t[1],color:'#2D6E7E'};
       var on=(hl&&t[0].toLowerCase()===hl)?' tn-hl':'';
       return '<div class="tn'+on+'"><span class="tn-dot" style="background:'+ind.color+'"></span><span class="tn-nm">'+t[0]+'</span><span class="tn-ind">'+ind.label+'</span></div>';
-    }).join(''):'<div class="tn-empty">No tenant roster on file yet.</div>';
+    }).join(''):'<div class="tn-empty">'+(anyVerified()?'You haven’t walked this building yet — scan its directory in BD to fill this in.':'No tenant roster on file yet.')+'</div>';
+    rosterTag(document.getElementById('dTenantsTag'), curB);
 
     active=allCatsActive();
     renderFilters();
@@ -1560,6 +1621,7 @@
     document.getElementById('cRName').textContent=b.name;
     document.getElementById('cRLoc').textContent=b.submarket;
     document.getElementById('cRTot').textContent=b.total+' tenants on roster';
+    rosterTag(document.getElementById('cRosterTag'), b);
     var mix=document.getElementById('cMixBox'); mix.innerHTML='';
     IORDER.slice().sort(function(x,y){return b.byInd[y]-b.byInd[x]}).forEach(function(k){
       var ct=b.byInd[k]; if(ct===0)return;
@@ -2909,7 +2971,10 @@
   function shStripped(b){
     var c={}, skip={places:1,cscore:1,byInd:1,total:1,tenants:1};
     for(var k in b){ if(b.hasOwnProperty(k)&&!skip[k]) c[k]=b[k]; }
-    c.tenants=(ROSTERS[b.id]||[]).slice();   // embed roster so the viewer can show tenants
+    // Embed the roster the BROKER is looking at — verified once the building
+    // has been walked, and empty rather than invented once any scan exists.
+    // A client package must never carry sample tenants out the door.
+    c.tenants=(b.tenants||[]).slice();
     return c;
   }
   function shRenderPick(){
@@ -3372,6 +3437,14 @@
   }
   var sb=window.supabase.createClient(SUPA_URL, SUPA_ANON);
   window.vantageSB=sb; // used by later phases (packages/activity move to Supabase)
+
+  // Directory Scans are the source of truth for who's actually in a building —
+  // pull them in and let them displace the sample rosters. Runs on the initial
+  // session and again on sign-in, since RLS returns nothing until there's a user.
+  try{
+    sb.auth.getSession().then(function(r){ if(r&&r.data&&r.data.session&&window.__vantageReloadRosters) window.__vantageReloadRosters(); });
+    sb.auth.onAuthStateChange(function(evt,sess){ if(sess&&window.__vantageReloadRosters) window.__vantageReloadRosters(); });
+  }catch(e){ /* rosters just stay as-is */ }
 
   async function login(){
     var btn=document.getElementById('agBtn'), err=document.getElementById('agErr');
