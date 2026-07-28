@@ -131,7 +131,14 @@
     return found ? found[1] : (c || "—");
   }
 
-  var VIEWS = { overview: "Command Center", directory: "Directory Scan", newsletter: "Newsletter", program: "Marketing Programs", proposals: "Proposals", signals: "Signals", templates: "Templates" };
+  // Sub-menu order follows the funnel — find them (Directory Scan), hold them
+  // (Prospects), time them (Renewal Window), work them (Marketing Programs) —
+  // then the supporting library.
+  var VIEWS = {
+    overview: "Command Center", directory: "Directory Scan", prospects: "Prospects",
+    renewals: "Renewal Window", program: "Marketing Programs",
+    newsletter: "Newsletter", proposals: "Proposals", signals: "Signals", templates: "Templates"
+  };
   var S = {
     view: "overview",
     data: null, loading: false, err: null, editing: null,
@@ -141,7 +148,10 @@
     templates: null, tplErr: null, tplEditing: null,
     assets: null, assetErr: null, assetEditing: null, assetKind: "collateral",
     props: null, propErr: null, propEditing: null,
-    scans: null, scanErr: null, scanId: null, scanBusy: false, scanOpenRow: null, scanPoll: null
+    scans: null, scanErr: null, scanId: null, scanBusy: false, scanOpenRow: null, scanPoll: null,
+    bldgs: null,                                   // the building catalog, from vantage-data.json
+    pq: "", pBldg: "", pFlag: "",                  // Prospects filters
+    ten: null, tenErr: null, tenLoading: false     // tenants-list payload (renewal window)
   };
 
   /* ---- directory scan: the rent math (Andrew's standard, editable per scan) ---- */
@@ -324,6 +334,11 @@
     ".bdc-assume{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end}" +
     ".bdc-assume label{font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-faint,#8A93A0);display:block;margin-bottom:3px}" +
     ".bdc-assume input{width:90px;box-sizing:border-box;border:1px solid var(--line-2,#D2CCBF);border-radius:7px;padding:6px 8px;font:inherit;font-size:12.5px;background:#fff}" +
+    /* prospects + renewal window */
+    ".bdc-filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center}" +
+    ".bdc-filters input,.bdc-filters select{box-sizing:border-box;border:1px solid var(--line-2,#D2CCBF);border-radius:8px;padding:7px 10px;font:inherit;font-size:13px;background:#fff;color:var(--ink,#1A2230)}" +
+    ".bdc-filters input{flex:1 1 260px;min-width:200px}" +
+    ".bdc-scanform select{box-sizing:border-box;border:1px solid var(--line-2,#D2CCBF);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;background:#fff;color:var(--ink,#1A2230)}" +
     ".bdc-note{font-size:12px;color:var(--ink-faint,#8A93A0);margin-top:10px;line-height:1.5}";
   var st = document.createElement("style"); st.textContent = css; document.head.appendChild(st);
 
@@ -831,7 +846,25 @@
   // the job (staged photos + status, polled here) and the saved result, so a
   // scan from last month reopens with your edits intact. The heavy columns
   // (photos, raw) are never selected into the browser.
-  var SCAN_COLS = "id,building_name,address,submarket,note,status,error,companies,unreadable,assumptions,created_at,updated_at";
+  var SCAN_COLS = "id,building_id,building_name,address,submarket,note,status,error,companies,unreadable,assumptions,created_at,updated_at";
+
+  // The Vantage building catalog, so a scan can be pinned to a real building
+  // (that link is what feeds the Tenants map and the HubSpot Building ID).
+  function loadBuildings() {
+    if (S.bldgs) return;
+    S.bldgs = [];
+    fetch("vantage-data.json", { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        var list = (d && d.buildings) || [];
+        S.bldgs = list.map(function (b) { return { id: b.id, name: b.name, addr: b.addr, submarket: b.submarket }; })
+          .sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+        render();
+      })
+      .catch(function () { /* the picker just stays empty; scans still work unlinked */ });
+  }
+  function bldgById(id) { return (S.bldgs || []).filter(function (b) { return b.id === id; })[0] || null; }
+  function bldgLabel(id) { var b = bldgById(id); return b ? b.name : (id || ""); }
   var dirPhotos = [];   // staged in memory until the scan starts
 
   function uuid() {
@@ -891,6 +924,7 @@
     var id = uuid();
     var row = {
       id: id,
+      building_id: (($("bdcScanBldg") || {}).value || "") || null,
       building_name: (($("bdcScanName") || {}).value || "").trim() || null,
       address: (($("bdcScanAddr") || {}).value || "").trim() || null,
       submarket: (($("bdcScanSub") || {}).value || "").trim() || null,
@@ -908,7 +942,7 @@
           method: "POST", body: JSON.stringify({ token: t, jobId: id })
         }).catch(function () { /* the row's status is the source of truth */ });
         dirPhotos = [];
-        ["bdcScanName", "bdcScanAddr", "bdcScanSub", "bdcScanNote"].forEach(function (i) { if ($(i)) $(i).value = ""; });
+        ["bdcScanName", "bdcScanAddr", "bdcScanSub", "bdcScanNote", "bdcScanBldg"].forEach(function (i) { if ($(i)) $(i).value = ""; });
         S.scanBusy = false; S.scanId = id;
         loadScans(true);
         startPoll();
@@ -1090,9 +1124,81 @@
     download("directory-analysis-" + slug(scan.building_name || scan.address) + ".csv", csvFile(headers, out));
   }
 
+  /* ---------------- data: prospects + renewal window ---------------- */
+  // Prospects is a lens on the scans, not a second store: every company you've
+  // ever read off a board, flattened, with its building attached.
+  function allProspects() {
+    var out = [];
+    (S.scans || []).forEach(function (s) {
+      if (s.status !== "done") return;
+      (Array.isArray(s.companies) ? s.companies : []).forEach(function (c) {
+        if (!c || !c.company) return;
+        out.push({
+          c: c, scan: s,
+          bldg: s.building_id ? bldgLabel(s.building_id) : (s.building_name || s.address || "Unlinked scan")
+        });
+      });
+    });
+    return out.sort(function (a, b) { return String(a.c.company).localeCompare(String(b.c.company)); });
+  }
+  function filteredProspects() {
+    var q = S.pq.trim().toLowerCase();
+    return allProspects().filter(function (p) {
+      if (S.pBldg && (p.scan.building_id || "") !== S.pBldg) return false;
+      if (S.pFlag === "nodomain") { if (p.c.domain) return false; }
+      else if (S.pFlag && p.c.flag !== S.pFlag) return false;
+      if (!q) return true;
+      return (p.c.company + " " + (p.c.industry || "") + " " + (p.c.domain || "") + " " + p.bldg).toLowerCase().indexOf(q) >= 0;
+    });
+  }
+  // Buildings that actually carry a linked scan — the Prospects building filter.
+  function scannedBuildings() {
+    var seen = {}, out = [];
+    (S.scans || []).forEach(function (s) {
+      if (s.status !== "done" || !s.building_id || seen[s.building_id]) return;
+      seen[s.building_id] = 1;
+      out.push({ id: s.building_id, name: bldgLabel(s.building_id) });
+    });
+    return out.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+  }
+
+  // The renewal window rides on tenants-list, which already reads HubSpot
+  // companies carrying a Vantage Building ID and computes months-to-expiration
+  // plus the propensity score. No second engine, no second source of truth.
+  function loadTenants(force) {
+    if (S.tenLoading) return;
+    if (S.ten && !force) { render(); return; }
+    S.tenLoading = true; S.tenErr = null; render();
+    token(function (t) {
+      if (!t) { S.tenLoading = false; S.tenErr = "signin"; render(); return; }
+      fetch("/.netlify/functions/tenants-list", { method: "POST", body: JSON.stringify({ token: t, fresh: !!force }) })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          S.tenLoading = false;
+          if (d && d.error) { S.tenErr = d.error; } else { S.ten = d; S.tenErr = null; }
+          render();
+        })
+        .catch(function (e) { S.tenLoading = false; S.tenErr = String(e.message || e); render(); });
+    });
+  }
+  // Andrew's trigger: start proposing at 24 months out. Anything already past
+  // expiration is dropped — that lease is somebody else's problem now.
+  var RENEWAL_MONTHS = 24;
+  function renewalRows() {
+    var list = (S.ten && S.ten.tenants) || [];
+    return list.filter(function (t) {
+      return t.monthsToExpiration != null && t.monthsToExpiration <= RENEWAL_MONTHS && t.monthsToExpiration >= 0;
+    }).sort(function (a, b) {
+      if (a.monthsToExpiration !== b.monthsToExpiration) return a.monthsToExpiration - b.monthsToExpiration;
+      return (b.propensity && b.propensity.score || 0) - (a.propensity && a.propensity.score || 0);
+    });
+  }
+
   function loadView() {
     if (S.view === "overview") load();
-    else if (S.view === "directory") loadScans();
+    else if (S.view === "directory") { loadBuildings(); loadScans(); }
+    else if (S.view === "prospects") { loadBuildings(); loadScans(); }
+    else if (S.view === "renewals") { loadBuildings(); loadTenants(); }
     else if (S.view === "newsletter") loadClips();
     else if (S.view === "signals") loadSignals();
     else if (S.view === "proposals") loadProposals();
@@ -1142,8 +1248,43 @@
     render();
   };
 
+  window.__bdPickBldg = function (id) {
+    var b = bldgById(id); if (!b) return;
+    // Prefill the free-text fields so the scan reads well even if the catalog
+    // entry is later renamed — but building_id stays the durable link.
+    if ($("bdcScanName") && !$("bdcScanName").value) $("bdcScanName").value = b.name || "";
+    if ($("bdcScanAddr") && !$("bdcScanAddr").value) $("bdcScanAddr").value = b.addr || "";
+    if ($("bdcScanSub") && !$("bdcScanSub").value) $("bdcScanSub").value = b.submarket || "";
+  };
+  window.__bdPq = function (v) { S.pq = v; render(); };
+  window.__bdPBldg = function (v) { S.pBldg = v; render(); };
+  window.__bdPFlag = function (v) { S.pFlag = v; render(); };
+  window.__bdExportProspects = function () {
+    var rows = filteredProspects();
+    if (!rows.length) { alert("Nothing to export with these filters."); return; }
+    var headers = ["Company", "Building", "Suite", "Domain", "Industry", "LA Employees", "Flag", "Confidence", "Scanned", "Notes"];
+    download("prospects.csv", csvFile(headers, rows.map(function (p) {
+      return [p.c.company, p.bldg, p.c.suite, p.c.domain, p.c.industry,
+        p.c.la_employees == null ? "" : p.c.la_employees, p.c.flag, p.c.confidence,
+        String(p.scan.updated_at || "").slice(0, 10), p.c.notes];
+    })));
+  };
+  window.__bdExportRenewals = function () {
+    var rows = renewalRows();
+    if (!rows.length) { alert("Nobody is inside the window right now."); return; }
+    var headers = ["Company", "Building", "Lease Expiration", "Months Out", "RSF", "Headcount", "Propensity", "Why", "HubSpot ID"];
+    download("renewal-window.csv", csvFile(headers, rows.map(function (t) {
+      return [t.name, bldgLabel(t.buildingId), t.leaseExpiration || "", t.monthsToExpiration,
+        t.rsf == null ? "" : t.rsf, t.headcount == null ? "" : t.headcount,
+        (t.propensity && t.propensity.score) || "",
+        ((t.propensity && t.propensity.chips) || []).join(" | "), t.id];
+    })));
+  };
+
   window.__bdReloadForce = function () {
     if (S.view === "directory") loadScans(true);
+    else if (S.view === "prospects") loadScans(true);
+    else if (S.view === "renewals") loadTenants(true);
     else if (S.view === "newsletter") loadClips(true);
     else if (S.view === "signals") loadSignals(true);
     else if (S.view === "proposals") loadProposals(true);
@@ -1873,7 +2014,16 @@
         }).join("") + "</div>"
       : "";
 
+    // Explicit building link, never guessed from the address: putting the wrong
+    // tenants in a building is worse than leaving a scan unlinked.
+    var picker = '<select id="bdcScanBldg" class="wide" onchange="__bdPickBldg(this.value)">' +
+      '<option value="">Link to a Vantage building (optional, but it\'s what updates the Tenants map)</option>' +
+      (S.bldgs || []).map(function (b) {
+        return '<option value="' + esc(b.id) + '">' + esc(b.name) + (b.addr ? " — " + esc(b.addr) : "") + "</option>";
+      }).join("") + "</select>";
+
     var newCard = '<div class="bdc-card"><h3>New scan</h3><div class="bdc-scanform">' +
+      picker +
       '<input id="bdcScanName" placeholder="Building name — e.g. Water Garden" />' +
       '<input id="bdcScanSub" placeholder="Submarket — e.g. Santa Monica" />' +
       '<input id="bdcScanAddr" class="wide" placeholder="Street address — e.g. 2425 Olympic Blvd, Santa Monica, CA 90404" />' +
@@ -1909,10 +2059,134 @@
       '<div class="bdc-note">What the research can and can\'t do: names and suites come straight off the photo, so those are solid. Everything else — headcount, HQ, who signs the lease — is assembled from the open web, because LinkedIn blocks automated access. Treat LA headcount as an estimate and the rent figures as the arithmetic that follows from it; the confidence column tells you where to double-check before you spend a stamp. Nothing is written to HubSpot from here — you review the list, export it, and import it yourself.</div>';
   }
 
+  /* ---------------- render: prospects ---------------- */
+  var HS_PORTAL = "245913727";
+
+  function renderProspects(el) {
+    var head = viewHead("Prospects", "Every company you've read off a directory board, in one list — who they are, which building, and what's still missing before they're worth importing.",
+      '<button class="bdc-btn" onclick="__bdReloadForce()">⟳ Refresh</button>');
+    if (S.scanErr === "signin") { el.innerHTML = head + signinCard(); return; }
+    if (S.scans === null) { el.innerHTML = head + '<div class="bdc-card"><div class="bdc-empty">Loading…</div></div>'; return; }
+
+    var all = allProspects();
+    if (!all.length) {
+      el.innerHTML = head + '<div class="bdc-card"><div class="bdc-empty">Nothing scanned yet. Walk a building, photograph the lobby board, and run it through Directory Scan — everything it finds lands here.</div></div>';
+      return;
+    }
+
+    var rows = filteredProspects();
+    var noDomain = all.filter(function (p) { return !p.c.domain; }).length;
+    var unlinked = (S.scans || []).filter(function (s) { return s.status === "done" && !s.building_id; }).length;
+    var emp = rows.reduce(function (n, p) { return n + (p.c.la_employees || 0); }, 0);
+
+    var chips = [
+      ["" + all.length, "companies scanned"],
+      ["" + scannedBuildings().length, scannedBuildings().length === 1 ? "building walked" : "buildings walked"],
+      [intFmt(emp), "LA employees (shown)"],
+      ["" + noDomain, "missing a domain"]
+    ].map(function (p) {
+      return '<div class="bdc-fchip"><div class="c">' + esc(p[0]) + '</div><div class="l">' + esc(p[1]) + "</div></div>";
+    }).join("");
+
+    var flags = [["", "Every flag"], ["OK", "OK — DMs in LA"], ["DM Outside LA", "DMs outside LA"],
+      ["DM International", "DMs international"], ["Unclear", "Unclear"], ["nodomain", "Missing a domain"]];
+
+    var filters = '<div class="bdc-card"><div class="bdc-filters">' +
+      '<input id="bdcPq" placeholder="Search company, industry, domain, building…" value="' + esc(S.pq) + '" oninput="__bdPq(this.value)" />' +
+      '<select onchange="__bdPBldg(this.value)"><option value="">Every building</option>' +
+      scannedBuildings().map(function (b) {
+        return '<option value="' + esc(b.id) + '"' + (S.pBldg === b.id ? " selected" : "") + ">" + esc(b.name) + "</option>";
+      }).join("") + "</select>" +
+      '<select onchange="__bdPFlag(this.value)">' +
+      flags.map(function (f) { return '<option value="' + f[0] + '"' + (S.pFlag === f[0] ? " selected" : "") + ">" + esc(f[1]) + "</option>"; }).join("") +
+      "</select>" +
+      '<button class="bdc-btn" onclick="__bdExportProspects()">⬇ Export ' + rows.length + "</button>" +
+      "</div>" +
+      '<div class="bdc-funnel" style="margin-top:12px">' + chips + "</div></div>";
+
+    var body = rows.length
+      ? '<div class="bdc-wrap"><table class="bdc-dtbl"><thead><tr>' +
+        "<th>Company</th><th>Building</th><th style=\"text-align:right\">LA staff</th><th>Decision-makers</th><th>Scanned</th>" +
+        "</tr></thead><tbody>" +
+        rows.map(function (p) {
+          var c = p.c;
+          return "<tr><td><div class=\"co\">" + esc(c.company) + (c.suite ? ' <span class="bdc-conf">· Ste ' + esc(c.suite) + "</span>" : "") + "</div>" +
+            '<div class="sub">' + (c.domain ? esc(c.domain) : '<span style="color:var(--dining,#C9543F)">no domain</span>') +
+            (c.industry ? " · " + esc(c.industry) : "") + "</div></td>" +
+            "<td>" + esc(p.bldg) + (p.scan.building_id ? "" : ' <span class="bdc-conf">· unlinked</span>') + "</td>" +
+            '<td class="num">' + intFmt(c.la_employees) + "</td>" +
+            "<td><span class=\"bdc-flag " + flagClass(c.flag) + '">' + esc(c.flag || "Unclear") + "</span>" +
+            (c.dm_location ? '<div class="sub">' + esc(c.dm_location) + "</div>" : "") + "</td>" +
+            '<td class="bdc-conf">' + esc(String(p.scan.updated_at || "").slice(0, 10)) + "</td></tr>";
+        }).join("") + "</tbody></table></div>"
+      : '<div class="bdc-empty">Nothing matches those filters.</div>';
+
+    el.innerHTML = head + filters + '<div class="bdc-card"><h3>Showing ' + rows.length + " of " + all.length + "</h3>" + body + "</div>" +
+      (unlinked ? '<div class="bdc-note">' + unlinked + " completed scan" + (unlinked === 1 ? " isn't" : "s aren't") +
+        " linked to a Vantage building, so " + (unlinked === 1 ? "its" : "their") + " tenants don't reach the Tenants map. Open the scan and pick the building." : "") +
+      '<div class="bdc-note">This list is a lens on your scans, not a second database — edits belong on the scan itself, in Directory Scan. A company with no domain is the one to fix before importing: HubSpot dedupes companies on domain, so a blank one creates a fresh record every time you import.</div>';
+  }
+
+  /* ---------------- render: renewal window ---------------- */
+  function renderRenewals(el) {
+    var head = viewHead("Renewal Window", "Who is inside " + RENEWAL_MONTHS + " months of lease expiration — the moment a tenant-rep conversation is worth starting.",
+      '<button class="bdc-btn" onclick="__bdReloadForce()">' + (S.tenLoading ? "Loading…" : "⟳ Refresh") + "</button>");
+    if (S.tenErr === "signin") { el.innerHTML = head + signinCard(); return; }
+    if (S.tenErr) { el.innerHTML = head + '<div class="bdc-card"><div class="bdc-empty">Couldn\'t read the tenant grid: ' + esc(S.tenErr) + "</div></div>"; return; }
+    if (!S.ten) { el.innerHTML = head + '<div class="bdc-card"><div class="bdc-empty">Reading lease dates from HubSpot…</div></div>'; return; }
+
+    var rows = renewalRows();
+    var soon = rows.filter(function (t) { return t.monthsToExpiration <= 12; }).length;
+    var now = rows.filter(function (t) { return t.monthsToExpiration <= 6; }).length;
+    var rsf = rows.reduce(function (n, t) { return n + (t.rsf || 0); }, 0);
+
+    var chips = [
+      ["" + rows.length, "in the window"],
+      ["" + soon, "inside 12 months"],
+      ["" + now, "inside 6 months"],
+      [intFmt(rsf), "RSF represented"]
+    ].map(function (p) {
+      return '<div class="bdc-fchip"><div class="c">' + esc(p[0]) + '</div><div class="l">' + esc(p[1]) + "</div></div>";
+    }).join("");
+
+    var body = rows.length
+      ? '<div class="bdc-wrap"><table class="bdc-dtbl"><thead><tr>' +
+        "<th>Company</th><th>Building</th><th style=\"text-align:right\">Expires</th>" +
+        "<th style=\"text-align:right\">RSF</th><th>Why now</th><th></th>" +
+        "</tr></thead><tbody>" +
+        rows.map(function (t) {
+          var m = t.monthsToExpiration;
+          var urgency = m <= 6 ? "intl" : m <= 12 ? "out" : "ok";
+          var chipsHtml = ((t.propensity && t.propensity.chips) || []).slice(0, 3)
+            .map(function (c) { return '<span class="bdc-flag">' + esc(c) + "</span>"; }).join(" ");
+          return "<tr><td><div class=\"co\">" + esc(t.name) + "</div>" +
+            (t.industry ? '<div class="sub">' + esc(t.industry) + "</div>" : "") + "</td>" +
+            "<td>" + esc(bldgLabel(t.buildingId)) + "</td>" +
+            '<td class="num"><span class="bdc-flag ' + urgency + '">' + m + " mo</span>" +
+            '<div class="sub">' + esc(t.leaseExpiration || "—") + "</div></td>" +
+            '<td class="num">' + intFmt(t.rsf) + "</td>" +
+            "<td>" + (chipsHtml || '<span class="bdc-conf">no signals yet</span>') +
+            '<div class="sub">propensity ' + ((t.propensity && t.propensity.score) != null ? t.propensity.score : "—") + "</div></td>" +
+            '<td><a class="bdc-btn" style="padding:4px 10px;font-size:12px;text-decoration:none;display:inline-block" target="_blank" rel="noopener" href="https://app-na2.hubspot.com/contacts/' + HS_PORTAL + "/record/0-2/" + encodeURIComponent(t.id) + '">Open in HubSpot</a></td></tr>';
+        }).join("") + "</tbody></table></div>"
+      : '<div class="bdc-empty">Nobody is inside ' + RENEWAL_MONTHS + " months right now. As lease expiration dates land on HubSpot companies, they surface here on their own.</div>";
+
+    el.innerHTML = head +
+      '<div class="bdc-card"><div class="bdc-funnel">' + chips + "</div></div>" +
+      '<div class="bdc-card"><div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><h3 style="margin:0">Proposed — ' + rows.length + "</h3>" +
+      '<button class="bdc-btn" style="margin-left:auto" onclick="__bdExportRenewals()">⬇ Export list</button></div>' +
+      body + "</div>" +
+      '<div class="bdc-note"><b>This view proposes; it never enrolls.</b> Vantage does not write to HubSpot here — you open the record and set the status yourself, same rule as Marketing Programs. Sorted by how close expiration is, then by propensity, so the top of the list is where the next conversation should be.</div>' +
+      '<div class="bdc-note">Only companies carrying a <em>Vantage Building ID</em> and a <em>Lease Expiration Date</em> in HubSpot can appear — that\'s the join. The Directory Scan export already fills the Building ID, so a scanned tenant shows up here as soon as you learn their expiration. The lease date is the one thing no scan can read off a lobby board; it comes from you, CoStar, or the tenant.</div>' +
+      '<div class="bdc-note">Next step you flagged: these people want a <em>different cadence</em> from the 10-step cold program — a renewal conversation, not a cold open. That needs multi-program support (which program a contact is on) across the builder and the engine; the plumbing is half there (<code>bd_templates.program</code> exists but nothing filters on it). Say the word and I\'ll build it.</div>';
+  }
+
   function render() {
     var el = $("bdView"); if (!el) return;
     if (S.err === "signin" && S.view === "overview") { el.innerHTML = signinCard(); return; }
     if (S.view === "directory") return renderDirectory(el);
+    if (S.view === "prospects") return renderProspects(el);
+    if (S.view === "renewals") return renderRenewals(el);
     if (S.view === "proposals") return renderProposals(el);
     if (S.view === "newsletter") return renderNewsletter(el);
     if (S.view === "program") return renderProgram(el);

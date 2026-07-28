@@ -202,6 +202,8 @@
   .sectlabel{display:flex;align-items:center;justify-content:space-between;margin:22px 0 11px}
   .sectlabel h3{font-size:13px}
   .sample-tag{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:#9A6A2E;background:#F6ECDC;border:1px solid #E7D2AE;border-radius:6px;padding:3px 7px;font-weight:600}
+  /* the same chip, earned: this roster came off a directory you actually walked */
+  .verified-tag{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:#2F6B4F;background:#E6F1EA;border:1px solid #BCD9C8;border-radius:6px;padding:3px 7px;font-weight:600}
 
   .suite{border:1px solid var(--line);border-radius:11px;padding:11px 13px;margin-bottom:9px;background:var(--paper)}
   .suite .r1{display:flex;justify-content:space-between;align-items:baseline}
