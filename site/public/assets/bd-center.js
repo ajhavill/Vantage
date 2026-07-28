@@ -131,7 +131,7 @@
     return found ? found[1] : (c || "—");
   }
 
-  var VIEWS = { overview: "Command Center", newsletter: "Newsletter", program: "Marketing Programs", proposals: "Proposals", signals: "Signals", templates: "Templates" };
+  var VIEWS = { overview: "Command Center", directory: "Directory Scan", newsletter: "Newsletter", program: "Marketing Programs", proposals: "Proposals", signals: "Signals", templates: "Templates" };
   var S = {
     view: "overview",
     data: null, loading: false, err: null, editing: null,
@@ -140,8 +140,26 @@
     program: null, programErr: null, progDetail: false,
     templates: null, tplErr: null, tplEditing: null,
     assets: null, assetErr: null, assetEditing: null, assetKind: "collateral",
-    props: null, propErr: null, propEditing: null
+    props: null, propErr: null, propEditing: null,
+    scans: null, scanErr: null, scanId: null, scanBusy: false, scanOpenRow: null, scanPoll: null
   };
+
+  /* ---- directory scan: the rent math (Andrew's standard, editable per scan) ---- */
+  var DEF_ASSUMPTIONS = { sqft_low: 200, sqft_high: 250, psf_low: 100, psf_high: 125 };
+  function assumptionsOf(scan) {
+    var a = (scan && scan.assumptions) || {};
+    return {
+      sqft_low: Number(a.sqft_low) > 0 ? Number(a.sqft_low) : DEF_ASSUMPTIONS.sqft_low,
+      sqft_high: Number(a.sqft_high) > 0 ? Number(a.sqft_high) : DEF_ASSUMPTIONS.sqft_high,
+      psf_low: Number(a.psf_low) > 0 ? Number(a.psf_low) : DEF_ASSUMPTIONS.psf_low,
+      psf_high: Number(a.psf_high) > 0 ? Number(a.psf_high) : DEF_ASSUMPTIONS.psf_high
+    };
+  }
+  function money(n) {
+    if (!isFinite(n)) return "—";
+    return "$" + Math.round(n).toLocaleString("en-US");
+  }
+  function intFmt(n) { return isFinite(n) && n != null ? Number(n).toLocaleString("en-US") : "—"; }
 
   /* ---------------- CSS ---------------- */
   var css = "" +
@@ -272,6 +290,40 @@
     ".bdc-tbl td{padding:6px 8px;border-top:1px solid var(--line,#E2DDD2);color:var(--ink,#1A2230);vertical-align:top}" +
     ".bdc-tbl td.mut{color:var(--ink-soft,#55606F)}" +
     ".bdc-empty{color:var(--ink-faint,#8A93A0);font-size:13px;padding:8px 2px}" +
+    /* directory scan */
+    ".bdc-scanform{display:grid;grid-template-columns:1fr 1fr;gap:8px}" +
+    "@media(max-width:800px){.bdc-scanform{grid-template-columns:1fr}}" +
+    ".bdc-scanform .wide{grid-column:1/-1}" +
+    ".bdc-drop{grid-column:1/-1;border:1.5px dashed var(--line-2,#D2CCBF);border-radius:10px;padding:16px;text-align:center;background:var(--paper,#F7F5F0)}" +
+    ".bdc-drop.on{border-color:var(--accent,#2D6E7E);background:var(--paper-2,#FCFBF8)}" +
+    ".bdc-drop .hint{font-size:12.5px;color:var(--ink-soft,#55606F);margin-top:6px}" +
+    ".bdc-thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;justify-content:center}" +
+    ".bdc-thumb{position:relative;width:78px;height:78px;border-radius:8px;overflow:hidden;border:1px solid var(--line,#E2DDD2)}" +
+    ".bdc-thumb img{width:100%;height:100%;object-fit:cover;display:block}" +
+    ".bdc-thumb button{position:absolute;top:2px;right:2px;border:none;border-radius:50%;width:18px;height:18px;line-height:16px;padding:0;cursor:pointer;background:rgba(0,0,0,.6);color:#fff;font-size:12px}" +
+    ".bdc-scanlist{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}" +
+    ".bdc-dtbl{width:100%;border-collapse:collapse;font-size:12.5px}" +
+    ".bdc-dtbl th{text-align:left;font:600 10.5px Inter,inherit;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint,#8A93A0);border-bottom:1px solid var(--line,#E2DDD2);padding:6px 7px;white-space:nowrap}" +
+    ".bdc-dtbl td{padding:7px;border-bottom:1px solid var(--line,#E2DDD2);color:var(--ink,#1A2230);vertical-align:top}" +
+    ".bdc-dtbl td.num{text-align:right;white-space:nowrap}" +
+    ".bdc-dtbl tr.off{opacity:.4}" +
+    ".bdc-dtbl .co{font-weight:600}" +
+    ".bdc-dtbl .sub{font-size:11.5px;color:var(--ink-soft,#55606F);margin-top:2px}" +
+    ".bdc-dtbl .rowbtn{border:none;background:none;color:var(--accent,#2D6E7E);cursor:pointer;font:inherit;font-size:11.5px;padding:0;margin-top:4px}" +
+    ".bdc-wrap{overflow-x:auto}" +
+    ".bdc-flag{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:20px;border:1px solid var(--line,#E2DDD2);color:var(--ink-soft,#55606F);white-space:nowrap;display:inline-block}" +
+    ".bdc-flag.ok{border-color:var(--fitness,#3F8F6B);color:var(--fitness,#3F8F6B)}" +
+    ".bdc-flag.out{border-color:var(--coffee,#A56B3D);color:var(--coffee,#A56B3D)}" +
+    ".bdc-flag.intl{border-color:var(--dining,#C9543F);color:var(--dining,#C9543F)}" +
+    ".bdc-conf{font-size:10.5px;color:var(--ink-faint,#8A93A0)}" +
+    ".bdc-conf.low{color:var(--dining,#C9543F)}" +
+    ".bdc-rowedit{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:7px;padding:4px 0 2px}" +
+    ".bdc-rowedit input,.bdc-rowedit select,.bdc-rowedit textarea{width:100%;box-sizing:border-box;border:1px solid var(--line-2,#D2CCBF);border-radius:7px;padding:6px 8px;font:inherit;font-size:12.5px;background:#fff;color:var(--ink,#1A2230)}" +
+    ".bdc-rowedit textarea{grid-column:1/-1;min-height:52px;resize:vertical}" +
+    ".bdc-rowedit label{font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-faint,#8A93A0);display:block;margin-bottom:3px}" +
+    ".bdc-assume{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end}" +
+    ".bdc-assume label{font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-faint,#8A93A0);display:block;margin-bottom:3px}" +
+    ".bdc-assume input{width:90px;box-sizing:border-box;border:1px solid var(--line-2,#D2CCBF);border-radius:7px;padding:6px 8px;font:inherit;font-size:12.5px;background:#fff}" +
     ".bdc-note{font-size:12px;color:var(--ink-faint,#8A93A0);margin-top:10px;line-height:1.5}";
   var st = document.createElement("style"); st.textContent = css; document.head.appendChild(st);
 
@@ -774,8 +826,273 @@
     });
   }
 
+  /* ---------------- data: directory scan ---------------- */
+  // The photo → prospect-list pipeline. The row in bd_directory_scans is both
+  // the job (staged photos + status, polled here) and the saved result, so a
+  // scan from last month reopens with your edits intact. The heavy columns
+  // (photos, raw) are never selected into the browser.
+  var SCAN_COLS = "id,building_name,address,submarket,note,status,error,companies,unreadable,assumptions,created_at,updated_at";
+  var dirPhotos = [];   // staged in memory until the scan starts
+
+  function uuid() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+      var r = Math.random() * 16 | 0;
+      return (c === "x" ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+  }
+
+  function loadScans(force) {
+    var sb = getSB(); if (!sb || !sb.from) { S.scanErr = "signin"; render(); return; }
+    if (S.scans && !force) { render(); return; }
+    sb.from("bd_directory_scans").select(SCAN_COLS).order("created_at", { ascending: false }).limit(100)
+      .then(function (r) {
+        if (r.error) { S.scanErr = sbErr(r.error); } else { S.scans = r.data || []; S.scanErr = null; }
+        if (S.scans && S.scans.length && !scanById(S.scanId)) S.scanId = S.scans[0].id;
+        // A scan left mid-flight (tab closed during the research pass) picks
+        // its polling back up the moment you return to the view.
+        if (S.scans && S.scans.some(function (s) { return s.status === "queued" || s.status === "running"; })) startPoll();
+        render();
+      });
+  }
+  function scanById(id) {
+    return (S.scans || []).filter(function (s) { return s.id === id; })[0] || null;
+  }
+  function selScan(id) { S.scanId = id; S.scanOpenRow = null; render(); }
+
+  function addPhotos(input) {
+    var files = Array.prototype.slice.call(input.files || []);
+    input.value = "";
+    if (!files.length) return;
+    if (dirPhotos.length + files.length > 4) { alert("Four photos per scan — that's plenty for one board. Run a second scan for the rest."); return; }
+    files.forEach(function (f) {
+      if (!/^image\/(jpeg|png|webp|heic|heif)$/i.test(f.type)) { alert(f.name + " isn't a photo. Use a JPEG, PNG, or WebP."); return; }
+      if (f.size > 8 * 1024 * 1024) { alert(f.name + " is over 8 MB — retake it at a lower resolution."); return; }
+      var rd = new FileReader();
+      rd.onload = function () {
+        var s = String(rd.result || "");
+        var comma = s.indexOf(",");
+        dirPhotos.push({
+          name: f.name,
+          media_type: /^image\/(jpeg|png|webp)$/i.test(f.type) ? f.type.toLowerCase() : "image/jpeg",
+          data: comma >= 0 ? s.slice(comma + 1) : s,
+          url: s
+        });
+        render();
+      };
+      rd.readAsDataURL(f);
+    });
+  }
+  function removePhoto(i) { dirPhotos.splice(i, 1); render(); }
+
+  function startScan(btn) {
+    if (!dirPhotos.length) { alert("Add a photo of the directory board first."); return; }
+    var sb = getSB(); if (!sb) return;
+    var id = uuid();
+    var row = {
+      id: id,
+      building_name: (($("bdcScanName") || {}).value || "").trim() || null,
+      address: (($("bdcScanAddr") || {}).value || "").trim() || null,
+      submarket: (($("bdcScanSub") || {}).value || "").trim() || null,
+      note: (($("bdcScanNote") || {}).value || "").trim() || null,
+      photos: dirPhotos.map(function (p) { return { media_type: p.media_type, data: p.data }; }),
+      status: "queued"
+    };
+    S.scanBusy = true; render();
+    sb.from("bd_directory_scans").insert(row).then(function (r) {
+      if (r.error) { S.scanBusy = false; alert("Couldn't stage the scan: " + sbErr(r.error)); render(); return; }
+      token(function (t) {
+        if (!t) { S.scanBusy = false; render(); return; }
+        // Background function: this 202s immediately and the row carries the outcome.
+        fetch("/.netlify/functions/bd-directory-scan-background", {
+          method: "POST", body: JSON.stringify({ token: t, jobId: id })
+        }).catch(function () { /* the row's status is the source of truth */ });
+        dirPhotos = [];
+        ["bdcScanName", "bdcScanAddr", "bdcScanSub", "bdcScanNote"].forEach(function (i) { if ($(i)) $(i).value = ""; });
+        S.scanBusy = false; S.scanId = id;
+        loadScans(true);
+        startPoll();
+      });
+    });
+  }
+
+  function startPoll() {
+    if (S.scanPoll) return;
+    S.scanPoll = setInterval(function () {
+      var sb = getSB(); if (!sb || !sb.from) return;
+      sb.from("bd_directory_scans").select(SCAN_COLS).in("status", ["queued", "running"])
+        .then(function (r) {
+          if (r.error) return;
+          var live = r.data || [];
+          if (!live.length) { stopPoll(); loadScans(true); return; }
+          // Keep the chips' status labels fresh while we wait.
+          var changed = false;
+          live.forEach(function (row) {
+            var cur = scanById(row.id);
+            if (cur && cur.status !== row.status) { cur.status = row.status; changed = true; }
+          });
+          if (changed) render();
+        });
+    }, 4000);
+  }
+  function stopPoll() { if (S.scanPoll) { clearInterval(S.scanPoll); S.scanPoll = null; } }
+
+  function saveScan(btn) {
+    var scan = scanById(S.scanId); if (!scan) return;
+    var sb = getSB(); if (!sb) return;
+    if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
+    sb.from("bd_directory_scans").update({
+      companies: scan.companies || [],
+      assumptions: assumptionsOf(scan),
+      building_name: scan.building_name || null,
+      address: scan.address || null,
+      submarket: scan.submarket || null
+    }).eq("id", scan.id).then(function (r) {
+      if (btn) { btn.disabled = false; btn.textContent = "Save changes"; }
+      if (r.error) { alert("Couldn't save: " + sbErr(r.error)); return; }
+      S.scanOpenRow = null; render();
+    });
+  }
+  function deleteScan(id) {
+    var scan = scanById(id); if (!scan) return;
+    if (!confirm("Delete the scan of " + (scan.building_name || scan.address || "this building") + "? The tenant list and your edits go with it.")) return;
+    var sb = getSB(); if (!sb) return;
+    sb.from("bd_directory_scans").delete().eq("id", id).then(function (r) {
+      if (r.error) { alert("Couldn't delete: " + sbErr(r.error)); return; }
+      S.scanId = null; loadScans(true);
+    });
+  }
+
+  function scanRows(scan) { return Array.isArray(scan && scan.companies) ? scan.companies : []; }
+  function toggleRow(i) {
+    var scan = scanById(S.scanId); if (!scan) return;
+    var rows = scanRows(scan);
+    if (rows[i]) { rows[i].include = !rows[i].include; render(); }
+  }
+  function rowSave(i, btn) {
+    var scan = scanById(S.scanId); if (!scan) return;
+    var row = scanRows(scan)[i]; if (!row) return;
+    function val(id) { var el = $(id + "-" + i); return el ? el.value.trim() : ""; }
+    row.company = val("bdcDCo") || row.company;
+    row.suite = val("bdcDSuite");
+    row.domain = val("bdcDDom").toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "");
+    row.industry = val("bdcDInd");
+    row.dm_location = val("bdcDDml");
+    var emp = val("bdcDEmp");
+    row.la_employees = emp === "" ? null : Math.max(0, Math.round(Number(emp) || 0));
+    row.flag = val("bdcDFlag") || row.flag;
+    row.notes = val("bdcDNotes");
+    S.scanOpenRow = null;
+    saveScan(btn);
+  }
+  function rowDrop(i) {
+    var scan = scanById(S.scanId); if (!scan) return;
+    var rows = scanRows(scan);
+    if (!rows[i]) return;
+    if (!confirm("Remove " + rows[i].company + " from this scan? (To keep it but leave it out of the export, just untick it.)")) return;
+    rows.splice(i, 1);
+    S.scanOpenRow = null;
+    saveScan(null);
+  }
+  function assumeSave(btn) {
+    var scan = scanById(S.scanId); if (!scan) return;
+    function n(id, fb) { var el = $(id); var v = el ? Number(el.value) : NaN; return isFinite(v) && v > 0 ? v : fb; }
+    var d = assumptionsOf(scan);
+    scan.assumptions = {
+      sqft_low: n("bdcAsSqL", d.sqft_low), sqft_high: n("bdcAsSqH", d.sqft_high),
+      psf_low: n("bdcAsPsL", d.psf_low), psf_high: n("bdcAsPsH", d.psf_high)
+    };
+    saveScan(btn);
+  }
+
+  /* ---- export: the whole point — a file that imports straight into HubSpot ---- */
+  function csvCell(v) {
+    var s = v == null ? "" : String(v);
+    return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  function csvFile(headers, rows) {
+    // The BOM is what makes Excel open a UTF-8 CSV without mangling accents.
+    return "﻿" + [headers].concat(rows).map(function (r) { return r.map(csvCell).join(","); }).join("\r\n");
+  }
+  function download(name, text) {
+    var blob = new Blob([text], { type: "text/csv;charset=utf-8" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  }
+  function slug(s) { return String(s || "building").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "building"; }
+  // Every tenant shares the building's address, so one parse serves the file.
+  function splitAddress(addr) {
+    var parts = String(addr || "").split(",").map(function (p) { return p.trim(); }).filter(Boolean);
+    var out = { street: parts[0] || "", city: "", state: "", zip: "" };
+    if (parts.length >= 2) out.city = parts[1];
+    var tail = parts.length >= 3 ? parts[2] : "";
+    var m = tail.match(/([A-Za-z]{2})\b/);
+    if (m) out.state = m[1].toUpperCase();
+    var z = tail.match(/\b(\d{5}(?:-\d{4})?)\b/);
+    if (z) out.zip = z[1];
+    return out;
+  }
+  function exportRows(scan) {
+    return scanRows(scan).filter(function (r) { return r.include !== false; });
+  }
+  function exportHubSpot() {
+    var scan = scanById(S.scanId); if (!scan) return;
+    var rows = exportRows(scan);
+    if (!rows.length) { alert("Nothing ticked to export."); return; }
+    var a = assumptionsOf(scan), ad = splitAddress(scan.address);
+    // Header labels are HubSpot's own company-property names, so the importer
+    // auto-maps every column. Headcount / Estimated RSF / Vantage Building ID
+    // are the custom properties hubspot-bootstrap creates.
+    var headers = ["Name", "Company Domain Name", "Website URL", "Industry", "Description",
+      "Street Address", "City", "State/Region", "Postal Code",
+      "Number of Employees", "Headcount", "Estimated RSF", "Vantage Building ID"];
+    var buildingId = scan.building_name || scan.address || "";
+    var out = rows.map(function (r) {
+      return [
+        r.company, r.domain, r.website, r.industry,
+        [r.description, r.suite ? "Suite " + r.suite + " at " + (scan.building_name || scan.address || "the building") : "",
+          r.dm_location ? "Decision-makers: " + (r.dm_titles ? r.dm_titles + " — " : "") + r.dm_location : "",
+          r.notes].filter(Boolean).join(" · "),
+        ad.street, ad.city, ad.state, ad.zip,
+        r.employees_total == null ? "" : r.employees_total,
+        r.la_employees == null ? "" : r.la_employees,
+        r.la_employees == null ? "" : Math.round(r.la_employees * a.sqft_low),
+        buildingId
+      ];
+    });
+    download("hubspot-companies-" + slug(scan.building_name || scan.address) + ".csv", csvFile(headers, out));
+  }
+  function exportFull() {
+    var scan = scanById(S.scanId); if (!scan) return;
+    var rows = exportRows(scan);
+    if (!rows.length) { alert("Nothing ticked to export."); return; }
+    var a = assumptionsOf(scan);
+    var headers = ["#", "Company", "Suite", "Domain", "Website", "Industry", "Description",
+      "HQ City", "HQ State", "HQ Country", "LA Employees", "Total Employees",
+      "Decision-Maker Titles", "Decision-Maker Location", "Flag", "Confidence",
+      "Est. Sqft (Low)", "Est. Annual Rent (Low)", "Est. Sqft (High)", "Est. Annual Rent (High)",
+      "Notes", "Sources"];
+    var out = rows.map(function (r, i) {
+      var e = r.la_employees;
+      return [i + 1, r.company, r.suite, r.domain, r.website, r.industry, r.description,
+        r.hq_city, r.hq_state, r.hq_country,
+        e == null ? "" : e, r.employees_total == null ? "" : r.employees_total,
+        r.dm_titles, r.dm_location, r.flag, r.confidence,
+        e == null ? "" : Math.round(e * a.sqft_low),
+        e == null ? "" : Math.round(e * a.sqft_low * a.psf_low),
+        e == null ? "" : Math.round(e * a.sqft_high),
+        e == null ? "" : Math.round(e * a.sqft_high * a.psf_high),
+        r.notes, (r.sources || []).join(" | ")];
+    });
+    download("directory-analysis-" + slug(scan.building_name || scan.address) + ".csv", csvFile(headers, out));
+  }
+
   function loadView() {
     if (S.view === "overview") load();
+    else if (S.view === "directory") loadScans();
     else if (S.view === "newsletter") loadClips();
     else if (S.view === "signals") loadSignals();
     else if (S.view === "proposals") loadProposals();
@@ -811,8 +1128,23 @@
   window.__bdAssetCancel = function () { S.assetEditing = null; render(); };
   window.__bdAssetSave = assetSave; window.__bdAssetAdd = assetAdd;
   window.__bdAssetDelete = assetDelete; window.__bdAssetUpload = assetUpload; window.__bdAssetOpen = assetOpen;
+  window.__bdAddPhotos = addPhotos; window.__bdRemovePhoto = removePhoto;
+  window.__bdStartScan = startScan; window.__bdSelScan = selScan;
+  window.__bdSaveScan = saveScan; window.__bdDeleteScan = deleteScan;
+  window.__bdToggleRow = toggleRow;
+  window.__bdRowEdit = function (i) { S.scanOpenRow = S.scanOpenRow === i ? null : i; render(); };
+  window.__bdRowSave = rowSave; window.__bdRowDrop = rowDrop;
+  window.__bdAssumeSave = assumeSave;
+  window.__bdExportHS = exportHubSpot; window.__bdExportFull = exportFull;
+  window.__bdScanAll = function (on) {
+    var scan = scanById(S.scanId); if (!scan) return;
+    scanRows(scan).forEach(function (r) { r.include = !!on; });
+    render();
+  };
+
   window.__bdReloadForce = function () {
-    if (S.view === "newsletter") loadClips(true);
+    if (S.view === "directory") loadScans(true);
+    else if (S.view === "newsletter") loadClips(true);
     else if (S.view === "signals") loadSignals(true);
     else if (S.view === "proposals") loadProposals(true);
     else if (S.view === "program") { loadProgram(true); loadTemplates(true); loadAssets(true); }
@@ -1402,9 +1734,185 @@
       '<div class="bdc-note">These are the same templates the AI drafter uses on a deal page: it fills the placeholders from that deal\'s notes and proposal rounds. Templates are firm-wide by default; files live in private storage and open through a signed link.</div>';
   }
 
+  /* ---------------- render: directory scan ---------------- */
+  function flagClass(f) {
+    if (f === "OK") return "ok";
+    if (f === "DM Outside LA") return "out";
+    if (f === "DM International") return "intl";
+    return "";
+  }
+
+  function scanRowHtml(r, i, a) {
+    var e = r.la_employees;
+    var editing = S.scanOpenRow === i;
+    var main = "<tr class=\"" + (r.include === false ? "off" : "") + "\">" +
+      '<td><input type="checkbox" ' + (r.include === false ? "" : "checked") + ' onchange="__bdToggleRow(' + i + ')" /></td>' +
+      '<td><div class="co">' + esc(r.company) + (r.suite ? ' <span class="bdc-conf">· Ste ' + esc(r.suite) + "</span>" : "") + "</div>" +
+      '<div class="sub">' + (r.domain ? esc(r.domain) : '<span style="color:var(--dining,#C9543F)">no domain found</span>') +
+      (r.industry ? " · " + esc(r.industry) : "") + "</div>" +
+      '<button class="rowbtn" onclick="__bdRowEdit(' + i + ')">' + (editing ? "Close" : "Edit") + "</button></td>" +
+      '<td class="num">' + intFmt(e) + "</td>" +
+      '<td class="num">' + (e == null ? "—" : intFmt(Math.round(e * a.sqft_low))) + "</td>" +
+      '<td class="num">' + (e == null ? "—" : money(e * a.sqft_low * a.psf_low) + " – " + money(e * a.sqft_high * a.psf_high)) + "</td>" +
+      "<td><span class=\"bdc-flag " + flagClass(r.flag) + '">' + esc(r.flag || "Unclear") + "</span>" +
+      (r.dm_location ? '<div class="sub">' + esc(r.dm_location) + "</div>" : "") + "</td>" +
+      '<td><span class="bdc-conf ' + (r.confidence === "low" ? "low" : "") + '">' + esc(r.confidence || "low") + "</span></td></tr>";
+
+    if (!editing) return main;
+
+    var flags = ["OK", "DM Outside LA", "DM International", "Unclear"];
+    return main + '<tr><td colspan="7" style="background:var(--paper,#F7F5F0)"><div class="bdc-rowedit">' +
+      '<div><label>Company</label><input id="bdcDCo-' + i + '" value="' + esc(r.company) + '" /></div>' +
+      '<div><label>Suite</label><input id="bdcDSuite-' + i + '" value="' + esc(r.suite || "") + '" /></div>' +
+      '<div><label>Domain</label><input id="bdcDDom-' + i + '" value="' + esc(r.domain || "") + '" placeholder="acme.com" /></div>' +
+      '<div><label>Industry</label><input id="bdcDInd-' + i + '" value="' + esc(r.industry || "") + '" /></div>' +
+      '<div><label>LA employees</label><input id="bdcDEmp-' + i + '" type="number" min="0" value="' + (r.la_employees == null ? "" : r.la_employees) + '" /></div>' +
+      '<div><label>Decision-makers</label><input id="bdcDDml-' + i + '" value="' + esc(r.dm_location || "") + '" placeholder="City where they sit" /></div>' +
+      '<div><label>Flag</label><select id="bdcDFlag-' + i + '">' +
+      flags.map(function (f) { return '<option value="' + f + '"' + (r.flag === f ? " selected" : "") + ">" + f + "</option>"; }).join("") +
+      "</select></div>" +
+      '<textarea id="bdcDNotes-' + i + '" placeholder="Notes">' + esc(r.notes || "") + "</textarea>" +
+      "</div>" +
+      (r.sources && r.sources.length
+        ? '<div class="bdc-note" style="margin:6px 0 0">Sources: ' + r.sources.map(function (u) {
+            return '<a href="' + esc(u) + '" target="_blank" rel="noopener" style="color:var(--accent,#2D6E7E)">' + esc(u.replace(/^https?:\/\/(www\.)?/, "").slice(0, 48)) + "</a>";
+          }).join(" · ") + "</div>"
+        : "") +
+      '<div class="bdc-item-act"><button class="bdc-btn pri" onclick="__bdRowSave(' + i + ',this)">Save row</button>' +
+      '<button class="bdc-btn" onclick="__bdRowEdit(' + i + ')">Cancel</button>' +
+      '<button class="bdc-btn dngr" style="margin-left:auto" onclick="__bdRowDrop(' + i + ')">Remove</button></div>' +
+      "</td></tr>";
+  }
+
+  function scanPanelHtml(scan) {
+    if (scan.status === "queued" || scan.status === "running") {
+      return '<div class="bdc-card"><h3>Reading the board</h3><div class="bdc-empty">' +
+        (scan.status === "queued" ? "Queued — the scan starts in a moment." : "Claude is reading the names and researching each company on the web. A full board takes a few minutes; you can leave this page and come back.") +
+        "</div></div>";
+    }
+    if (scan.status === "error") {
+      return '<div class="bdc-card"><h3>That scan didn\'t work</h3><div class="bdc-empty">' + esc(scan.error || "Unknown error") + "</div>" +
+        '<div class="bdc-item-act"><button class="bdc-btn dngr" onclick="__bdDeleteScan(\'' + scan.id + "')\">Delete scan</button></div></div>";
+    }
+
+    var rows = scanRows(scan), a = assumptionsOf(scan);
+    var kept = rows.filter(function (r) { return r.include !== false; });
+    var emp = kept.reduce(function (n, r) { return n + (r.la_employees || 0); }, 0);
+    var low = kept.reduce(function (n, r) { return n + (r.la_employees || 0) * a.sqft_low * a.psf_low; }, 0);
+    var high = kept.reduce(function (n, r) { return n + (r.la_employees || 0) * a.sqft_high * a.psf_high; }, 0);
+    var outLA = kept.filter(function (r) { return r.flag === "DM Outside LA"; }).length;
+    var intl = kept.filter(function (r) { return r.flag === "DM International"; }).length;
+    var noDomain = kept.filter(function (r) { return !r.domain; }).length;
+
+    var chips = [
+      ["" + kept.length, "tenants selected"],
+      [intFmt(emp), "LA employees"],
+      [money(low), "annual rent (low)"],
+      [money(high), "annual rent (high)"],
+      ["" + outLA, "DM outside LA"],
+      ["" + intl, "DM international"]
+    ].map(function (p) {
+      return '<div class="bdc-fchip"><div class="c">' + esc(p[0]) + '</div><div class="l">' + esc(p[1]) + "</div></div>";
+    }).join("");
+
+    var summary = '<div class="bdc-card"><h3>' + esc(scan.building_name || scan.address || "Scanned directory") +
+      (scan.address && scan.building_name ? ' <span style="text-transform:none;letter-spacing:0;font-weight:400">— ' + esc(scan.address) + "</span>" : "") +
+      "</h3><div class=\"bdc-funnel\">" + chips + "</div>" +
+      '<div class="bdc-assume" style="margin-top:14px">' +
+      '<div><label>SF / employee (low)</label><input id="bdcAsSqL" type="number" min="1" value="' + a.sqft_low + '" /></div>' +
+      '<div><label>SF / employee (high)</label><input id="bdcAsSqH" type="number" min="1" value="' + a.sqft_high + '" /></div>' +
+      '<div><label>$ / SF / yr (low)</label><input id="bdcAsPsL" type="number" min="1" value="' + a.psf_low + '" /></div>' +
+      '<div><label>$ / SF / yr (high)</label><input id="bdcAsPsH" type="number" min="1" value="' + a.psf_high + '" /></div>' +
+      '<button class="bdc-btn" onclick="__bdAssumeSave(this)">Apply</button>' +
+      "</div></div>";
+
+    var tbl = '<div class="bdc-card">' +
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">' +
+      '<h3 style="margin:0">Tenants — ' + rows.length + "</h3>" +
+      '<button class="bdc-btn" style="padding:4px 10px;font-size:12px" onclick="__bdScanAll(true)">Tick all</button>' +
+      '<button class="bdc-btn" style="padding:4px 10px;font-size:12px" onclick="__bdScanAll(false)">Untick all</button>' +
+      '<button class="bdc-btn pri" style="margin-left:auto" onclick="__bdSaveScan(this)">Save changes</button>' +
+      "</div>" +
+      '<div class="bdc-wrap"><table class="bdc-dtbl"><thead><tr>' +
+      "<th></th><th>Company</th><th style=\"text-align:right\">LA staff</th><th style=\"text-align:right\">Est. RSF</th>" +
+      "<th style=\"text-align:right\">Est. annual rent</th><th>Decision-makers</th><th>Conf.</th>" +
+      "</tr></thead><tbody>" +
+      rows.map(function (r, i) { return scanRowHtml(r, i, a); }).join("") +
+      "</tbody></table></div>" +
+      (noDomain ? '<div class="bdc-note">' + noDomain + " selected " + (noDomain === 1 ? "company has" : "companies have") +
+        " no domain. HubSpot dedupes companies on domain — fill those in before importing, or they'll come in as fresh records every time." : "") +
+      "</div>";
+
+    var exportCard = '<div class="bdc-card"><h3>Export</h3>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+      '<button class="bdc-btn pri" onclick="__bdExportHS()">⬇ HubSpot companies CSV</button>' +
+      '<button class="bdc-btn" onclick="__bdExportFull()">⬇ Full analysis CSV</button>' +
+      '<button class="bdc-btn dngr" style="margin-left:auto" onclick="__bdDeleteScan(\'' + scan.id + "')\">Delete scan</button>" +
+      "</div>" +
+      '<div class="bdc-note">The HubSpot file uses HubSpot\'s own column names, so the importer maps every field on its own — in HubSpot go <em>Data Management → Import → Start an import → Companies</em>, and dedupe on <em>Company Domain Name</em>. Industry is a HubSpot dropdown, so values it doesn\'t recognize get skipped (the text is repeated in the description either way). The full analysis file is the working spreadsheet: rent math, flags, sources, and the notes behind each call.</div>' +
+      "</div>";
+
+    var unread = Array.isArray(scan.unreadable) ? scan.unreadable : [];
+    var unreadCard = unread.length
+      ? '<div class="bdc-card"><h3>Couldn\'t read these</h3><div class="bdc-empty">' +
+        unread.map(esc).join("<br>") + "</div>" +
+        '<div class="bdc-note">Rather than guess at a blurred name, the scan sets it aside. Re-shoot those lines and run a second scan, or add them by hand in HubSpot.</div></div>'
+      : "";
+
+    return summary + tbl + exportCard + unreadCard;
+  }
+
+  function renderDirectory(el) {
+    var head = viewHead("Directory Scan", "Photograph a lobby tenant board. Claude reads every name, researches the companies, and hands back a list that imports straight into HubSpot.",
+      '<button class="bdc-btn" onclick="__bdReloadForce()">⟳ Refresh</button>');
+    if (S.scanErr === "signin") { el.innerHTML = head + signinCard(); return; }
+
+    var thumbs = dirPhotos.length
+      ? '<div class="bdc-thumbs">' + dirPhotos.map(function (p, i) {
+          return '<div class="bdc-thumb"><img src="' + esc(p.url) + '" alt="" /><button onclick="__bdRemovePhoto(' + i + ')" title="Remove">×</button></div>';
+        }).join("") + "</div>"
+      : "";
+
+    var newCard = '<div class="bdc-card"><h3>New scan</h3><div class="bdc-scanform">' +
+      '<input id="bdcScanName" placeholder="Building name — e.g. Water Garden" />' +
+      '<input id="bdcScanSub" placeholder="Submarket — e.g. Santa Monica" />' +
+      '<input id="bdcScanAddr" class="wide" placeholder="Street address — e.g. 2425 Olympic Blvd, Santa Monica, CA 90404" />' +
+      '<input id="bdcScanNote" class="wide" placeholder="Anything the photo can\'t say (optional) — e.g. “lobby board only, floors 2–4 have their own”" />' +
+      '<div class="bdc-drop">' +
+      '<label class="bdc-btn pri" style="display:inline-block">📷 Add directory photo' +
+      '<input type="file" accept="image/*" multiple style="display:none" onchange="__bdAddPhotos(this)" /></label>' +
+      '<div class="hint">Up to four photos, 8 MB each. Shoot the board straight-on and close enough to read the smallest suite number — that\'s the whole game.</div>' +
+      thumbs + "</div>" +
+      '<div class="wide" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+      '<button class="bdc-btn pri" onclick="__bdStartScan(this)"' + (S.scanBusy || !dirPhotos.length ? " disabled" : "") + ">" +
+      (S.scanBusy ? "Starting…" : "Scan directory") + "</button>" +
+      '<span class="bdc-note" style="margin:0">The research pass takes a few minutes and keeps running if you close the tab.</span>' +
+      "</div></div></div>";
+
+    var scans = S.scans;
+    if (scans === null) { el.innerHTML = head + newCard + '<div class="bdc-card"><div class="bdc-empty">' + (S.scanErr ? esc(S.scanErr) : "Loading past scans…") + "</div></div>"; return; }
+
+    var chips = scans.length
+      ? '<div class="bdc-scanlist">' + scans.map(function (s) {
+          var tag = s.status === "done" ? (Array.isArray(s.companies) ? s.companies.length + " tenants" : "done")
+            : s.status === "error" ? "failed" : s.status;
+          return '<button class="bdc-ichip' + (S.scanId === s.id ? " on" : "") + '" onclick="__bdSelScan(\'' + s.id + "')\">" +
+            esc(s.building_name || s.address || "Untitled scan") + '<span class="tag">' + esc(tag) + "</span></button>";
+        }).join("") + "</div>"
+      : "";
+
+    var scan = scanById(S.scanId);
+    var body = scan ? scanPanelHtml(scan)
+      : '<div class="bdc-card"><div class="bdc-empty">No scans yet. Photograph a lobby board and run the first one — every tenant it finds is a prospect for the 10-step program.</div></div>';
+
+    el.innerHTML = head + newCard + chips + body +
+      '<div class="bdc-note">What the research can and can\'t do: names and suites come straight off the photo, so those are solid. Everything else — headcount, HQ, who signs the lease — is assembled from the open web, because LinkedIn blocks automated access. Treat LA headcount as an estimate and the rent figures as the arithmetic that follows from it; the confidence column tells you where to double-check before you spend a stamp. Nothing is written to HubSpot from here — you review the list, export it, and import it yourself.</div>';
+  }
+
   function render() {
     var el = $("bdView"); if (!el) return;
     if (S.err === "signin" && S.view === "overview") { el.innerHTML = signinCard(); return; }
+    if (S.view === "directory") return renderDirectory(el);
     if (S.view === "proposals") return renderProposals(el);
     if (S.view === "newsletter") return renderNewsletter(el);
     if (S.view === "program") return renderProgram(el);
